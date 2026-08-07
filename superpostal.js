@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         SUPER POSTAL
+// @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
 // @version      1.1
 // @description  Return Address parser + Job name from uploaded PDF
@@ -535,32 +535,63 @@ let box = document.querySelector("#bureauTotals");
 
 if(!box){
 
-    box = document.createElement("div");
+box = document.createElement("div");
 
-    box.id = "bureauTotals";
+box.id = "bureauTotals";
 
-    Object.assign(box.style,{
 
-        position:"fixed",
-        top:"120px",
-        right:"15px",
-        width:"320px",
-        background:"rgb(242,179,46)",
-        color:"black",
-        padding:"25px",
-        borderRadius:"12px",
-        zIndex:"999999",
-        boxShadow:"0 0 15px rgba(0,0,0,.45)"
+Object.assign(box.style,{
 
-    });
+position:"fixed",
+
+top:"120px",
+
+right:"15px",
+
+width:"320px",
+
+background:"rgb(242,179,46)",
+
+color:"black",
+
+padding:"25px",
+
+borderRadius:"12px",
+
+zIndex:"999999",
+
+boxShadow:"0 0 15px rgba(0,0,0,.45)",
+
+cursor:"move",
+
+overflow:"visible"
+
+});
+
 
 
 box.innerHTML = `
 
+<div style="
+display:flex;
+justify-content:flex-end;
+">
+
+<button id="minimizeTotals"
+style="
+border:none;
+background:none;
+font-size:25px;
+font-weight:bold;
+cursor:pointer;
+">
+−
+</button>
+
+</div>
 
 
 <div id="bureauContent"></div>
-
 
 <button id="clearTotalsBtn"
 style="
@@ -579,109 +610,292 @@ style="
 
 `;
 
-    function addMascot(id, src, position){
-
-    const img = document.createElement("img");
-
-    img.id = id;
-
-    img.src = src;
 
 
-    Object.assign(img.style,{
+// =============================
+// MASCOT
+// =============================
+
+const mascot=document.createElement("img");
+
+
+mascot.id="postalMascot";
+
+
+mascot.src=
+"https://media.discordapp.net/attachments/1504512479990911130/1535403918438441071/keltz2.png?ex=6a77a3d4&is=6a765254&hm=754db8c87c2b7b460e3b2e3ca82ed111e15f422dd191d97d79f2097df3675e86&=&format=webp&quality=lossless";
+
+
+Object.assign(mascot.style,{
+position:"absolute",
+right:"320px",
+top:"-40px",
+size:"500px",
+height:"400px",
+pointerEvents:"none",
+userSelect:"none",
+zIndex:"0"
+});
+
+
+
+box.appendChild(mascot);
+
+
+
+
+// =============================
+// DRAG SYSTEM (ONLY WHEN EXPANDED)
+// =============================
+
+let dragging = false;
+let offsetX = 0;
+let offsetY = 0;
+
+
+function enableDrag(){
+
+    box.onmousedown = function(e){
+
+        // disable drag when minimized
+        if(box.dataset.minimized === "true")
+            return;
+
+
+        if(e.target.tagName === "BUTTON")
+            return;
+
+
+        dragging = true;
+
+
+        offsetX = e.clientX - box.offsetLeft;
+        offsetY = e.clientY - box.offsetTop;
+
+    };
+
+
+    document.onmousemove = function(e){
+
+        if(!dragging)
+            return;
+
+
+        box.style.left =
+        (e.clientX - offsetX) + "px";
+
+
+        box.style.top =
+        (e.clientY - offsetY) + "px";
+
+
+        box.style.right="auto";
+
+    };
+
+
+    document.onmouseup=function(){
+
+        dragging=false;
+
+    };
+
+}
+
+
+// =============================
+// MINIMIZE SYSTEM
+// =============================
+
+let fullState = null;
+
+
+function minimizeBox(){
+
+    fullState = {
+
+        html: box.innerHTML,
+
+        left: box.style.left,
+
+        top: box.style.top,
+
+        right: box.style.right
+
+    };
+
+
+    box.dataset.minimized="true";
+
+
+    // MINIMIZED PNG
+    box.innerHTML = `
+        <img
+            src="https://media.discordapp.net/attachments/1504512479990911130/1535406054077366282/bay-removebg-preview.png?ex=6a77a5d1&is=6a765451&hm=e6648fbb3ae0b462f6a73df81715794f4e0ee22c67c2fed5878517e31b510436&=&format=webp&quality=lossless&width=401&height=512"
+            style="
+                width:60px;
+                height:60px;
+                object-fit:contain;
+                display:block;
+                pointer-events:none;
+                user-select:none;
+            "
+        >
+    `;
+
+
+    Object.assign(box.style,{
+
+        width:"60px",
+
+        height:"60px",
+
+        padding:"0",
+
+        borderRadius:"50%",
 
         position:"fixed",
 
-        right:position.right,
-        top:position.top,
+        right:"15px",
 
-        width:position.width || "170px",
+        top:"120px",
 
-        height:"auto",
+        left:"auto",
 
-        opacity:"1",
+        display:"flex",
 
-        pointerEvents:"none",
+        alignItems:"center",
 
-        userSelect:"none",
-        transform:"rotate(-5deg)",
+        justifyContent:"center",
 
+        fontSize:"initial",
 
-        zIndex:"999998"
+        cursor:"pointer",
+
+        overflow:"hidden"
+
 
     });
 
 
-    document.body.appendChild(img);
+    // REMOVE DRAG WHILE MINIMIZED
+    box.onmousedown=null;
+
+
+    // CLICK PNG TO RESTORE
+    box.onclick=function(){
+
+        restoreBox();
+
+    };
 
 }
-    addMascot(
-    "postalMascot1",
-    "https://media.discordapp.net/attachments/1504512479990911130/1535356495917621318/keltz2.png?ex=6a7777aa&is=6a76262a&hm=1bc9b3376404145bd760a4d86a2930e0865deb65ce53db6c970cacd749ea2f18&=&format=webp&quality=lossless",
-    {
 
-    position:"fixed",
 
-    right:"270px",
 
-    top:"60px",
 
-    width:"170px",
+function restoreBox(){
 
-    height:"auto",
 
-    opacity:"100",
+    box.dataset.minimized="false";
 
-    pointerEvents:"none",
 
-    userSelect:"none",
+    box.innerHTML =
+    fullState.html;
 
-    zIndex:"999998",
+
+
+    Object.assign(box.style,{
+
+        width:"320px",
+
+        height:"auto",
+
+        padding:"25px",
+
+        borderRadius:"12px",
+
+        display:"block",
+
+        fontSize:"initial",
+
+        overflow:"visible",
+
+        cursor:"move",
+
+        // RESET POSITION WHEN EXPANDING
+        top:"120px",
+
+        right:"15px",
+
+        left:"auto"
+
+    });
+
+
+
+    box.onclick=null;
+
+
+
+    const btn =
+    box.querySelector("#minimizeTotals");
+
+
+    if(btn){
+
+        btn.onclick=function(e){
+
+            e.stopPropagation();
+
+            minimizeBox();
+
+        };
+
     }
-);
 
 
-    document.body.appendChild(box);
+    enableDrag();
+
+}
 
 
-document.querySelector("#clearTotalsBtn").onclick = ()=>{
-
-    const confirmClear = confirm(
-        "WARNING!\n\nThis will remove ALL saved job totals and cannot be retrieved.\n\nAre you sure?"
-    );
 
 
-    if(!confirmClear){
+function attachMinimize(){
+
+    const btn =
+    box.querySelector("#minimizeTotals");
+
+
+    if(!btn)
         return;
-    }
 
 
-    localStorage.removeItem(STORAGE);
 
+    btn.onclick=function(e){
 
-    const jobName = document.querySelector("#overview-jobName");
+        e.stopPropagation();
 
-    if(jobName){
+        minimizeBox();
 
-        jobName.value = "";
+    };
 
-        jobName.dispatchEvent(
-            new Event("input",{bubbles:true})
-        );
-
-        jobName.dispatchEvent(
-            new Event("change",{bubbles:true})
-        );
-
-    }
-
-
-    showTotals();
-
-};
 
 }
 
+
+
+attachMinimize();
+
+enableDrag();
+
+
+
+document.body.appendChild(box);
+
+
+}
 
 
 
