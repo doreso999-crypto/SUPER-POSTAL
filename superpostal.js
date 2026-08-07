@@ -627,7 +627,7 @@ overflow:"visible"
 box.innerHTML = `
 
 <div style="
-display:flex;
+display:flex";
 justify-content:flex-end;
 ">
 
