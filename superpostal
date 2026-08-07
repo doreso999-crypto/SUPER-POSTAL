@@ -4,8 +4,6 @@
 // @version      1.1
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
-// @updateURL    https://raw.githubusercontent.com/YOUR_USERNAME/SUPER-POSTAL/main/super-postal.user.js
-// @downloadURL  https://raw.githubusercontent.com/YOUR_USERNAME/SUPER-POSTAL/main/super-postal.user.js
 // @grant        none
 // ==/UserScript==
 
