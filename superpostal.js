@@ -271,14 +271,14 @@ function populateRecipientFromJob() {
 
     if (!jobName) return;
 
-
     const name = jobName.value.toUpperCase();
 
 
+    // =============================
+    // EQUIFAX
+    // =============================
 
-    // EQU / EQ
     if (name.includes("EQU") || name.includes("EQ")) {
-
 
         fillRecipient(
             '#address-name',
@@ -305,16 +305,15 @@ function populateRecipientFromJob() {
             '30374-0256'
         );
 
-
         console.log("Equifax address loaded");
-
     }
 
 
+    // =============================
+    // TRANSUNION
+    // =============================
 
-    // TU
-    if (name.includes("TU")) {
-
+    else if (name.includes("TU")) {
 
         fillRecipient(
             '#address-name',
@@ -341,9 +340,45 @@ function populateRecipientFromJob() {
             '19016'
         );
 
-
         console.log("TransUnion address loaded");
+    }
 
+
+    // =============================
+    // EXPERIAN
+    // =============================
+
+    else if (
+        name.includes("EXP") ||
+        name.includes("EXPERIAN")
+    ) {
+
+        fillRecipient(
+            '#address-name',
+            'Experian'
+        );
+
+        fillRecipient(
+            '#address-addr1',
+            'P.O. Box 2002'
+        );
+
+        fillRecipient(
+            '#address-city',
+            'Allen'
+        );
+
+        fillRecipient(
+            '#address-state',
+            'TX'
+        );
+
+        fillRecipient(
+            '#address-zip',
+            '75013'
+        );
+
+        console.log("Experian address loaded");
     }
 
 }
@@ -438,11 +473,11 @@ function getJobName(){
 
 function getBureau(){
 
-    let name =
-    getJobName().toUpperCase();
+    let name = getJobName().toUpperCase();
 
 
-    if(
+    // EQUIFAX
+    if (
         name.includes("EQU") ||
         name.includes("EQ")
     ){
@@ -450,13 +485,25 @@ function getBureau(){
     }
 
 
-    if(name.includes("TU")){
+    // TRANSUNION
+    if (
+        name.includes("TU") ||
+        name.includes("TRANSUNION")
+    ){
         return "TRANSUNION";
     }
 
 
-    return null;
+    // EXPERIAN
+    if (
+        name.includes("EXP") ||
+        name.includes("EXPERIAN")
+    ){
+        return "EXPERIAN";
+    }
 
+
+    return null;
 }
 
 
@@ -512,14 +559,18 @@ saveJobs(jobs);
 
 let equifax = [];
 let transunion = [];
+let experian = [];
 
 Object.values(jobs).forEach(job=>{
 
-    if(job.bureau==="EQUIFAX")
-        equifax.push(job);
+if(job.bureau==="EQUIFAX")
+    equifax.push(job);
 
-    if(job.bureau==="TRANSUNION")
-        transunion.push(job);
+if(job.bureau==="TRANSUNION")
+    transunion.push(job);
+
+if(job.bureau==="EXPERIAN")
+    experian.push(job);
 
 });
 
@@ -528,6 +579,9 @@ let equifaxTotal =
 
 let transunionTotal =
     transunion.reduce((a,b)=>a+b.price,0);
+
+let experianTotal =
+    experian.reduce((a,b)=>a+b.price,0);
 
 
 let box = document.querySelector("#bureauTotals");
@@ -573,7 +627,7 @@ overflow:"visible"
 box.innerHTML = `
 
 <div style="
-display:flex;
+display:flex-end;
 justify-content:flex-end;
 ">
 
@@ -585,7 +639,7 @@ font-size:25px;
 font-weight:bold;
 cursor:pointer;
 ">
-−
+x
 </button>
 
 </div>
@@ -1019,8 +1073,21 @@ if(transunion.length){
 
 }
 
+    if(experian.length){
+
+    content += list(
+        "EXPERIAN",
+        experian,
+        experianTotal
+    );
+}
+
 // SHOW MESSAGE IF NOTHING EXISTS YET
-if(!equifax.length && !transunion.length){
+if(
+    !equifax.length &&
+    !transunion.length &&
+    !experian.length
+){
 
     content += `
 
