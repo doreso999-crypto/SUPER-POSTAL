@@ -424,366 +424,604 @@ recipientObserver.observe(document.body, {
 watchJobName();
 
 ///////////////////////////////
-// MULTI TAB BUREAU TRACKER v2
+// POSTAL CALCULATOR
 ///////////////////////////////
 (function(){
 
-const tabID =
-window.location.href.match(/id=(\d+)/)?.[1];
-
-if(!tabID) return;
-
-
-const STORAGE = "postalocityJobs";
-
-
-
-function loadJobs(){
-
-    return JSON.parse(
-        localStorage.getItem(STORAGE) || "{}"
-    );
-
-}
-
-
-
-function saveJobs(data){
-
-    localStorage.setItem(
-        STORAGE,
-        JSON.stringify(data)
-    );
-
-}
-
-
-
-function getJobName(){
-
-    return (
-        document.querySelector('#jobName')?.innerText ||
-        document.querySelector('#overview-jobName')?.value ||
-        "Unknown"
-    ).trim();
-
-}
-
-
-
-function getBureau(){
-
-    let name = getJobName().toUpperCase();
-
-
-    // EQUIFAX
-    if (
-        name.includes("EQU") ||
-        name.includes("EQ")
-    ){
-        return "EQUIFAX";
-    }
-
-
-    // TRANSUNION
-    if (
-        name.includes("TU") ||
-        name.includes("TRANSUNION")
-    ){
-        return "TRANSUNION";
-    }
-
-
-    // EXPERIAN
-    if (
-        name.includes("EXP") ||
-        name.includes("EXPERIAN")
-    ){
-        return "EXPERIAN";
-    }
-
-
-    return null;
-}
-
-
-
-function getPrice(){
-
-    let text =
-    document.querySelector('.totalPrice')
-    ?.innerText || "$0";
-
-
-    return Number(
-        text.replace(/[^0-9.]/g,"")
-    ) || 0;
-
-}
-
-
-
-
-function registerJob(){
-
-let jobs = loadJobs();
-
-
-
-jobs[tabID] = {
-
-    id: tabID,
-    name:getJobName(),
-    bureau:getBureau(),
-    price:getPrice(),
-    updated:Date.now()
-
-};
-
-saveJobs(jobs);
-
-}
-
-
-
-
-function showTotals(){
-
-let jobs = loadJobs();
-
-
-
-saveJobs(jobs);
-
-
-
-let equifax = [];
-let transunion = [];
-let experian = [];
-
-Object.values(jobs).forEach(job=>{
-
-if(job.bureau==="EQUIFAX")
-    equifax.push(job);
-
-if(job.bureau==="TRANSUNION")
-    transunion.push(job);
-
-if(job.bureau==="EXPERIAN")
-    experian.push(job);
-
-});
-
-let equifaxTotal =
-    equifax.reduce((a,b)=>a+b.price,0);
-
-let transunionTotal =
-    transunion.reduce((a,b)=>a+b.price,0);
-
-let experianTotal =
-    experian.reduce((a,b)=>a+b.price,0);
-
-
-let box = document.querySelector("#bureauTotals");
-
-
-if(!box){
-
-box = document.createElement("div");
+const box = document.createElement("div");
 
 box.id = "bureauTotals";
 
-
 Object.assign(box.style,{
+    position:"fixed",
+    top:"120px",
+    right:"15px",
+    width:"320px",
+    background:"rgb(242,179,46)",
+    color:"black",
+    padding:"25px",
+    borderRadius:"12px",
+    zIndex:"999999",
+    boxShadow:"0 0 15px rgba(0,0,0,.45)",
+    cursor:"move",
+    overflow:"visible",
+    boxSizing:"border-box",
+    fontFamily:"Arial, sans-serif"
+});
 
-position:"fixed",
 
-top:"120px",
+// =============================
+// CALCULATOR
+// =============================
 
-right:"15px",
+box.innerHTML = `
 
-width:"320px",
+<div
+    id="calculator"
+    style="
+        width:100%;
+        position:relative;
+        z-index:20;
+    "
+>
 
-background:"rgb(242,179,46)",
+    <!-- TITLE -->
+    <div style="
+        font-size:20px;
+        font-weight:800;
+        text-align:center;
+        margin-bottom:12px;
+        letter-spacing:1px;
+    ">
+        TOTALOCITY
+    </div>
 
-color:"black",
 
-padding:"25px",
+    <!-- DISPLAY -->
+    <input
+        id="calcDisplay"
+        type="text"
+        value=""
+        placeholder="0"
+        autocomplete="off"
+        spellcheck="false"
+        style="
+            width:100%;
+            height:55px;
+            box-sizing:border-box;
+            border:none;
+            border-radius:8px;
+            background:#222;
+            color:white;
+            font-size:27px;
+            font-weight:bold;
+            text-align:right;
+            padding:8px 12px;
+            outline:none;
+            margin-bottom:12px;
+        "
+    >
 
-borderRadius:"12px",
 
-zIndex:"999999",
+    <!-- BUTTONS -->
 
-boxShadow:"0 0 15px rgba(0,0,0,.45)",
+    <div
+        id="calcButtons"
+        style="
+            display:grid;
+            grid-template-columns:repeat(4,1fr);
+            gap:7px;
+        "
+    >
 
-cursor:"move",
+        <button data-action="clear">AC</button>
+        <button data-action="backspace">⌫</button>
+        <button data-value="/">÷</button>
+        <button data-value="*">×</button>
 
-overflow:"visible"
+        <button data-value="7">7</button>
+        <button data-value="8">8</button>
+        <button data-value="9">9</button>
+        <button data-value="-">−</button>
+
+        <button data-value="4">4</button>
+        <button data-value="5">5</button>
+        <button data-value="6">6</button>
+        <button data-value="+">+</button>
+
+        <button data-value="1">1</button>
+        <button data-value="2">2</button>
+        <button data-value="3">3</button>
+        <button
+            data-action="equals"
+            style="
+                grid-row:span 2;
+                background:#111;
+                color:white;
+            "
+        >=</button>
+
+        <button
+            data-value="0"
+            style="grid-column:span 2;"
+        >
+            0
+        </button>
+
+        <button data-value=".">.</button>
+
+    </div>
+
+</div>
+
+`;
+
+
+// =============================
+// BUTTON STYLE
+// =============================
+
+const buttons =
+box.querySelectorAll("#calcButtons button");
+
+buttons.forEach(button => {
+
+    Object.assign(button.style,{
+        height:"48px",
+        border:"none",
+        borderRadius:"8px",
+        background:"#f5f5f5",
+        color:"#111",
+        fontSize:"20px",
+        fontWeight:"700",
+        cursor:"pointer",
+        boxShadow:"0 2px 4px rgba(0,0,0,.25)",
+        transition:"transform .05s"
+    });
+
+
+    button.addEventListener("mousedown",()=>{
+        button.style.transform="scale(.94)";
+    });
+
+
+    button.addEventListener("mouseup",()=>{
+        button.style.transform="scale(1)";
+    });
+
+
+    button.addEventListener("mouseleave",()=>{
+        button.style.transform="scale(1)";
+    });
 
 });
 
 
+// =============================
+// CROSS-TAB SYNC
+// =============================
 
-box.innerHTML = `
+const STORAGE_KEY = "postalCalcValue";
 
-<div style="
-display:flex";
-justify-content:flex-end;
-">
+// Save current display value to localStorage so other tabs can read it
+function syncToStorage(){
 
-<button id="minimizeTotals"
-style="
-border:none;
-background:none;
-font-size:25px;
-font-weight:bold;
-cursor:pointer;
-">
-x
-</button>
+    const display =
+        box.querySelector("#calcDisplay");
 
-</div>
+    if(!display)
+        return;
+
+    localStorage.setItem(STORAGE_KEY, display.value);
+
+}
 
 
-<div id="bureauContent"></div>
+// =============================
+// CALCULATOR LOGIC
+// =============================
 
-<button id="clearTotalsBtn"
-style="
-    margin-top:20px;
-    width:100%;
-    background:#d9534f;
-    color:white;
-    border:none;
-    border-radius:6px;
-    padding:10px;
-    cursor:pointer;
-    font-weight:bold;
-">
-    CLEAR
-</button>
+const display =
+box.querySelector("#calcDisplay");
 
-`;
 
+// Load any existing value from another tab on startup
+const existingValue =
+localStorage.getItem(STORAGE_KEY);
+
+if(existingValue !== null){
+    display.value = existingValue;
+}
+
+
+// Listen for changes made in OTHER tabs and mirror them here
+window.addEventListener("storage",function(e){
+
+    if(e.key === STORAGE_KEY && e.newValue !== null){
+
+        const liveDisplay =
+            box.querySelector("#calcDisplay");
+
+        if(liveDisplay){
+            liveDisplay.value = e.newValue;
+        }
+
+    }
+
+});
+
+
+function calculate(){
+
+    let expression =
+        display.value.trim();
+
+    if(!expression)
+        return;
+
+
+    try {
+
+        // Only allow calculator characters
+        if(!/^[0-9+\-*/().\s]+$/.test(expression))
+            throw new Error();
+
+
+        const result =
+            Function(
+                '"use strict"; return (' +
+                expression +
+                ')'
+            )();
+
+
+        if(
+            typeof result !== "number" ||
+            !Number.isFinite(result)
+        ){
+            throw new Error();
+        }
+
+
+        display.value =
+            String(
+                Number(
+                    result.toFixed(10)
+                )
+            );
+
+        syncToStorage();
+
+    }
+    catch {
+
+        display.value = "Error";
+
+        setTimeout(()=>{
+            display.value="";
+            syncToStorage();
+        },800);
+
+    }
+
+}
+
+
+function clearCalculator(){
+
+    display.value="";
+
+    display.focus();
+
+    syncToStorage();
+
+}
+
+
+function backspace(){
+
+    display.value =
+        display.value.slice(0,-1);
+
+    display.focus();
+
+    syncToStorage();
+
+}
+
+
+function addValue(value){
+
+    if(display.value==="Error")
+        display.value="";
+
+
+    display.value += value;
+
+    display.focus();
+
+    syncToStorage();
+
+}
+
+
+// =============================
+// BUTTON EVENTS
+// =============================
+
+box.querySelectorAll(
+    "#calcButtons button"
+).forEach(button => {
+
+    button.addEventListener("click",function(e){
+
+        e.stopPropagation();
+
+
+        const value =
+            this.dataset.value;
+
+        const action =
+            this.dataset.action;
+
+
+        if(action==="clear"){
+
+            clearCalculator();
+
+            return;
+        }
+
+
+        if(action==="backspace"){
+
+            backspace();
+
+            return;
+        }
+
+
+        if(action==="equals"){
+
+            calculate();
+
+            return;
+        }
+
+
+        if(value){
+
+            addValue(value);
+
+        }
+
+    });
+
+});
+
+
+// =============================
+// KEYBOARD INPUT
+// =============================
+
+display.addEventListener("keydown",function(e){
+
+    // =============================
+    // ALLOW NORMAL COPY / SELECT
+    // =============================
+
+    if(e.ctrlKey || e.metaKey){
+
+        if(
+            e.key.toLowerCase()==="a" ||
+            e.key.toLowerCase()==="c" ||
+            e.key.toLowerCase()==="x" ||
+            e.key.toLowerCase()==="v"
+        ){
+
+            return;
+
+        }
+
+    }
+
+
+    // =============================
+    // ENTER = CALCULATE
+    // =============================
+
+    if(e.key==="Enter"){
+
+        e.preventDefault();
+
+        calculate();
+
+        return;
+
+    }
+
+
+    // =============================
+    // ESCAPE = CLEAR
+    // =============================
+
+    if(e.key==="Escape"){
+
+        e.preventDefault();
+
+        clearCalculator();
+
+        return;
+
+    }
+
+
+    // =============================
+    // NORMAL EDITING
+    // =============================
+
+    if(
+        e.key==="Backspace" ||
+        e.key==="Delete" ||
+        e.key==="ArrowLeft" ||
+        e.key==="ArrowRight" ||
+        e.key==="Home" ||
+        e.key==="End" ||
+        e.key==="Tab"
+    ){
+
+        return;
+
+    }
+
+
+    // =============================
+    // CALCULATOR CHARACTERS
+    // =============================
+
+    if(
+        /^[0-9+\-*/().]$/.test(e.key)
+    ){
+
+        return;
+
+    }
+
+
+    // Block everything else
+    e.preventDefault();
+
+});
 
 
 // =============================
 // MASCOT
 // =============================
 
-const mascot=document.createElement("img");
-
+const mascot =
+document.createElement("img");
 
 mascot.id="postalMascot";
 
-
-mascot.src=
+mascot.src =
 "https://media.discordapp.net/attachments/1504512479990911130/1535403918438441071/keltz2.png?ex=6a77a3d4&is=6a765254&hm=754db8c87c2b7b460e3b2e3ca82ed111e15f422dd191d97d79f2097df3675e86&=&format=webp&quality=lossless";
 
-
 Object.assign(mascot.style,{
-position:"absolute",
-right:"320px",
-top:"-40px",
-size:"500px",
-height:"400px",
-pointerEvents:"none",
-userSelect:"none",
-zIndex:"0"
+    position:"absolute",
+    right:"222px",
+    top:"-40px",
+    width:"500px",
+    height:"400px",
+    objectFit:"contain",
+    pointerEvents:"none",
+    userSelect:"none",
+    zIndex:"0"
 });
-
-
 
 box.appendChild(mascot);
 
 
+// =============================
+// MINIMIZE BUTTON
+// =============================
+
+const minimize =
+document.createElement("button");
+
+minimize.id="minimizeTotals";
+
+minimize.innerHTML="−";
+
+Object.assign(minimize.style,{
+    position:"absolute",
+    top:"5px",
+    right:"5px",
+    width:"28px",
+    height:"28px",
+    border:"none",
+    borderRadius:"50%",
+    background:"rgba(0,0,0,.15)",
+    color:"black",
+    fontSize:"20px",
+    fontWeight:"bold",
+    cursor:"pointer",
+    zIndex:"30"
+});
+
+box.appendChild(minimize);
 
 
 // =============================
-// DRAG SYSTEM (ONLY WHEN EXPANDED)
+// DRAG
 // =============================
 
-let dragging = false;
-let offsetX = 0;
-let offsetY = 0;
+let dragging=false;
+let offsetX=0;
+let offsetY=0;
 
 
-function enableDrag(){
+box.addEventListener("mousedown",function(e){
 
-    box.onmousedown = function(e){
-
-        // disable drag when minimized
-        if(box.dataset.minimized === "true")
-            return;
-
-
-        if(e.target.tagName === "BUTTON")
-            return;
+    if(
+        e.target.tagName==="BUTTON" ||
+        e.target.tagName==="INPUT"
+    )
+        return;
 
 
-        dragging = true;
+    dragging=true;
+
+    offsetX =
+        e.clientX-box.offsetLeft;
+
+    offsetY =
+        e.clientY-box.offsetTop;
+
+});
 
 
-        offsetX = e.clientX - box.offsetLeft;
-        offsetY = e.clientY - box.offsetTop;
+document.addEventListener("mousemove",function(e){
 
-    };
-
-
-    document.onmousemove = function(e){
-
-        if(!dragging)
-            return;
+    if(!dragging)
+        return;
 
 
-        box.style.left =
-        (e.clientX - offsetX) + "px";
+    box.style.left =
+        (e.clientX-offsetX)+"px";
+
+    box.style.top =
+        (e.clientY-offsetY)+"px";
+
+    box.style.right="auto";
+
+});
 
 
-        box.style.top =
-        (e.clientY - offsetY) + "px";
+document.addEventListener("mouseup",function(){
 
+    dragging=false;
 
-        box.style.right="auto";
-
-    };
-
-
-    document.onmouseup=function(){
-
-        dragging=false;
-
-    };
-
-}
+});
 
 
 // =============================
-// MINIMIZE SYSTEM
+// MINIMIZE
 // =============================
 
-let fullState = null;
+let savedHTML="";
 
 
 function minimizeBox(){
 
-    fullState = {
-
-        html: box.innerHTML,
-
-        left: box.style.left,
-
-        top: box.style.top,
-
-        right: box.style.right
-
-    };
+    savedHTML =
+        box.innerHTML;
 
 
     box.dataset.minimized="true";
 
 
-    // MINIMIZED PNG
-    box.innerHTML = `
+    box.innerHTML=`
+
         <img
             src="https://media.discordapp.net/attachments/1504512479990911130/1535406054077366282/bay-removebg-preview.png?ex=6a77a5d1&is=6a765451&hm=e6648fbb3ae0b462f6a73df81715794f4e0ee22c67c2fed5878517e31b510436&=&format=webp&quality=lossless&width=401&height=512"
             style="
@@ -795,48 +1033,41 @@ function minimizeBox(){
                 user-select:none;
             "
         >
+
     `;
 
 
     Object.assign(box.style,{
 
         width:"60px",
-
         height:"60px",
-
         padding:"0",
 
         borderRadius:"50%",
 
-        position:"fixed",
+        background:"transparent",
+
+        boxShadow:"none",
 
         right:"15px",
-
         top:"120px",
-
         left:"auto",
 
         display:"flex",
 
         alignItems:"center",
-
         justifyContent:"center",
-
-        fontSize:"initial",
 
         cursor:"pointer",
 
         overflow:"hidden"
 
-
     });
 
 
-    // REMOVE DRAG WHILE MINIMIZED
     box.onmousedown=null;
 
 
-    // CLICK PNG TO RESTORE
     box.onclick=function(){
 
         restoreBox();
@@ -846,88 +1077,48 @@ function minimizeBox(){
 }
 
 
-
-
 function restoreBox(){
-
 
     box.dataset.minimized="false";
 
 
     box.innerHTML =
-    fullState.html;
-
+        savedHTML;
 
 
     Object.assign(box.style,{
 
         width:"320px",
-
         height:"auto",
 
         padding:"25px",
 
         borderRadius:"12px",
 
+        background:"rgb(242,179,46)",
+
+        boxShadow:"0 0 15px rgba(0,0,0,.45)",
+
+        top:"120px",
+        right:"15px",
+        left:"auto",
+
         display:"block",
-
-        fontSize:"initial",
-
-        overflow:"visible",
 
         cursor:"move",
 
-        // RESET POSITION WHEN EXPANDING
-        top:"120px",
-
-        right:"15px",
-
-        left:"auto"
+        overflow:"visible"
 
     });
-
 
 
     box.onclick=null;
 
 
-
-    const btn =
-    box.querySelector("#minimizeTotals");
-
-
-    if(btn){
-
-        btn.onclick=function(e){
-
-            e.stopPropagation();
-
-            minimizeBox();
-
-        };
-
-    }
-
-
-    enableDrag();
-
-}
-
-
-
-
-function attachMinimize(){
-
-    const btn =
-    box.querySelector("#minimizeTotals");
-
-
-    if(!btn)
-        return;
-
-
-
-    btn.onclick=function(e){
+    // Reconnect minimize button
+    box.querySelector(
+        "#minimizeTotals"
+    ).onclick=function(e){
 
         e.stopPropagation();
 
@@ -936,255 +1127,279 @@ function attachMinimize(){
     };
 
 
-}
+    // Reconnect calculator
+    reconnectCalculator();
 
 
-
-attachMinimize();
-
-enableDrag();
-
-
-
-document.body.appendChild(box);
-
+    enableDrag();
 
 }
 
 
+function reconnectCalculator(){
 
-function list(title,data,total){
+    const display =
+        box.querySelector("#calcDisplay");
 
-    let html = `
-
-    <div style="
-        font-size:15px;
-        font-weight:bold;
-        margin-top:10px;
-        margin-bottom:5px;
-    ">
-        ${title}
-    </div>
-
-    `;
+    if(!display)
+        return;
 
 
+    // Restore value from storage (in case another tab updated it
+    // while this box was minimized)
+    const existingValue =
+        localStorage.getItem(STORAGE_KEY);
 
-    data.forEach(j=>{
+    if(existingValue !== null){
+        display.value = existingValue;
+    }
 
-        html += `
 
-        <div style="
-            display:flex;
-            justify-content:space-between;
-            padding:2px 0;
-        ">
+    box.querySelectorAll(
+        "#calcButtons button"
+    ).forEach(button => {
 
-            <span>${j.name}</span>
+        button.onclick=function(e){
 
-            <span>$${j.price.toFixed(2)}</span>
+            e.stopPropagation();
 
-        </div>
 
-        `;
+            const value =
+                this.dataset.value;
+
+            const action =
+                this.dataset.action;
+
+
+            if(action==="clear"){
+
+                display.value="";
+
+            }
+
+            else if(action==="backspace"){
+
+                display.value =
+                    display.value.slice(0,-1);
+
+            }
+
+            else if(action==="equals"){
+
+                try {
+
+                    if(
+                        !/^[0-9+\-*/().\s]+$/
+                            .test(display.value)
+                    )
+                        throw new Error();
+
+
+                    const result =
+                        Function(
+                            '"use strict"; return (' +
+                            display.value +
+                            ')'
+                        )();
+
+
+                    display.value =
+                        String(
+                            Number(
+                                result.toFixed(10)
+                            )
+                        );
+
+                }
+                catch {
+
+                    display.value="Error";
+
+                }
+
+            }
+
+            else if(value){
+
+                if(display.value==="Error")
+                    display.value="";
+
+                display.value += value;
+
+            }
+
+
+            display.focus();
+
+            syncToStorage();
+
+        };
 
     });
 
 
+display.onkeydown=function(e){
 
-    html += `
+    // =============================
+    // ALLOW COPY / SELECT / PASTE
+    // =============================
 
-    <div style="
-        margin-top:6px;
-        font-weight:bold;
-        color:#hsv(24°, 0%, 0%);
-        display:flex;
-        justify-content:space-between;
-    ">
+    if(e.ctrlKey || e.metaKey){
 
-        <span>TOTAL</span>
+        if(
+            e.key.toLowerCase()==="a" ||
+            e.key.toLowerCase()==="c" ||
+            e.key.toLowerCase()==="x" ||
+            e.key.toLowerCase()==="v"
+        ){
 
-        <span>$${total.toFixed(2)}</span>
+            return;
 
-    </div>
-
-    `;
-
-
-    return html;
-
-}
-
-
-
-
-
-let content = `
-
-<div style="
-    text-align:center;
-    padding-bottom:10px;
-    margin-bottom:10px;
-    border-bottom:1px solid rgba(255,255,255,.4);
-">
-
-    <div style="
-        font-family:'Montserrat', sans-serif;
-        font-size:24px;
-        font-weight:800;
-        letter-spacing:1px;
-    ">
-    </div>
-
-
-    <span style="
-        font-family:'Montserrat', sans-serif;
-        font-size:24px;
-        font-weight:800;
-        letter-spacing:1px;
-    ">
-        TOTALOCITY
-    </span>
-
-</div>
-
-`;
-
-
-if(equifax.length){
-
-    content += list(
-        "EQUIFAX",
-        equifax,
-        equifaxTotal
-    );
-
-}
-
-
-
-if(transunion.length){
-
-    content += list(
-        "TRANSUNION",
-        transunion,
-        transunionTotal
-    );
-
-}
-
-    if(experian.length){
-
-    content += list(
-        "EXPERIAN",
-        experian,
-        experianTotal
-    );
-}
-
-// SHOW MESSAGE IF NOTHING EXISTS YET
-if(
-    !equifax.length &&
-    !transunion.length &&
-    !experian.length
-){
-
-    content += `
-
-    <div style="
-        text-align:center;
-        margin-top:20px;
-        margin-bottom:20px;
-        font-size:25px;
-    ">
-        Hi! I'm Postal-Man <br>
-        I will help you total your expenses :)
-    </div>
-
-    `;
-
-}
-
-
-
-content += `
-
-<div style="
-    margin-top:15px;
-    padding-top:10px;
-    border-top:1px solid rgba(255,255,255,.4);
-    font-size:14px;
-">
-
-    • Double check totals before submission.<br>
-    • Clear previous data before starting a new postal..<br>
-</div>
-
-`;
-
-
-
-const contentBox =
-    document.querySelector("#bureauContent");
-
-
-contentBox.innerHTML = content;
-
-
-
-Object.assign(contentBox.style,{
-
-    position:"relative",
-
-    zIndex:"99"
-
-});
-
-
-}
-
-
-
-
-
-// FAST UPDATE
-setInterval(()=>{
-
-    registerJob();
-
-    showTotals();
-
-},1000);
-
-
-
-// FAST UPDATE
-setInterval(()=>{
-
-    registerJob();
-    showTotals();
-
-},1000);
-
-
-// update instantly when another tab writes
-window.addEventListener("storage", (e)=>{
-
-    if(e.key === STORAGE){
-
-        showTotals();
+        }
 
     }
 
-});
+
+    // =============================
+    // ENTER
+    // =============================
+
+    if(e.key==="Enter"){
+
+        e.preventDefault();
+
+        const expression =
+            display.value;
+
+        try {
+
+            if(
+                !/^[0-9+\-*/().\s]+$/
+                    .test(expression)
+            )
+                throw new Error();
 
 
-// initial load
-registerJob();
-showTotals();
+            const result =
+                Function(
+                    '"use strict"; return (' +
+                    expression +
+                    ')'
+                )();
 
 
-})(); // END MULTI TAB TRACKER
+            display.value =
+                String(
+                    Number(
+                        result.toFixed(10)
+                    )
+                );
+
+        }
+        catch {
+
+            display.value="Error";
+
+        }
+
+        syncToStorage();
+
+        return;
+
+    }
+
+
+    // =============================
+    // ESCAPE
+    // =============================
+
+    if(e.key==="Escape"){
+
+        e.preventDefault();
+
+        display.value="";
+
+        syncToStorage();
+
+        return;
+
+    }
+
+
+    // =============================
+    // NORMAL TEXT EDITING
+    // =============================
+
+    if(
+        e.key==="Backspace" ||
+        e.key==="Delete" ||
+        e.key==="ArrowLeft" ||
+        e.key==="ArrowRight" ||
+        e.key==="Home" ||
+        e.key==="End" ||
+        e.key==="Tab"
+    ){
+
+        return;
+
+    }
+
+
+    // =============================
+    // CALCULATOR CHARACTERS
+    // =============================
+
+    if(
+        /^[0-9+\-*/().]$/.test(e.key)
+    ){
+
+        return;
+
+    }
+
+
+    // Block everything else
+    e.preventDefault();
+
+};
+
+}
+
+
+// =============================
+// MINIMIZE EVENT
+// =============================
+
+minimize.onclick=function(e){
+
+    e.stopPropagation();
+
+    minimizeBox();
+
+};
+
+
+// =============================
+// ADD TO PAGE
+// =============================
+
+document.body.appendChild(box);
+
+
+// Focus calculator
+setTimeout(()=>{
+
+    const display =
+        box.querySelector("#calcDisplay");
+
+    if(display)
+        display.focus();
+
+},100);
+
+
+
+})();
 
 
 })(); // END MAIN SCRIPT
