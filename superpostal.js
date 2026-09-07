@@ -904,7 +904,7 @@ document.createElement("img");
 mascot.id="postalMascot";
 
 mascot.src =
-"https://media.discordapp.net/attachments/1504512479990911130/1535403918438441071/keltz2.png?ex=6a77a3d4&is=6a765254&hm=754db8c87c2b7b460e3b2e3ca82ed111e15f422dd191d97d79f2097df3675e86&=&format=webp&quality=lossless";
+"https://media.discordapp.net/attachments/1532495342258356326/1546587377995219194/NEW.png?ex=6aa0533d&is=6a9f01bd&hm=dba1cb05ff1abc88f8794c9e6a3c32db69ff61ce1eb4bfe375878538b40b3797&=&format=webp&quality=lossless";
 
 Object.assign(mascot.style,{
     position:"absolute",
@@ -1023,7 +1023,7 @@ function minimizeBox(){
     box.innerHTML=`
 
         <img
-            src="https://media.discordapp.net/attachments/1504512479990911130/1535406054077366282/bay-removebg-preview.png?ex=6a77a5d1&is=6a765451&hm=e6648fbb3ae0b462f6a73df81715794f4e0ee22c67c2fed5878517e31b510436&=&format=webp&quality=lossless&width=401&height=512"
+            src="https://media.discordapp.net/attachments/1532495342258356326/1546587377995219194/NEW.png?ex=6aa0533d&is=6a9f01bd&hm=dba1cb05ff1abc88f8794c9e6a3c32db69ff61ce1eb4bfe375878538b40b3797&=&format=webp&quality=lossless"
             style="
                 width:60px;
                 height:60px;
