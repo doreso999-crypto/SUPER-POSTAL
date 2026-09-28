@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -473,7 +473,7 @@ box.innerHTML = `
         margin-bottom:12px;
         letter-spacing:1px;
     ">
-        TOTALOCITY v1.6
+        TOTALOCITY v1.7
     </div>
 
 
@@ -908,6 +908,7 @@ mascot.src =
 
 Object.assign(mascot.style,{
     position:"absolute",
+    left:"-90px",
     top:"-170px",
     width:"500px",
     height:"400px",
