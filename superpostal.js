@@ -904,7 +904,7 @@ document.createElement("img");
 mascot.id="postalMascot";
 
 mascot.src =
-"https://media.discordapp.net/attachments/1532495342258356326/1546587377995219194/NEW.png?ex=6aa0533d&is=6a9f01bd&hm=dba1cb05ff1abc88f8794c9e6a3c32db69ff61ce1eb4bfe375878538b40b3797&=&format=webp&quality=lossless";
+"https://drive.google.com/file/d/1q64iloqM_w5f7AAvZX_laA9q1w3jiw_m/view?usp=drive_link";
 
 Object.assign(mascot.style,{
     position:"absolute",
@@ -1023,7 +1023,7 @@ function minimizeBox(){
     box.innerHTML=`
 
         <img
-            src="https://media.discordapp.net/attachments/1532495342258356326/1546587377995219194/NEW.png?ex=6aa0533d&is=6a9f01bd&hm=dba1cb05ff1abc88f8794c9e6a3c32db69ff61ce1eb4bfe375878538b40b3797&=&format=webp&quality=lossless"
+            src="https://drive.google.com/file/d/1q64iloqM_w5f7AAvZX_laA9q1w3jiw_m/view?usp=drive_link"
             style="
                 width:60px;
                 height:60px;
