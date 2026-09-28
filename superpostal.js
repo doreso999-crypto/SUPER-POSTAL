@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -434,7 +434,7 @@ box.id = "bureauTotals";
 
 Object.assign(box.style,{
     position:"fixed",
-    top:"160px",
+    top:"260px",
     right:"15px",
     width:"320px",
     background:"rgb(242,179,46)",
@@ -442,6 +442,7 @@ Object.assign(box.style,{
     padding:"25px",
     borderRadius:"12px",
     zIndex:"999999",
+    isolation:"isolate",
     boxShadow:"0 0 15px rgba(0,0,0,.45)",
     cursor:"move",
     overflow:"visible",
@@ -473,7 +474,7 @@ box.innerHTML = `
         margin-bottom:12px;
         letter-spacing:1px;
     ">
-        TOTALOCITY v1.7
+        TOTALOCITY v1.8
     </div>
 
 
@@ -915,7 +916,7 @@ Object.assign(mascot.style,{
     objectFit:"contain",
     pointerEvents:"none",
     userSelect:"none",
-    zIndex:"0"
+    zIndex:"-1"
 });
 
 box.appendChild(mascot);
@@ -1050,7 +1051,7 @@ function minimizeBox(){
         boxShadow:"none",
 
         right:"15px",
-        top:"160px",
+        top:"260px",
         left:"auto",
 
         display:"flex",
@@ -1099,7 +1100,7 @@ function restoreBox(){
 
         boxShadow:"0 0 15px rgba(0,0,0,.45)",
 
-        top:"160px",
+        top:"260px",
         right:"15px",
         left:"auto",
 
