@@ -904,7 +904,7 @@ document.createElement("img");
 mascot.id="postalMascot";
 
 mascot.src =
-"https://drive.google.com/uc?export=view&id=1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159";
+"https://drive.google.com/file/d/1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159/view?usp=drive_link";
 
 Object.assign(mascot.style,{
     position:"absolute",
@@ -1023,7 +1023,7 @@ function minimizeBox(){
     box.innerHTML=`
 
         <img
-            src="https://drive.google.com/uc?export=view&id=1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159"
+            src="https://drive.google.com/file/d/1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159/view?usp=drive_link"
             style="
                 width:60px;
                 height:60px;
