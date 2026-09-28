@@ -911,8 +911,8 @@ mascot.src =
 
 Object.assign(mascot.style,{
     position:"absolute",
-    left:"-350px",
-    top:"-350px",
+    left:"-100px",
+    top:"-100px",
     width:"500px",
     height:"400px",
     objectFit:"contain",
