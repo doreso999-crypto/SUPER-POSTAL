@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonke
-// @version      2.1
+// @version      2.2
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -444,7 +444,6 @@ Object.assign(box.style,{
     padding:"25px",
     borderRadius:"12px",
     zIndex:"999999",
-    isolation:"isolate",
     boxShadow:"0 0 15px rgba(0,0,0,.45)",
     cursor:"move",
     overflow:"visible",
@@ -476,7 +475,7 @@ box.innerHTML = `
         margin-bottom:12px;
         letter-spacing:1px;
     ">
-        TOTALOCITY v2.1
+        TOTALOCITY v2.2
     </div>
 
 
@@ -606,7 +605,6 @@ buttons.forEach(button => {
 
 const STORAGE_KEY = "postalCalcValue";
 
-// Save current display value to localStorage so other tabs can read it
 function syncToStorage(){
 
     const display =
@@ -628,7 +626,6 @@ const display =
 box.querySelector("#calcDisplay");
 
 
-// Load any existing value from another tab on startup
 const existingValue =
 localStorage.getItem(STORAGE_KEY);
 
@@ -637,7 +634,6 @@ if(existingValue !== null){
 }
 
 
-// Listen for changes made in OTHER tabs and mirror them here
 window.addEventListener("storage",function(e){
 
     if(e.key === STORAGE_KEY && e.newValue !== null){
@@ -665,7 +661,6 @@ function calculate(){
 
     try {
 
-        // Only allow calculator characters
         if(!/^[0-9+\-*/().\s]+$/.test(expression))
             throw new Error();
 
@@ -748,10 +743,6 @@ function addValue(value){
 }
 
 
-// =============================
-// BUTTON EVENTS
-// =============================
-
 box.querySelectorAll(
     "#calcButtons button"
 ).forEach(button => {
@@ -803,15 +794,8 @@ box.querySelectorAll(
 });
 
 
-// =============================
-// KEYBOARD INPUT
-// =============================
 
 display.addEventListener("keydown",function(e){
-
-    // =============================
-    // ALLOW NORMAL COPY / SELECT
-    // =============================
 
     if(e.ctrlKey || e.metaKey){
 
@@ -829,10 +813,6 @@ display.addEventListener("keydown",function(e){
     }
 
 
-    // =============================
-    // ENTER = CALCULATE
-    // =============================
-
     if(e.key==="Enter"){
 
         e.preventDefault();
@@ -844,10 +824,6 @@ display.addEventListener("keydown",function(e){
     }
 
 
-    // =============================
-    // ESCAPE = CLEAR
-    // =============================
-
     if(e.key==="Escape"){
 
         e.preventDefault();
@@ -858,10 +834,6 @@ display.addEventListener("keydown",function(e){
 
     }
 
-
-    // =============================
-    // NORMAL EDITING
-    // =============================
 
     if(
         e.key==="Backspace" ||
@@ -878,10 +850,6 @@ display.addEventListener("keydown",function(e){
     }
 
 
-    // =============================
-    // CALCULATOR CHARACTERS
-    // =============================
-
     if(
         /^[0-9+\-*/().]$/.test(e.key)
     ){
@@ -891,7 +859,6 @@ display.addEventListener("keydown",function(e){
     }
 
 
-    // Block everything else
     e.preventDefault();
 
 });
@@ -910,7 +877,7 @@ mascot.src =
 "https://drive.google.com/thumbnail?id=1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159&sz=w1000";
 
 Object.assign(mascot.style,{
-    position:"absolute",
+    position:"fixed",
     left:"-100px",
     top:"-100px",
     width:"500px",
@@ -918,10 +885,10 @@ Object.assign(mascot.style,{
     objectFit:"contain",
     pointerEvents:"none",
     userSelect:"none",
-    zIndex:"-1"
+    zIndex:"999998"
 });
 
-box.appendChild(mascot);
+document.body.appendChild(mascot);
 
 
 // =============================
@@ -1118,7 +1085,6 @@ function restoreBox(){
     box.onclick=null;
 
 
-    // Reconnect minimize button
     box.querySelector(
         "#minimizeTotals"
     ).onclick=function(e){
@@ -1130,7 +1096,6 @@ function restoreBox(){
     };
 
 
-    // Reconnect calculator
     reconnectCalculator();
 
 
@@ -1148,8 +1113,6 @@ function reconnectCalculator(){
         return;
 
 
-    // Restore value from storage (in case another tab updated it
-    // while this box was minimized)
     const existingValue =
         localStorage.getItem(STORAGE_KEY);
 
@@ -1243,10 +1206,6 @@ function reconnectCalculator(){
 
 display.onkeydown=function(e){
 
-    // =============================
-    // ALLOW COPY / SELECT / PASTE
-    // =============================
-
     if(e.ctrlKey || e.metaKey){
 
         if(
@@ -1262,10 +1221,6 @@ display.onkeydown=function(e){
 
     }
 
-
-    // =============================
-    // ENTER
-    // =============================
 
     if(e.key==="Enter"){
 
@@ -1312,10 +1267,6 @@ display.onkeydown=function(e){
     }
 
 
-    // =============================
-    // ESCAPE
-    // =============================
-
     if(e.key==="Escape"){
 
         e.preventDefault();
@@ -1328,10 +1279,6 @@ display.onkeydown=function(e){
 
     }
 
-
-    // =============================
-    // NORMAL TEXT EDITING
-    // =============================
 
     if(
         e.key==="Backspace" ||
@@ -1348,10 +1295,6 @@ display.onkeydown=function(e){
     }
 
 
-    // =============================
-    // CALCULATOR CHARACTERS
-    // =============================
-
     if(
         /^[0-9+\-*/().]$/.test(e.key)
     ){
@@ -1361,17 +1304,12 @@ display.onkeydown=function(e){
     }
 
 
-    // Block everything else
     e.preventDefault();
 
 };
 
 }
 
-
-// =============================
-// MINIMIZE EVENT
-// =============================
 
 minimize.onclick=function(e){
 
@@ -1382,14 +1320,9 @@ minimize.onclick=function(e){
 };
 
 
-// =============================
-// ADD TO PAGE
-// =============================
-
 document.body.appendChild(box);
 
 
-// Focus calculator
 setTimeout(()=>{
 
     const display =
