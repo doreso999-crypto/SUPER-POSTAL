@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -473,7 +473,7 @@ box.innerHTML = `
         margin-bottom:12px;
         letter-spacing:1px;
     ">
-        TOTALOCITY v1.5
+        TOTALOCITY v1.6
     </div>
 
 
@@ -1049,7 +1049,7 @@ function minimizeBox(){
         boxShadow:"none",
 
         right:"15px",
-        top:"120px",
+        top:"160px",
         left:"auto",
 
         display:"flex",
@@ -1098,7 +1098,7 @@ function restoreBox(){
 
         boxShadow:"0 0 15px rgba(0,0,0,.45)",
 
-        top:"120px",
+        top:"160px",
         right:"15px",
         left:"auto",
 
