@@ -1,12 +1,10 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
-// @namespace    http://tampermonke
-// @version      2.3
+// @namespace    http://tampermonkey.net/
+// @version      1.1
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
-// @updateURL    https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/superpostal.js
-// @downloadURL  https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/superpostal.js
 // ==/UserScript==
 
 
@@ -436,7 +434,7 @@ box.id = "bureauTotals";
 
 Object.assign(box.style,{
     position:"fixed",
-    top:"400px",
+    top:"120px",
     right:"15px",
     width:"320px",
     background:"rgb(242,179,46)",
@@ -475,7 +473,7 @@ box.innerHTML = `
         margin-bottom:12px;
         letter-spacing:1px;
     ">
-        TOTALOCITY v2.3
+        TOTALOCITY
     </div>
 
 
@@ -605,6 +603,7 @@ buttons.forEach(button => {
 
 const STORAGE_KEY = "postalCalcValue";
 
+// Save current display value to localStorage so other tabs can read it
 function syncToStorage(){
 
     const display =
@@ -626,6 +625,7 @@ const display =
 box.querySelector("#calcDisplay");
 
 
+// Load any existing value from another tab on startup
 const existingValue =
 localStorage.getItem(STORAGE_KEY);
 
@@ -634,6 +634,7 @@ if(existingValue !== null){
 }
 
 
+// Listen for changes made in OTHER tabs and mirror them here
 window.addEventListener("storage",function(e){
 
     if(e.key === STORAGE_KEY && e.newValue !== null){
@@ -661,6 +662,7 @@ function calculate(){
 
     try {
 
+        // Only allow calculator characters
         if(!/^[0-9+\-*/().\s]+$/.test(expression))
             throw new Error();
 
@@ -743,6 +745,10 @@ function addValue(value){
 }
 
 
+// =============================
+// BUTTON EVENTS
+// =============================
+
 box.querySelectorAll(
     "#calcButtons button"
 ).forEach(button => {
@@ -794,8 +800,15 @@ box.querySelectorAll(
 });
 
 
+// =============================
+// KEYBOARD INPUT
+// =============================
 
 display.addEventListener("keydown",function(e){
+
+    // =============================
+    // ALLOW NORMAL COPY / SELECT
+    // =============================
 
     if(e.ctrlKey || e.metaKey){
 
@@ -813,6 +826,10 @@ display.addEventListener("keydown",function(e){
     }
 
 
+    // =============================
+    // ENTER = CALCULATE
+    // =============================
+
     if(e.key==="Enter"){
 
         e.preventDefault();
@@ -824,6 +841,10 @@ display.addEventListener("keydown",function(e){
     }
 
 
+    // =============================
+    // ESCAPE = CLEAR
+    // =============================
+
     if(e.key==="Escape"){
 
         e.preventDefault();
@@ -834,6 +855,10 @@ display.addEventListener("keydown",function(e){
 
     }
 
+
+    // =============================
+    // NORMAL EDITING
+    // =============================
 
     if(
         e.key==="Backspace" ||
@@ -850,6 +875,10 @@ display.addEventListener("keydown",function(e){
     }
 
 
+    // =============================
+    // CALCULATOR CHARACTERS
+    // =============================
+
     if(
         /^[0-9+\-*/().]$/.test(e.key)
     ){
@@ -859,6 +888,7 @@ display.addEventListener("keydown",function(e){
     }
 
 
+    // Block everything else
     e.preventDefault();
 
 });
@@ -874,21 +904,21 @@ document.createElement("img");
 mascot.id="postalMascot";
 
 mascot.src =
-"https://drive.google.com/thumbnail?id=1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159&sz=w1000";
+"https://drive.google.com/uc?export=view&id=1q64iloqM_w5f7AAvZX_laA9q1w3jiw_m";
 
 Object.assign(mascot.style,{
-    position:"fixed",
-    left:"150px",
-    top:"100px",
+    position:"absolute",
+    right:"222px",
+    top:"-40px",
     width:"500px",
     height:"400px",
     objectFit:"contain",
     pointerEvents:"none",
     userSelect:"none",
-    zIndex:"999998"
+    zIndex:"0"
 });
 
-document.body.appendChild(mascot);
+box.appendChild(mascot);
 
 
 // =============================
@@ -993,7 +1023,7 @@ function minimizeBox(){
     box.innerHTML=`
 
         <img
-            src="https://drive.google.com/thumbnail?id=1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159&sz=w1000"
+            src="https://drive.google.com/uc?export=view&id=1q64iloqM_w5f7AAvZX_laA9q1w3jiw_m"
             style="
                 width:60px;
                 height:60px;
@@ -1020,7 +1050,7 @@ function minimizeBox(){
         boxShadow:"none",
 
         right:"15px",
-        top:"400px",
+        top:"120px",
         left:"auto",
 
         display:"flex",
@@ -1069,7 +1099,7 @@ function restoreBox(){
 
         boxShadow:"0 0 15px rgba(0,0,0,.45)",
 
-        top:"400px",
+        top:"120px",
         right:"15px",
         left:"auto",
 
@@ -1085,6 +1115,7 @@ function restoreBox(){
     box.onclick=null;
 
 
+    // Reconnect minimize button
     box.querySelector(
         "#minimizeTotals"
     ).onclick=function(e){
@@ -1096,6 +1127,7 @@ function restoreBox(){
     };
 
 
+    // Reconnect calculator
     reconnectCalculator();
 
 
@@ -1113,6 +1145,8 @@ function reconnectCalculator(){
         return;
 
 
+    // Restore value from storage (in case another tab updated it
+    // while this box was minimized)
     const existingValue =
         localStorage.getItem(STORAGE_KEY);
 
@@ -1206,6 +1240,10 @@ function reconnectCalculator(){
 
 display.onkeydown=function(e){
 
+    // =============================
+    // ALLOW COPY / SELECT / PASTE
+    // =============================
+
     if(e.ctrlKey || e.metaKey){
 
         if(
@@ -1221,6 +1259,10 @@ display.onkeydown=function(e){
 
     }
 
+
+    // =============================
+    // ENTER
+    // =============================
 
     if(e.key==="Enter"){
 
@@ -1267,6 +1309,10 @@ display.onkeydown=function(e){
     }
 
 
+    // =============================
+    // ESCAPE
+    // =============================
+
     if(e.key==="Escape"){
 
         e.preventDefault();
@@ -1279,6 +1325,10 @@ display.onkeydown=function(e){
 
     }
 
+
+    // =============================
+    // NORMAL TEXT EDITING
+    // =============================
 
     if(
         e.key==="Backspace" ||
@@ -1295,6 +1345,10 @@ display.onkeydown=function(e){
     }
 
 
+    // =============================
+    // CALCULATOR CHARACTERS
+    // =============================
+
     if(
         /^[0-9+\-*/().]$/.test(e.key)
     ){
@@ -1304,12 +1358,17 @@ display.onkeydown=function(e){
     }
 
 
+    // Block everything else
     e.preventDefault();
 
 };
 
 }
 
+
+// =============================
+// MINIMIZE EVENT
+// =============================
 
 minimize.onclick=function(e){
 
@@ -1320,9 +1379,14 @@ minimize.onclick=function(e){
 };
 
 
+// =============================
+// ADD TO PAGE
+// =============================
+
 document.body.appendChild(box);
 
 
+// Focus calculator
 setTimeout(()=>{
 
     const display =
