@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -473,7 +473,7 @@ box.innerHTML = `
         margin-bottom:12px;
         letter-spacing:1px;
     ">
-        TOTALOCITY v1.3
+        TOTALOCITY v1.4
     </div>
 
 
@@ -904,7 +904,7 @@ document.createElement("img");
 mascot.id="postalMascot";
 
 mascot.src =
-"https://drive.google.com/file/d/1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159/view?usp=drive_link";
+"https://drive.google.com/thumbnail?id=1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159&sz=w1000";
 
 Object.assign(mascot.style,{
     position:"absolute",
@@ -1023,7 +1023,7 @@ function minimizeBox(){
     box.innerHTML=`
 
         <img
-            src="https://drive.google.com/file/d/1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159/view?usp=drive_link"
+            src="https://drive.google.com/thumbnail?id=1uGozNAa2Pjw4TvYJUb6yPZpNC9RYI159&sz=w1000"
             style="
                 width:60px;
                 height:60px;
