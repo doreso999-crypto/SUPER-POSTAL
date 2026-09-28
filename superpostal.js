@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
-// @namespace    http://tampermonkey.net/
+// @namespace    http://tampermonke
 // @version      2.1
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
