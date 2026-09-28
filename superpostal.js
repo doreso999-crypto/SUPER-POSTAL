@@ -5,6 +5,8 @@
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/superpostal.js
+// @downloadURL  https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/superpostal.js
 // ==/UserScript==
 
 
