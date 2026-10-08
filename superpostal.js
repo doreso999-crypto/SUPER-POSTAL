@@ -927,7 +927,7 @@ const MASCOT_SETTINGS = {
     // Horizontal position:
     // positive = right
     // negative = left
-    x: -230,
+    x: -330,
 
     // Vertical position:
     // positive = down
@@ -940,88 +940,6 @@ const MASCOT_SETTINGS = {
     zIndex: 0
 };
 
-/*
- * LIVE MASCOT POSITION
- *
- * The values above are defaults.
- * A small JSON file in the repository can override them automatically.
- * This means future position changes do not require changing this script
- * on every device.
- */
-const MASCOT_CONFIG_URL =
-    "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/mascot-config.json";
-
-async function loadMascotSettings() {
-
-    try {
-
-        const response = await fetch(
-            MASCOT_CONFIG_URL + "?ts=" + Date.now(),
-            { cache: "no-store" }
-        );
-
-        if (!response.ok)
-            return;
-
-        const config = await response.json();
-
-        if (Number.isFinite(config.x))
-            MASCOT_SETTINGS.x = config.x;
-
-        if (Number.isFinite(config.y))
-            MASCOT_SETTINGS.y = config.y;
-
-        if (Number.isFinite(config.width))
-            MASCOT_SETTINGS.width = config.width;
-
-        if (Number.isFinite(config.height))
-            MASCOT_SETTINGS.height = config.height;
-
-        if (Number.isFinite(config.zIndex))
-            MASCOT_SETTINGS.zIndex = config.zIndex;
-
-        applyMascotSettings();
-
-    }
-    catch (error) {
-
-        console.warn(
-            "SUPER POSTAL mascot config could not be loaded:",
-            error
-        );
-
-    }
-
-}
-
-
-
-// Apply all mascot positioning in ONE place.
-// This is also called again after minimize/restore.
-function applyMascotSettings() {
-
-    const mascot =
-        box.querySelector("#postalMascot");
-
-    if (!mascot) return;
-
-    Object.assign(mascot.style, {
-        position: "absolute",
-
-        // Direct coordinates. No transform or right/left offsets.
-        left: `${MASCOT_SETTINGS.x}px`,
-        top: `${MASCOT_SETTINGS.y}px`,
-
-        width: `${MASCOT_SETTINGS.width}px`,
-        height: `${MASCOT_SETTINGS.height}px`,
-
-        objectFit: "contain",
-        pointerEvents: "none",
-        userSelect: "none",
-
-        zIndex: MASCOT_SETTINGS.zIndex
-    });
-}
 
 
 // =============================
@@ -1507,9 +1425,6 @@ minimize.onclick=function(e){
 
 document.body.appendChild(box);
 
-
-// Load the latest mascot settings without requiring a script update.
-loadMascotSettings();
 
 // Focus calculator
 setTimeout(()=>{
