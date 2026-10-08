@@ -924,7 +924,7 @@ display.addEventListener("keydown",function(e){
 //
 
 const MASCOT_SETTINGS = {
-    x: -180,
+    x: -230,
     y: -60,
 
     width: 500,
