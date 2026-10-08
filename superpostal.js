@@ -898,6 +898,16 @@ display.addEventListener("keydown",function(e){
 // =============================
 // MASCOT
 // =============================
+//
+// IMPORTANT:
+// The mascot is deliberately mounted outside the yellow calculator.
+// Do not put it inside "box".
+//
+// Positioning will be added separately when requested.
+//
+
+// Remove any previous mascot instance left by an older script version.
+document.querySelectorAll("#postalMascot").forEach(el => el.remove());
 
 const mascot =
 document.createElement("img");
@@ -907,6 +917,7 @@ mascot.id = "postalMascot";
 mascot.src =
     "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=" + Date.now();
 
+// Keep the mascot completely outside the calculator DOM.
 document.body.appendChild(mascot);
 
 
