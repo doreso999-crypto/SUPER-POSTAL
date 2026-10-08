@@ -896,83 +896,6 @@ display.addEventListener("keydown",function(e){
 
 
 // =============================
-// MASCOT SETTINGS
-// =============================
-//
-// ONLY EDIT THE VALUES BELOW.
-//
-// X = left/right position relative to the calculator.
-//
-//     0    = calculator's left edge
-//     100  = 100px to the RIGHT
-//    -100  = 100px to the LEFT
-//
-// Y = up/down position relative to the calculator.
-//
-//     0    = calculator's top edge
-//     100  = 100px DOWN
-//    -100  = 100px UP
-//
-// WIDTH / HEIGHT = mascot size.
-//
-// Example:
-//
-//     x: -280,
-//     y: -40,
-//
-// moves the mascot 280px left and 40px up.
-//
-
-const MASCOT_SETTINGS = {
-    // Horizontal position:
-    // positive = right
-    // negative = left
-    x: -230,
-
-    // Vertical position:
-    // positive = down
-    // negative = up
-    y: -60,
-
-    width: 500,
-    height: 400,
-
-    zIndex: 0
-};
-
-
-
-// Apply the mascot position and size.
-// Change only MASCOT_SETTINGS above when adjusting it.
-function applyMascotSettings() {
-
-    const mascot =
-        box.querySelector("#postalMascot");
-
-    if (!mascot) return;
-
-    Object.assign(mascot.style, {
-
-        // Position relative to the browser viewport.
-        // This makes X/Y changes predictable even when the calculator moves.
-        position: "fixed",
-
-        left: `calc(50% + ${MASCOT_SETTINGS.x}px)`,
-        top: `calc(50% + ${MASCOT_SETTINGS.y}px)`,
-
-        width: `${MASCOT_SETTINGS.width}px`,
-        height: `${MASCOT_SETTINGS.height}px`,
-
-        objectFit: "contain",
-        pointerEvents: "none",
-        userSelect: "none",
-
-        zIndex: MASCOT_SETTINGS.zIndex
-    });
-}
-
-
-// =============================
 // MASCOT
 // =============================
 
@@ -981,11 +904,10 @@ document.createElement("img");
 
 mascot.id="postalMascot";
 
-mascot.src = "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=" + Date.now();
+mascot.src =
+    "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=" + Date.now();
 
 box.appendChild(mascot);
-
-applyMascotSettings();
 
 
 // =============================
@@ -1151,9 +1073,6 @@ function restoreBox(){
 
     box.innerHTML =
         savedHTML;
-
-    // Re-apply mascot settings after restoring the saved HTML.
-    applyMascotSettings();
 
 
     Object.assign(box.style,{
