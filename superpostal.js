@@ -793,26 +793,39 @@ Object.assign(mascot.style, {
     pointerEvents: "none",
     userSelect: "none",
     zIndex: "1",
-    display: "block",
-    transform:
-        "translate(" +
-        MASCOT_SETTINGS.x +
-        "px, " +
-        MASCOT_SETTINGS.y +
-        "px)"
+    display: "block"
 });
 
-mascot.style.setProperty(
-    "transform",
-    "translate(" +
-    MASCOT_SETTINGS.x +
-    "px, " +
-    MASCOT_SETTINGS.y +
-    "px)",
-    "important"
-);
+function applyMascotPosition() {
+
+    mascot.style.setProperty("left", "0px", "important");
+    mascot.style.setProperty("top", "0px", "important");
+
+    mascot.style.setProperty(
+        "margin-left",
+        MASCOT_SETTINGS.x + "px",
+        "important"
+    );
+
+    mascot.style.setProperty(
+        "margin-top",
+        MASCOT_SETTINGS.y + "px",
+        "important"
+    );
+}
 
 box.appendChild(mascot);
+
+applyMascotPosition();
+
+const mascotPositionObserver = new MutationObserver(() => {
+    applyMascotPosition();
+});
+
+mascotPositionObserver.observe(mascot, {
+    attributes: true,
+    attributeFilter: ["style", "class"]
+});
 
 ///////////////////////////////
 // MINIMIZE BUTTON
