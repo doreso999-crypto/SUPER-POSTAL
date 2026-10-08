@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @resource     postalMascot https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png
