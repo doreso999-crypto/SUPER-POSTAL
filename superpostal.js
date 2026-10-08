@@ -896,17 +896,39 @@ display.addEventListener("keydown",function(e){
 
 
 // =============================
-// MASCOT
+// MASCOT POSITION SETTINGS
 // =============================
 //
-// IMPORTANT:
-// The mascot is deliberately mounted outside the yellow calculator.
-// Do not put it inside "box".
+// The mascot is OUTSIDE the yellow panel.
+// These values position it relative to the panel.
 //
-// Positioning will be added separately when requested.
+// X = horizontal offset from the panel's LEFT edge.
+//     negative = left
+//     positive = right
+//
+// Y = vertical offset from the panel's TOP edge.
+//     negative = up
+//     positive = down
+//
+// The yellow calculator always stays above the mascot.
+//
+// ONLY CHANGE X / Y / WIDTH / HEIGHT.
 //
 
-// Remove any previous mascot instance left by an older script version.
+const MASCOT_SETTINGS = {
+    x: -230,
+    y: -160,
+
+    width: 500,
+    height: 400
+};
+
+
+// =============================
+// MASCOT
+// =============================
+
+// Remove any old mascot instance left by a previous script version.
 document.querySelectorAll("#postalMascot").forEach(el => el.remove());
 
 const mascot =
@@ -917,8 +939,48 @@ mascot.id = "postalMascot";
 mascot.src =
     "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=" + Date.now();
 
-// Keep the mascot completely outside the calculator DOM.
+Object.assign(mascot.style, {
+    position: "fixed",
+
+    width: MASCOT_SETTINGS.width + "px",
+    height: MASCOT_SETTINGS.height + "px",
+
+    objectFit: "contain",
+    pointerEvents: "none",
+    userSelect: "none",
+
+    zIndex: "999998"
+});
+
+// IMPORTANT: mascot is appended to BODY, not the yellow panel.
 document.body.appendChild(mascot);
+
+
+// Position mascot relative to the yellow panel.
+function syncMascotPosition() {
+
+    if (
+        box.dataset.minimized === "true" ||
+        mascot.style.display === "none"
+    )
+        return;
+
+    const panel =
+        box.getBoundingClientRect();
+
+    mascot.style.left =
+        (panel.left + MASCOT_SETTINGS.x) + "px";
+
+    mascot.style.top =
+        (panel.top + MASCOT_SETTINGS.y) + "px";
+}
+
+syncMascotPosition();
+
+window.addEventListener(
+    "resize",
+    syncMascotPosition
+);
 
 
 // =============================
@@ -994,6 +1056,8 @@ document.addEventListener("mousemove",function(e){
 
     box.style.right="auto";
 
+    syncMascotPosition();
+
 });
 
 
@@ -1012,6 +1076,8 @@ let savedHTML="";
 
 
 function minimizeBox(){
+
+    mascot.style.display = "none";
 
     savedHTML =
         box.innerHTML;
@@ -1110,6 +1176,10 @@ function restoreBox(){
         overflow:"visible"
 
     });
+
+    mascot.style.display = "block";
+    syncMascotPosition();
+
 
     box.onclick=null;
 
