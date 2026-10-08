@@ -953,10 +953,12 @@ function applyMascotSettings() {
 
     Object.assign(mascot.style, {
 
-        position: "absolute",
+        // Position relative to the browser viewport.
+        // This makes X/Y changes predictable even when the calculator moves.
+        position: "fixed",
 
-        left: `${MASCOT_SETTINGS.x}px`,
-        top: `${MASCOT_SETTINGS.y}px`,
+        left: `calc(50% + ${MASCOT_SETTINGS.x}px)`,
+        top: `calc(50% + ${MASCOT_SETTINGS.y}px)`,
 
         width: `${MASCOT_SETTINGS.width}px`,
         height: `${MASCOT_SETTINGS.height}px`,
