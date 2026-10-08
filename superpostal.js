@@ -905,7 +905,7 @@ document.createElement("img");
 mascot.id="postalMascot";
 
 mascot.src =
-"https://cdn.discordapp.com/attachments/1539691179342307349/1557791539042721974/awts.png";
+"https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png";
 
 Object.assign(mascot.style,{
     position:"absolute",
@@ -1024,7 +1024,7 @@ function minimizeBox(){
     box.innerHTML=`
 
         <img
-            src="https://cdn.discordapp.com/attachments/1539691179342307349/1557791539042721974/awts.png"
+            src="https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png"
             style="
                 width:60px;
                 height:60px;
