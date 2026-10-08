@@ -927,7 +927,7 @@ const MASCOT_SETTINGS = {
     // Horizontal position:
     // positive = right
     // negative = left
-    x: -130,
+    x: -230,
 
     // Vertical position:
     // positive = down
