@@ -4,7 +4,8 @@
 // @version      1.1
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
-// @grant        none
+// @resource     postalMascot https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png
+// @grant        GM_getResourceURL
 // postalocity
 // ==/UserScript==
 
@@ -904,8 +905,7 @@ document.createElement("img");
 
 mascot.id="postalMascot";
 
-mascot.src =
-"https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png";
+mascot.src = GM_getResourceURL("postalMascot");
 
 Object.assign(mascot.style,{
     position:"absolute",
@@ -1024,7 +1024,7 @@ function minimizeBox(){
     box.innerHTML=`
 
         <img
-            src="https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png"
+            src="${GM_getResourceURL("postalMascot")}"
             style="
                 width:60px;
                 height:60px;
