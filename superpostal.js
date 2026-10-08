@@ -942,6 +942,34 @@ const MASCOT_SETTINGS = {
 
 
 
+// Apply the mascot position and size.
+// Change only MASCOT_SETTINGS above when adjusting it.
+function applyMascotSettings() {
+
+    const mascot =
+        box.querySelector("#postalMascot");
+
+    if (!mascot) return;
+
+    Object.assign(mascot.style, {
+
+        position: "absolute",
+
+        left: `${MASCOT_SETTINGS.x}px`,
+        top: `${MASCOT_SETTINGS.y}px`,
+
+        width: `${MASCOT_SETTINGS.width}px`,
+        height: `${MASCOT_SETTINGS.height}px`,
+
+        objectFit: "contain",
+        pointerEvents: "none",
+        userSelect: "none",
+
+        zIndex: MASCOT_SETTINGS.zIndex
+    });
+}
+
+
 // =============================
 // MASCOT
 // =============================
