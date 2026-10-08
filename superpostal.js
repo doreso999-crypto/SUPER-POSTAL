@@ -960,6 +960,19 @@ Object.assign(mascot.style, {
     display: "block"
 });
 
+// Force mascot positioning to use our values even if Postalocity CSS targets the image.
+mascot.style.setProperty(
+    "left",
+    MASCOT_SETTINGS.x + "px",
+    "important"
+);
+
+mascot.style.setProperty(
+    "top",
+    MASCOT_SETTINGS.y + "px",
+    "important"
+);
+
 // Mascot is a direct child of the yellow panel.
 box.appendChild(mascot);
 
