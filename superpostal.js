@@ -474,7 +474,7 @@ box.innerHTML = `
         margin-bottom:12px;
         letter-spacing:1px;
     ">
-        TOTALOCITY
+        POSTALOCITY
     </div>
 
 
@@ -905,7 +905,7 @@ document.createElement("img");
 mascot.id="postalMascot";
 
 mascot.src =
-"https://media.discordapp.net/attachments/1539691179342307349/1557791539042721974/awts.png?ex=6ac915ed&is=6ac7c46d&hm=4121e739a4aa6779235f246c67acd01297787f0c8cda9211fdc83a1d27602b7d&=&format=webp&quality=lossless&width=400&height=400";
+"https://cdn.discordapp.com/attachments/1539691179342307349/1557791539042721974/awts.png";
 
 Object.assign(mascot.style,{
     position:"absolute",
@@ -1024,7 +1024,7 @@ function minimizeBox(){
     box.innerHTML=`
 
         <img
-            src="https://media.discordapp.net/attachments/1539691179342307349/1557791539042721974/awts.png?ex=6ac915ed&is=6ac7c46d&hm=4121e739a4aa6779235f246c67acd01297787f0c8cda9211fdc83a1d27602b7d&=&format=webp&quality=lossless&width=400&height=400"
+            src="https://cdn.discordapp.com/attachments/1539691179342307349/1557791539042721974/awts.png"
             style="
                 width:60px;
                 height:60px;
