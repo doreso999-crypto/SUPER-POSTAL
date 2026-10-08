@@ -763,7 +763,7 @@ display.addEventListener("keydown",function(e){
 
 const MASCOT_SETTINGS = {
     x: -230,
-    y: -30,
+    y: 70,
 
     width: 500,
     height: 400
@@ -785,26 +785,30 @@ mascot.src =
 
 Object.assign(mascot.style, {
     position: "absolute",
-    left: MASCOT_SETTINGS.x + "px",
-    top: MASCOT_SETTINGS.y + "px",
+    left: "0px",
+    top: "0px",
     width: MASCOT_SETTINGS.width + "px",
     height: MASCOT_SETTINGS.height + "px",
     objectFit: "contain",
     pointerEvents: "none",
     userSelect: "none",
     zIndex: "1",
-    display: "block"
+    display: "block",
+    transform:
+        "translate(" +
+        MASCOT_SETTINGS.x +
+        "px, " +
+        MASCOT_SETTINGS.y +
+        "px)"
 });
 
 mascot.style.setProperty(
-    "left",
-    MASCOT_SETTINGS.x + "px",
-    "important"
-);
-
-mascot.style.setProperty(
-    "top",
-    MASCOT_SETTINGS.y + "px",
+    "transform",
+    "translate(" +
+    MASCOT_SETTINGS.x +
+    "px, " +
+    MASCOT_SETTINGS.y +
+    "px)",
     "important"
 );
 
