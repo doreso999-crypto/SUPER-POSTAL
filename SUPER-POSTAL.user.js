@@ -1,32 +1,29 @@
 // ==UserScript==
 // @name         SUPER POSTAL
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  SUPER POSTAL Loader
 // @match        https://prod.postalocity.com/*
-// @grant        none
+// @grant        GM_addElement
 // ==/UserScript==
 
-(async function () {
+(function () {
     "use strict";
 
     const SCRIPT_URL =
         "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/superpostal.js";
 
-    const response = await fetch(
-        SCRIPT_URL + "?ts=" + Date.now(),
-        { cache: "no-store" }
-    );
+    const script = GM_addElement("script", {
+        src: SCRIPT_URL + "?ts=" + Date.now(),
+        type: "text/javascript"
+    });
 
-    if (!response.ok) {
-        console.error(
-            "SUPER POSTAL failed to load:",
-            response.status
-        );
-        return;
-    }
+    script.onload = function () {
+        console.log("SUPER POSTAL loaded");
+    };
 
-    const code = await response.text();
+    script.onerror = function () {
+        console.error("SUPER POSTAL failed to load");
+    };
 
-    eval(code);
 })();
