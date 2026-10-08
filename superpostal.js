@@ -897,6 +897,41 @@ display.addEventListener("keydown",function(e){
 
 
 // =============================
+// MASCOT SETTINGS
+// =============================
+//
+// ONLY EDIT THE VALUES BELOW.
+//
+// Position:
+//   TOP    = move mascot up/down
+//              negative = higher
+//              positive = lower
+//
+//   RIGHT  = move mascot left/right
+//              larger = farther left
+//              smaller = farther right
+//
+// Size:
+//   WIDTH  = mascot width
+//   HEIGHT = mascot height
+//
+// Example:
+//   top:"-20px"   -> move mascot 20px lower than -40px
+//   right:"150px" -> move mascot farther right than 222px
+//
+
+const MASCOT_SETTINGS = {
+    top: "-40px",
+    right: "222px",
+
+    width: "500px",
+    height: "400px",
+
+    zIndex: "0"
+};
+
+
+// =============================
 // MASCOT
 // =============================
 
@@ -909,14 +944,18 @@ mascot.src = GM_getResourceURL("postalMascot");
 
 Object.assign(mascot.style,{
     position:"absolute",
-    right:"222px",
-    top:"-40px",
-    width:"500px",
-    height:"400px",
+
+    top: MASCOT_SETTINGS.top,
+    right: MASCOT_SETTINGS.right,
+
+    width: MASCOT_SETTINGS.width,
+    height: MASCOT_SETTINGS.height,
+
     objectFit:"contain",
     pointerEvents:"none",
     userSelect:"none",
-    zIndex:"0"
+
+    zIndex: MASCOT_SETTINGS.zIndex
 });
 
 box.appendChild(mascot);
