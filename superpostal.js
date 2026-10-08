@@ -462,7 +462,7 @@ box.innerHTML = `
     style="
         width:100%;
         position:relative;
-        z-index:20;
+        z-index:10;
     "
 >
 
@@ -906,6 +906,14 @@ mascot.id="postalMascot";
 
 mascot.src =
     "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=" + Date.now();
+
+Object.assign(mascot.style, {
+    position: "absolute",
+    zIndex: "1",
+    pointerEvents: "none",
+    userSelect: "none",
+    objectFit: "contain"
+});
 
 box.appendChild(mascot);
 
