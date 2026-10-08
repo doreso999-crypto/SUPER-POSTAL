@@ -896,23 +896,21 @@ display.addEventListener("keydown",function(e){
 
 
 // =============================
-// MASCOT POSITION SETTINGS
+// MASCOT SETTINGS
 // =============================
 //
-// The mascot is OUTSIDE the yellow panel.
-// These values position it relative to the panel.
+// The mascot stays OUTSIDE the yellow panel.
+// The separate mascot layer follows the panel.
 //
 // X = horizontal offset from the panel's LEFT edge.
-//     negative = left
-//     positive = right
+//      negative = left
+//      positive = right
 //
 // Y = vertical offset from the panel's TOP edge.
-//     negative = up
-//     positive = down
+//      negative = up
+//      positive = down
 //
-// The yellow calculator always stays above the mascot.
-//
-// ONLY CHANGE X / Y / WIDTH / HEIGHT.
+// ONLY CHANGE THESE VALUES.
 //
 
 const MASCOT_SETTINGS = {
@@ -925,12 +923,36 @@ const MASCOT_SETTINGS = {
 
 
 // =============================
-// MASCOT
+// MASCOT LAYER
 // =============================
 
-// Remove any old mascot instance left by a previous script version.
-document.querySelectorAll("#postalMascot").forEach(el => el.remove());
+// Remove any mascot/layer left by an older version.
+document.querySelectorAll(
+    "#postalMascot, #postalMascotLayer"
+).forEach(el => el.remove());
 
+
+// This layer is a separate sibling of the yellow calculator.
+const mascotLayer =
+document.createElement("div");
+
+mascotLayer.id = "postalMascotLayer";
+
+Object.assign(mascotLayer.style, {
+    position: "fixed",
+    left: "0px",
+    top: "0px",
+
+    width: "0px",
+    height: "0px",
+
+    zIndex: "999998",
+    pointerEvents: "none",
+    overflow: "visible"
+});
+
+
+// Actual mascot image.
 const mascot =
 document.createElement("img");
 
@@ -940,7 +962,10 @@ mascot.src =
     "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=" + Date.now();
 
 Object.assign(mascot.style, {
-    position: "fixed",
+    position: "absolute",
+
+    left: MASCOT_SETTINGS.x + "px",
+    top: MASCOT_SETTINGS.y + "px",
 
     width: MASCOT_SETTINGS.width + "px",
     height: MASCOT_SETTINGS.height + "px",
@@ -948,31 +973,30 @@ Object.assign(mascot.style, {
     objectFit: "contain",
     pointerEvents: "none",
     userSelect: "none",
-
-    zIndex: "999998"
+    display: "block"
 });
 
-// IMPORTANT: mascot is appended to BODY, not the yellow panel.
-document.body.appendChild(mascot);
+mascotLayer.appendChild(mascot);
+document.body.appendChild(mascotLayer);
 
 
-// Position mascot relative to the yellow panel.
+// Anchor the separate mascot layer to the calculator panel.
 function syncMascotPosition() {
 
     if (
         box.dataset.minimized === "true" ||
-        mascot.style.display === "none"
+        mascotLayer.style.display === "none"
     )
         return;
 
     const panel =
         box.getBoundingClientRect();
 
-    mascot.style.left =
-        (panel.left + MASCOT_SETTINGS.x) + "px";
+    mascotLayer.style.left =
+        panel.left + "px";
 
-    mascot.style.top =
-        (panel.top + MASCOT_SETTINGS.y) + "px";
+    mascotLayer.style.top =
+        panel.top + "px";
 }
 
 syncMascotPosition();
@@ -1077,7 +1101,7 @@ let savedHTML="";
 
 function minimizeBox(){
 
-    mascot.style.display = "none";
+    mascotLayer.style.display = "none";
 
     savedHTML =
         box.innerHTML;
@@ -1178,6 +1202,10 @@ function restoreBox(){
     });
 
     mascot.style.display = "block";
+    syncMascotPosition();
+
+
+    mascotLayer.style.display = "block";
     syncMascotPosition();
 
 
