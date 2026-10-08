@@ -896,33 +896,6 @@ display.addEventListener("keydown",function(e){
 
 
 // =============================
-// MASCOT SETTINGS
-// =============================
-//
-// X = horizontal offset from the calculator's LEFT edge.
-//      negative = left
-//      positive = right
-//
-// Y = vertical offset from the calculator's TOP edge.
-//      negative = up
-//      positive = down
-//
-// The mascot is separate from the yellow panel.
-// The calculator stays above the mascot.
-//
-// ONLY CHANGE THESE VALUES.
-//
-
-const MASCOT_SETTINGS = {
-    x: -230,
-    y: -160,
-
-    width: 500,
-    height: 400
-};
-
-
-// =============================
 // MASCOT
 // =============================
 
@@ -934,40 +907,7 @@ mascot.id = "postalMascot";
 mascot.src =
     "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=" + Date.now();
 
-Object.assign(mascot.style, {
-    position: "fixed",
-
-    width: MASCOT_SETTINGS.width + "px",
-    height: MASCOT_SETTINGS.height + "px",
-
-    objectFit: "contain",
-    pointerEvents: "none",
-    userSelect: "none",
-
-    zIndex: "999998",
-    display: "block"
-});
-
 document.body.appendChild(mascot);
-
-
-// Keep the mascot positioned relative to the calculator.
-function syncMascotPosition() {
-
-    if (!mascot || box.dataset.minimized === "true")
-        return;
-
-    const rect =
-        box.getBoundingClientRect();
-
-    mascot.style.left =
-        (rect.left + MASCOT_SETTINGS.x) + "px";
-
-    mascot.style.top =
-        (rect.top + MASCOT_SETTINGS.y) + "px";
-}
-
-syncMascotPosition();
 
 
 // =============================
@@ -1043,8 +983,6 @@ document.addEventListener("mousemove",function(e){
 
     box.style.right="auto";
 
-    syncMascotPosition();
-
 });
 
 
@@ -1063,8 +1001,6 @@ let savedHTML="";
 
 
 function minimizeBox(){
-
-    mascot.style.display = "none";
 
     savedHTML =
         box.innerHTML;
@@ -1163,11 +1099,6 @@ function restoreBox(){
         overflow:"visible"
 
     });
-
-
-    mascot.style.display = "block";
-    syncMascotPosition();
-
 
     box.onclick=null;
 
