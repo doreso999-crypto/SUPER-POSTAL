@@ -902,33 +902,67 @@ display.addEventListener("keydown",function(e){
 //
 // ONLY EDIT THE VALUES BELOW.
 //
-// Position:
-//   TOP    = move mascot up/down
-//              negative = higher
-//              positive = lower
+// X = left/right position relative to the calculator.
 //
-//   RIGHT  = move mascot left/right
-//              larger = farther left
-//              smaller = farther right
+//     0    = calculator's left edge
+//     100  = 100px to the RIGHT
+//    -100  = 100px to the LEFT
 //
-// Size:
-//   WIDTH  = mascot width
-//   HEIGHT = mascot height
+// Y = up/down position relative to the calculator.
+//
+//     0    = calculator's top edge
+//     100  = 100px DOWN
+//    -100  = 100px UP
+//
+// WIDTH / HEIGHT = mascot size.
 //
 // Example:
-//   top:"-20px"   -> move mascot 20px lower than -40px
-//   right:"150px" -> move mascot farther right than 222px
+//
+//     x: -280,
+//     y: -40,
+//
+// moves the mascot 280px left and 40px up.
 //
 
 const MASCOT_SETTINGS = {
-    top: "-40px",
-    right: "100px",
+    x: -280,
+    y: -40,
 
-    width: "500px",
-    height: "400px",
+    width: 500,
+    height: 400,
 
-    zIndex: "0"
+    zIndex: 0
 };
+
+
+// Apply all mascot positioning in ONE place.
+// This is also called again after minimize/restore.
+function applyMascotSettings() {
+
+    const mascot =
+        box.querySelector("#postalMascot");
+
+    if (!mascot) return;
+
+    Object.assign(mascot.style, {
+        position: "absolute",
+
+        left: "0px",
+        top: "0px",
+
+        transform:
+            `translate(${MASCOT_SETTINGS.x}px, ${MASCOT_SETTINGS.y}px)`,
+
+        width: `${MASCOT_SETTINGS.width}px`,
+        height: `${MASCOT_SETTINGS.height}px`,
+
+        objectFit: "contain",
+        pointerEvents: "none",
+        userSelect: "none",
+
+        zIndex: MASCOT_SETTINGS.zIndex
+    });
+}
 
 
 // =============================
@@ -942,23 +976,9 @@ mascot.id="postalMascot";
 
 mascot.src = GM_getResourceURL("postalMascot");
 
-Object.assign(mascot.style,{
-    position:"absolute",
-
-    top: MASCOT_SETTINGS.top,
-    right: MASCOT_SETTINGS.right,
-
-    width: MASCOT_SETTINGS.width,
-    height: MASCOT_SETTINGS.height,
-
-    objectFit:"contain",
-    pointerEvents:"none",
-    userSelect:"none",
-
-    zIndex: MASCOT_SETTINGS.zIndex
-});
-
 box.appendChild(mascot);
+
+applyMascotSettings();
 
 
 // =============================
@@ -1124,6 +1144,9 @@ function restoreBox(){
 
     box.innerHTML =
         savedHTML;
+
+    // Re-apply mascot settings after restoring the saved HTML.
+    applyMascotSettings();
 
 
     Object.assign(box.style,{
