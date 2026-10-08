@@ -1107,6 +1107,7 @@ function reconnectCalculator(){
 
                 calculateDisplay(display);
 
+            }
 
             else if(value){
 
