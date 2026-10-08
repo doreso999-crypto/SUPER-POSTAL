@@ -12,7 +12,6 @@
 (function () {
 'use strict';
 
-
 ///////////////////////////////
 // RETURN ADDRESS PARSER
 ///////////////////////////////
@@ -24,7 +23,6 @@ function addParser() {
     if (!form) return;
 
     if (document.querySelector('#returnAddressParser')) return;
-
 
     const box = document.createElement('div');
 
@@ -53,16 +51,12 @@ function addParser() {
         <hr>
     `;
 
-
     form.parentNode.insertBefore(box, form);
-
 
     document.querySelector('#parseReturnBtn')
         .onclick = parseAddress;
 
 }
-
-
 
 function parseAddress() {
 
@@ -70,12 +64,10 @@ function parseAddress() {
 
     if (!raw) return;
 
-
     const lines = raw
         .split(/\r?\n/)
         .map(x => x.trim())
         .filter(Boolean);
-
 
     let name = lines[0] || "";
     let address1 = "";
@@ -83,13 +75,11 @@ function parseAddress() {
     let state = "";
     let zip = "";
 
-
     for (let i = 0; i < lines.length; i++) {
 
         const match = lines[i].match(
             /^(.+?)\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/
         );
-
 
         if (match) {
 
@@ -103,7 +93,6 @@ function parseAddress() {
         }
     }
 
-
     setField("name", name);
     setField("address1", address1);
     setField("city", city);
@@ -111,8 +100,6 @@ function parseAddress() {
     setField("zip", zip);
 
 }
-
-
 
 function setField(name, value) {
 
@@ -132,8 +119,6 @@ function setField(name, value) {
 
 }
 
-
-
 ///////////////////////////////
 // JOB NAME FROM UPLOADED PDF
 ///////////////////////////////
@@ -142,19 +127,15 @@ function updateJobName(filename) {
 
     if (!filename) return;
 
-
     filename = filename.replace(/\.pdf$/i, "");
 
     filename = filename.substring(0, 40);
 
-
     const jobName = document.querySelector('#overview-jobName');
-
 
     if (jobName) {
 
         jobName.value = filename;
-
 
         jobName.dispatchEvent(
             new Event('input', { bubbles:true })
@@ -168,48 +149,34 @@ function updateJobName(filename) {
             new Event('blur', { bubbles:true })
         );
 
-
         console.log("Job name updated:", filename);
 
     }
 
 }
 
-
-
 function watchUploadedFiles() {
 
     const uploadList = document.querySelector('#sourceUploadedList');
 
-
     if (!uploadList) return;
 
-
     if (uploadList.dataset.nameWatcher) return;
-
     uploadList.dataset.nameWatcher = "true";
-
 
     const observer = new MutationObserver(() => {
 
-
         const text = uploadList.innerText;
-
 
         const match = text.match(
             /(.+?\.pdf)/i
         );
 
-
         if (match) {
-
             updateJobName(match[1]);
-
         }
 
-
     });
-
 
     observer.observe(uploadList, {
         childList:true,
@@ -217,8 +184,6 @@ function watchUploadedFiles() {
     });
 
 }
-
-
 
 ///////////////////////////////
 // WATCH PAGE CHANGES
@@ -232,19 +197,15 @@ const observer = new MutationObserver(() => {
 
 });
 
-
 observer.observe(document.body, {
     childList:true,
     subtree:true
 });
 
-
-
-// Initial run
 addParser();
 watchUploadedFiles();
 
-    ///////////////////////////////
+///////////////////////////////
 // AUTO POPULATE RECIPIENT BASED ON JOB NAME
 ///////////////////////////////
 
@@ -264,8 +225,6 @@ function fillRecipient(field, value) {
 
 }
 
-
-
 function populateRecipientFromJob() {
 
     const jobName = document.querySelector('#overview-jobName');
@@ -273,7 +232,6 @@ function populateRecipientFromJob() {
     if (!jobName) return;
 
     const name = jobName.value.toUpperCase();
-
 
     // =============================
     // EQUIFAX
@@ -309,7 +267,6 @@ function populateRecipientFromJob() {
         console.log("Equifax address loaded");
     }
 
-
     // =============================
     // TRANSUNION
     // =============================
@@ -343,7 +300,6 @@ function populateRecipientFromJob() {
 
         console.log("TransUnion address loaded");
     }
-
 
     // =============================
     // EXPERIAN
@@ -384,43 +340,29 @@ function populateRecipientFromJob() {
 
 }
 
-
-
 function watchJobName() {
 
     const job = document.querySelector('#overview-jobName');
 
     if (!job) return;
 
-
     if (job.dataset.recipientWatcher) return;
-
     job.dataset.recipientWatcher = "true";
 
-
     job.addEventListener('blur', populateRecipientFromJob);
-
     job.addEventListener('change', populateRecipientFromJob);
-
     job.addEventListener('input', populateRecipientFromJob);
-
 
 }
 
-
-
 const recipientObserver = new MutationObserver(() => {
-
     watchJobName();
-
 });
-
 
 recipientObserver.observe(document.body, {
     childList:true,
     subtree:true
 });
-
 
 watchJobName();
 
@@ -450,11 +392,6 @@ Object.assign(box.style,{
     fontFamily:"Arial, sans-serif"
 });
 
-
-// =============================
-// CALCULATOR
-// =============================
-
 box.innerHTML = `
 
 <div
@@ -466,7 +403,6 @@ box.innerHTML = `
     "
 >
 
-    <!-- TITLE -->
     <div style="
         font-size:20px;
         font-weight:800;
@@ -477,8 +413,6 @@ box.innerHTML = `
         POSTALOCITY
     </div>
 
-
-    <!-- DISPLAY -->
     <input
         id="calcDisplay"
         type="text"
@@ -502,9 +436,6 @@ box.innerHTML = `
             margin-bottom:12px;
         "
     >
-
-
-    <!-- BUTTONS -->
 
     <div
         id="calcButtons"
@@ -557,11 +488,6 @@ box.innerHTML = `
 
 `;
 
-
-// =============================
-// BUTTON STYLE
-// =============================
-
 const buttons =
 box.querySelectorAll("#calcButtons button");
 
@@ -580,16 +506,13 @@ buttons.forEach(button => {
         transition:"transform .05s"
     });
 
-
     button.addEventListener("mousedown",()=>{
         button.style.transform="scale(.94)";
     });
 
-
     button.addEventListener("mouseup",()=>{
         button.style.transform="scale(1)";
     });
-
 
     button.addEventListener("mouseleave",()=>{
         button.style.transform="scale(1)";
@@ -597,14 +520,8 @@ buttons.forEach(button => {
 
 });
 
-
-// =============================
-// CROSS-TAB SYNC
-// =============================
-
 const STORAGE_KEY = "postalCalcValue";
 
-// Save current display value to localStorage so other tabs can read it
 function syncToStorage(){
 
     const display =
@@ -617,16 +534,9 @@ function syncToStorage(){
 
 }
 
-
-// =============================
-// CALCULATOR LOGIC
-// =============================
-
 const display =
 box.querySelector("#calcDisplay");
 
-
-// Load any existing value from another tab on startup
 const existingValue =
 localStorage.getItem(STORAGE_KEY);
 
@@ -634,8 +544,6 @@ if(existingValue !== null){
     display.value = existingValue;
 }
 
-
-// Listen for changes made in OTHER tabs and mirror them here
 window.addEventListener("storage",function(e){
 
     if(e.key === STORAGE_KEY && e.newValue !== null){
@@ -651,7 +559,6 @@ window.addEventListener("storage",function(e){
 
 });
 
-
 function calculate(){
 
     let expression =
@@ -660,13 +567,10 @@ function calculate(){
     if(!expression)
         return;
 
-
     try {
 
-        // Only allow calculator characters
         if(!/^[0-9+\-*/().\s]+$/.test(expression))
             throw new Error();
-
 
         const result =
             Function(
@@ -675,14 +579,12 @@ function calculate(){
                 ')'
             )();
 
-
         if(
             typeof result !== "number" ||
             !Number.isFinite(result)
         ){
             throw new Error();
         }
-
 
         display.value =
             String(
@@ -707,7 +609,6 @@ function calculate(){
 
 }
 
-
 function clearCalculator(){
 
     display.value="";
@@ -717,7 +618,6 @@ function clearCalculator(){
     syncToStorage();
 
 }
-
 
 function backspace(){
 
@@ -730,12 +630,10 @@ function backspace(){
 
 }
 
-
 function addValue(value){
 
     if(display.value==="Error")
         display.value="";
-
 
     display.value += value;
 
@@ -745,11 +643,6 @@ function addValue(value){
 
 }
 
-
-// =============================
-// BUTTON EVENTS
-// =============================
-
 box.querySelectorAll(
     "#calcButtons button"
 ).forEach(button => {
@@ -758,58 +651,36 @@ box.querySelectorAll(
 
         e.stopPropagation();
 
-
         const value =
             this.dataset.value;
 
         const action =
             this.dataset.action;
 
-
         if(action==="clear"){
-
             clearCalculator();
-
             return;
         }
-
 
         if(action==="backspace"){
-
             backspace();
-
             return;
         }
-
 
         if(action==="equals"){
-
             calculate();
-
             return;
         }
 
-
         if(value){
-
             addValue(value);
-
         }
 
     });
 
 });
 
-
-// =============================
-// KEYBOARD INPUT
-// =============================
-
 display.addEventListener("keydown",function(e){
-
-    // =============================
-    // ALLOW NORMAL COPY / SELECT
-    // =============================
 
     if(e.ctrlKey || e.metaKey){
 
@@ -819,17 +690,10 @@ display.addEventListener("keydown",function(e){
             e.key.toLowerCase()==="x" ||
             e.key.toLowerCase()==="v"
         ){
-
             return;
-
         }
 
     }
-
-
-    // =============================
-    // ENTER = CALCULATE
-    // =============================
 
     if(e.key==="Enter"){
 
@@ -841,11 +705,6 @@ display.addEventListener("keydown",function(e){
 
     }
 
-
-    // =============================
-    // ESCAPE = CLEAR
-    // =============================
-
     if(e.key==="Escape"){
 
         e.preventDefault();
@@ -856,11 +715,6 @@ display.addEventListener("keydown",function(e){
 
     }
 
-
-    // =============================
-    // NORMAL EDITING
-    // =============================
-
     if(
         e.key==="Backspace" ||
         e.key==="Delete" ||
@@ -870,34 +724,22 @@ display.addEventListener("keydown",function(e){
         e.key==="End" ||
         e.key==="Tab"
     ){
-
         return;
-
     }
-
-
-    // =============================
-    // CALCULATOR CHARACTERS
-    // =============================
 
     if(
         /^[0-9+\-*/().]$/.test(e.key)
     ){
-
         return;
-
     }
 
-
-    // Block everything else
     e.preventDefault();
 
 });
 
-
-// =============================
+///////////////////////////////
 // MASCOT SETTINGS
-// =============================
+///////////////////////////////
 //
 // The mascot is a CHILD of the yellow calculator panel,
 // like a sticker attached to a board.
@@ -921,18 +763,16 @@ display.addEventListener("keydown",function(e){
 
 const MASCOT_SETTINGS = {
     x: -230,
-    y: -230,
+    y: -130,
 
     width: 500,
     height: 400
 };
 
-
-// =============================
+///////////////////////////////
 // MASCOT
-// =============================
+///////////////////////////////
 
-// Remove an old mascot from a previous script version.
 document.querySelectorAll("#postalMascot").forEach(el => el.remove());
 
 const mascot =
@@ -945,22 +785,17 @@ mascot.src =
 
 Object.assign(mascot.style, {
     position: "absolute",
-
     left: MASCOT_SETTINGS.x + "px",
     top: MASCOT_SETTINGS.y + "px",
-
     width: MASCOT_SETTINGS.width + "px",
     height: MASCOT_SETTINGS.height + "px",
-
     objectFit: "contain",
     pointerEvents: "none",
     userSelect: "none",
-
     zIndex: "1",
     display: "block"
 });
 
-// Force mascot positioning to use our values even if Postalocity CSS targets the image.
 mascot.style.setProperty(
     "left",
     MASCOT_SETTINGS.x + "px",
@@ -973,19 +808,16 @@ mascot.style.setProperty(
     "important"
 );
 
-// Mascot is a direct child of the yellow panel.
 box.appendChild(mascot);
 
-
-// =============================
+///////////////////////////////
 // MINIMIZE BUTTON
-// =============================
+///////////////////////////////
 
 const minimize =
 document.createElement("button");
 
 minimize.id="minimizeTotals";
-
 minimize.innerHTML="−";
 
 Object.assign(minimize.style,{
@@ -1006,24 +838,21 @@ Object.assign(minimize.style,{
 
 box.appendChild(minimize);
 
-
-// =============================
+///////////////////////////////
 // DRAG
-// =============================
+///////////////////////////////
 
 let dragging=false;
 let offsetX=0;
 let offsetY=0;
 
-
 box.addEventListener("mousedown",function(e){
 
     if(
-        e.target.tagName==="BUTTON" ||
+        e.target.tagName==="BUTTON" || 
         e.target.tagName==="INPUT"
     )
         return;
-
 
     dragging=true;
 
@@ -1035,12 +864,10 @@ box.addEventListener("mousedown",function(e){
 
 });
 
-
 document.addEventListener("mousemove",function(e){
 
     if(!dragging)
         return;
-
 
     box.style.left =
         (e.clientX-offsetX)+"px";
@@ -1052,32 +879,24 @@ document.addEventListener("mousemove",function(e){
 
 });
 
-
 document.addEventListener("mouseup",function(){
-
     dragging=false;
-
 });
 
-
-// =============================
+///////////////////////////////
 // MINIMIZE
-// =============================
+///////////////////////////////
 
 let savedHTML="";
-
 
 function minimizeBox(){
 
     savedHTML =
         box.innerHTML;
 
-
     box.dataset.minimized="true";
 
-
     box.innerHTML=`
-
         <img
             src="https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=${Date.now()}"
             style="
@@ -1089,90 +908,59 @@ function minimizeBox(){
                 user-select:none;
             "
         >
-
     `;
 
-
     Object.assign(box.style,{
-
         width:"60px",
         height:"60px",
         padding:"0",
-
         borderRadius:"50%",
-
         background:"transparent",
-
         boxShadow:"none",
-
         right:"15px",
         top:"120px",
         left:"auto",
-
         display:"flex",
-
         alignItems:"center",
         justifyContent:"center",
-
         cursor:"pointer",
-
         overflow:"hidden"
-
     });
-
 
     box.onmousedown=null;
 
-
     box.onclick=function(){
-
         restoreBox();
-
     };
 
 }
-
 
 function restoreBox(){
 
     box.dataset.minimized="false";
 
-
     box.innerHTML =
         savedHTML;
 
-
     Object.assign(box.style,{
-
         width:"320px",
         height:"auto",
-
         padding:"25px",
-
         borderRadius:"12px",
-
         background:"rgb(242,179,46)",
-
         boxShadow:"0 0 15px rgba(0,0,0,.45)",
-
         top:"120px",
         right:"15px",
         left:"auto",
-
         display:"block",
-
         cursor:"move",
-
         overflow:"visible"
-
     });
 
     mascot.style.display = "block";
 
     box.onclick=null;
 
-
-    // Reconnect minimize button
     box.querySelector(
         "#minimizeTotals"
     ).onclick=function(e){
@@ -1183,15 +971,11 @@ function restoreBox(){
 
     };
 
-
-    // Reconnect calculator
     reconnectCalculator();
-
 
     enableDrag();
 
 }
-
 
 function reconnectCalculator(){
 
@@ -1201,16 +985,12 @@ function reconnectCalculator(){
     if(!display)
         return;
 
-
-    // Restore value from storage (in case another tab updated it
-    // while this box was minimized)
     const existingValue =
         localStorage.getItem(STORAGE_KEY);
 
     if(existingValue !== null){
         display.value = existingValue;
     }
-
 
     box.querySelectorAll(
         "#calcButtons button"
@@ -1220,25 +1000,19 @@ function reconnectCalculator(){
 
             e.stopPropagation();
 
-
             const value =
                 this.dataset.value;
 
             const action =
                 this.dataset.action;
 
-
             if(action==="clear"){
-
                 display.value="";
-
             }
 
             else if(action==="backspace"){
-
                 display.value =
                     display.value.slice(0,-1);
-
             }
 
             else if(action==="equals"){
@@ -1251,14 +1025,12 @@ function reconnectCalculator(){
                     )
                         throw new Error();
 
-
                     const result =
                         Function(
                             '"use strict"; return (' +
                             display.value +
                             ')'
                         )();
-
 
                     display.value =
                         String(
@@ -1269,9 +1041,7 @@ function reconnectCalculator(){
 
                 }
                 catch {
-
                     display.value="Error";
-
                 }
 
             }
@@ -1285,7 +1055,6 @@ function reconnectCalculator(){
 
             }
 
-
             display.focus();
 
             syncToStorage();
@@ -1294,12 +1063,7 @@ function reconnectCalculator(){
 
     });
 
-
 display.onkeydown=function(e){
-
-    // =============================
-    // ALLOW COPY / SELECT / PASTE
-    // =============================
 
     if(e.ctrlKey || e.metaKey){
 
@@ -1309,17 +1073,10 @@ display.onkeydown=function(e){
             e.key.toLowerCase()==="x" ||
             e.key.toLowerCase()==="v"
         ){
-
             return;
-
         }
 
     }
-
-
-    // =============================
-    // ENTER
-    // =============================
 
     if(e.key==="Enter"){
 
@@ -1336,14 +1093,12 @@ display.onkeydown=function(e){
             )
                 throw new Error();
 
-
             const result =
                 Function(
                     '"use strict"; return (' +
                     expression +
                     ')'
                 )();
-
 
             display.value =
                 String(
@@ -1365,11 +1120,6 @@ display.onkeydown=function(e){
 
     }
 
-
-    // =============================
-    // ESCAPE
-    // =============================
-
     if(e.key==="Escape"){
 
         e.preventDefault();
@@ -1382,11 +1132,6 @@ display.onkeydown=function(e){
 
     }
 
-
-    // =============================
-    // NORMAL TEXT EDITING
-    // =============================
-
     if(
         e.key==="Backspace" ||
         e.key==="Delete" ||
@@ -1396,36 +1141,20 @@ display.onkeydown=function(e){
         e.key==="End" ||
         e.key==="Tab"
     ){
-
         return;
-
     }
-
-
-    // =============================
-    // CALCULATOR CHARACTERS
-    // =============================
 
     if(
         /^[0-9+\-*/().]$/.test(e.key)
     ){
-
         return;
-
     }
 
-
-    // Block everything else
     e.preventDefault();
 
 };
 
 }
-
-
-// =============================
-// MINIMIZE EVENT
-// =============================
 
 minimize.onclick=function(e){
 
@@ -1435,15 +1164,8 @@ minimize.onclick=function(e){
 
 };
 
-
-// =============================
-// ADD TO PAGE
-// =============================
-
 document.body.appendChild(box);
 
-
-// Focus calculator
 setTimeout(()=>{
 
     const display =
@@ -1454,9 +1176,6 @@ setTimeout(()=>{
 
 },100);
 
-
-
 })();
 
-
-})(); // END MAIN SCRIPT
+})();
