@@ -924,7 +924,14 @@ display.addEventListener("keydown",function(e){
 //
 
 const MASCOT_SETTINGS = {
+    // Horizontal position:
+    // positive = right
+    // negative = left
     x: -230,
+
+    // Vertical position:
+    // positive = down
+    // negative = up
     y: -60,
 
     width: 500,
@@ -946,11 +953,9 @@ function applyMascotSettings() {
     Object.assign(mascot.style, {
         position: "absolute",
 
-        left: "0px",
-        top: "0px",
-
-        transform:
-            `translate(${MASCOT_SETTINGS.x}px, ${MASCOT_SETTINGS.y}px)`,
+        // Direct coordinates. No transform or right/left offsets.
+        left: `${MASCOT_SETTINGS.x}px`,
+        top: `${MASCOT_SETTINGS.y}px`,
 
         width: `${MASCOT_SETTINGS.width}px`,
         height: `${MASCOT_SETTINGS.height}px`,
