@@ -559,10 +559,10 @@ window.addEventListener("storage",function(e){
 
 });
 
-function calculate(){
+function calculateDisplay(targetDisplay){
 
-    let expression =
-        display.value.trim();
+    const expression =
+        targetDisplay.value.trim();
 
     if(!expression)
         return;
@@ -586,7 +586,7 @@ function calculate(){
             throw new Error();
         }
 
-        display.value =
+        targetDisplay.value =
             String(
                 Number(
                     result.toFixed(10)
@@ -598,15 +598,25 @@ function calculate(){
     }
     catch {
 
-        display.value = "Error";
+        targetDisplay.value = "Error";
+
+        syncToStorage();
 
         setTimeout(()=>{
-            display.value="";
-            syncToStorage();
+
+            if(targetDisplay.value === "Error"){
+                targetDisplay.value = "";
+                syncToStorage();
+            }
+
         },800);
 
     }
 
+}
+
+function calculate(){
+    calculateDisplay(display);
 }
 
 function clearCalculator(){
@@ -680,7 +690,7 @@ box.querySelectorAll(
 
 });
 
-display.addEventListener("keydown",function(e){
+function handleCalculatorKeydown(e, actions){
 
     if(e.ctrlKey || e.metaKey){
 
@@ -690,16 +700,53 @@ display.addEventListener("keydown",function(e){
             e.key.toLowerCase()==="x" ||
             e.key.toLowerCase()==="v"
         ){
+
+            e.stopPropagation();
+
             return;
+
         }
 
     }
 
-    if(e.key==="Enter"){
+    const numpadValues = {
+        Numpad0:"0",
+        Numpad1:"1",
+        Numpad2:"2",
+        Numpad3:"3",
+        Numpad4:"4",
+        Numpad5:"5",
+        Numpad6:"6",
+        Numpad7:"7",
+        Numpad8:"8",
+        Numpad9:"9",
+        NumpadDecimal:".",
+        NumpadAdd:"+",
+        NumpadSubtract:"-",
+        NumpadMultiply:"*",
+        NumpadDivide:"/"
+    };
+
+    const numpadValue =
+        numpadValues[e.code];
+
+    if(numpadValue !== undefined){
 
         e.preventDefault();
+        e.stopPropagation();
 
-        calculate();
+        actions.addValue(numpadValue);
+
+        return;
+
+    }
+
+    if(e.key==="Enter" || e.code==="NumpadEnter"){
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        actions.calculate();
 
         return;
 
@@ -708,8 +755,9 @@ display.addEventListener("keydown",function(e){
     if(e.key==="Escape"){
 
         e.preventDefault();
+        e.stopPropagation();
 
-        clearCalculator();
+        actions.clear();
 
         return;
 
@@ -724,18 +772,41 @@ display.addEventListener("keydown",function(e){
         e.key==="End" ||
         e.key==="Tab"
     ){
+
+        e.stopPropagation();
+
         return;
+
     }
 
     if(
         /^[0-9+\-*/().]$/.test(e.key)
     ){
+
+        e.stopPropagation();
+
         return;
+
     }
 
     e.preventDefault();
+    e.stopPropagation();
+
+}
+
+display.addEventListener("keydown",function(e){
+
+    handleCalculatorKeydown(e,{
+
+        addValue,
+        calculate,
+        clear: clearCalculator
+
+    });
 
 });
+
+display.addEventListener("input",syncToStorage);
 
 ///////////////////////////////
 // MASCOT SETTINGS
@@ -1034,34 +1105,8 @@ function reconnectCalculator(){
 
             else if(action==="equals"){
 
-                try {
+                calculateDisplay(display);
 
-                    if(
-                        !/^[0-9+\-*/().\s]+$/
-                            .test(display.value)
-                    )
-                        throw new Error();
-
-                    const result =
-                        Function(
-                            '"use strict"; return (' +
-                            display.value +
-                            ')'
-                        )();
-
-                    display.value =
-                        String(
-                            Number(
-                                result.toFixed(10)
-                            )
-                        );
-
-                }
-                catch {
-                    display.value="Error";
-                }
-
-            }
 
             else if(value){
 
@@ -1082,94 +1127,37 @@ function reconnectCalculator(){
 
 display.onkeydown=function(e){
 
-    if(e.ctrlKey || e.metaKey){
+    handleCalculatorKeydown(e,{
 
-        if(
-            e.key.toLowerCase()==="a" ||
-            e.key.toLowerCase()==="c" ||
-            e.key.toLowerCase()==="x" ||
-            e.key.toLowerCase()==="v"
-        ){
-            return;
-        }
+        addValue:function(value){
 
-    }
+            if(display.value==="Error")
+                display.value="";
 
-    if(e.key==="Enter"){
+            display.value += value;
+            display.focus();
+            syncToStorage();
 
-        e.preventDefault();
+        },
 
-        const expression =
-            display.value;
+        calculate:function(){
+            calculateDisplay(display);
+            display.focus();
+        },
 
-        try {
+        clear:function(){
 
-            if(
-                !/^[0-9+\-*/().\s]+$/
-                    .test(expression)
-            )
-                throw new Error();
-
-            const result =
-                Function(
-                    '"use strict"; return (' +
-                    expression +
-                    ')'
-                )();
-
-            display.value =
-                String(
-                    Number(
-                        result.toFixed(10)
-                    )
-                );
-
-        }
-        catch {
-
-            display.value="Error";
+            display.value="";
+            display.focus();
+            syncToStorage();
 
         }
 
-        syncToStorage();
-
-        return;
-
-    }
-
-    if(e.key==="Escape"){
-
-        e.preventDefault();
-
-        display.value="";
-
-        syncToStorage();
-
-        return;
-
-    }
-
-    if(
-        e.key==="Backspace" ||
-        e.key==="Delete" ||
-        e.key==="ArrowLeft" ||
-        e.key==="ArrowRight" ||
-        e.key==="Home" ||
-        e.key==="End" ||
-        e.key==="Tab"
-    ){
-        return;
-    }
-
-    if(
-        /^[0-9+\-*/().]$/.test(e.key)
-    ){
-        return;
-    }
-
-    e.preventDefault();
+    });
 
 };
+
+display.oninput = syncToStorage;
 
 }
 
