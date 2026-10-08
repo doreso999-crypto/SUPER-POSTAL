@@ -899,16 +899,22 @@ display.addEventListener("keydown",function(e){
 // MASCOT SETTINGS
 // =============================
 //
-// The mascot stays OUTSIDE the yellow panel.
-// The separate mascot layer follows the panel.
+// The mascot is a CHILD of the yellow calculator panel,
+// like a sticker attached to a board.
 //
-// X = horizontal offset from the panel's LEFT edge.
-//      negative = left
-//      positive = right
+// The yellow panel has overflow: visible.
+// The mascot can therefore be fully inside the panel
+// or extend outside any edge.
 //
-// Y = vertical offset from the panel's TOP edge.
-//      negative = up
-//      positive = down
+// X/Y are relative to the panel's top-left corner.
+//
+// X:
+//   negative = left
+//   positive = right
+//
+// Y:
+//   negative = up
+//   positive = down
 //
 // ONLY CHANGE THESE VALUES.
 //
@@ -923,36 +929,12 @@ const MASCOT_SETTINGS = {
 
 
 // =============================
-// MASCOT LAYER
+// MASCOT
 // =============================
 
-// Remove any mascot/layer left by an older version.
-document.querySelectorAll(
-    "#postalMascot, #postalMascotLayer"
-).forEach(el => el.remove());
+// Remove an old mascot from a previous script version.
+document.querySelectorAll("#postalMascot").forEach(el => el.remove());
 
-
-// This layer is a separate sibling of the yellow calculator.
-const mascotLayer =
-document.createElement("div");
-
-mascotLayer.id = "postalMascotLayer";
-
-Object.assign(mascotLayer.style, {
-    position: "fixed",
-    left: "0px",
-    top: "0px",
-
-    width: "0px",
-    height: "0px",
-
-    zIndex: "999998",
-    pointerEvents: "none",
-    overflow: "visible"
-});
-
-
-// Actual mascot image.
 const mascot =
 document.createElement("img");
 
@@ -973,38 +955,13 @@ Object.assign(mascot.style, {
     objectFit: "contain",
     pointerEvents: "none",
     userSelect: "none",
+
+    zIndex: "1",
     display: "block"
 });
 
-mascotLayer.appendChild(mascot);
-document.body.appendChild(mascotLayer);
-
-
-// Anchor the separate mascot layer to the calculator panel.
-function syncMascotPosition() {
-
-    if (
-        box.dataset.minimized === "true" ||
-        mascotLayer.style.display === "none"
-    )
-        return;
-
-    const panel =
-        box.getBoundingClientRect();
-
-    mascotLayer.style.left =
-        panel.left + "px";
-
-    mascotLayer.style.top =
-        panel.top + "px";
-}
-
-syncMascotPosition();
-
-window.addEventListener(
-    "resize",
-    syncMascotPosition
-);
+// Mascot is a direct child of the yellow panel.
+box.appendChild(mascot);
 
 
 // =============================
@@ -1080,8 +1037,6 @@ document.addEventListener("mousemove",function(e){
 
     box.style.right="auto";
 
-    syncMascotPosition();
-
 });
 
 
@@ -1100,8 +1055,6 @@ let savedHTML="";
 
 
 function minimizeBox(){
-
-    mascotLayer.style.display = "none";
 
     savedHTML =
         box.innerHTML;
@@ -1202,12 +1155,6 @@ function restoreBox(){
     });
 
     mascot.style.display = "block";
-    syncMascotPosition();
-
-
-    mascotLayer.style.display = "block";
-    syncMascotPosition();
-
 
     box.onclick=null;
 
