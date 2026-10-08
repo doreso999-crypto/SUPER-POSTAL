@@ -5,6 +5,7 @@
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
+// postalocity
 // ==/UserScript==
 
 
