@@ -415,6 +415,7 @@ function watchUploadedFiles() {
         childList:true,
         subtree:true
     });
+    spPdfNamesFromPage();
 
 }
 
@@ -474,6 +475,51 @@ function addQuickReturnAddress(){
 function spCleanLabel(text){
     return String(text||'').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
 }
+// Cache only PDF names already visible on this job page, across the recipient
+// save's full reload. Tab-only storage avoids any new Postalocity API calls.
+let spPdfNamesRestored=false;
+function spPdfMemoryKey(){
+    let id='';
+    try{
+        if(typeof jobId!=='undefined' && jobId!=null)id=String(jobId);
+        if(!id && window.jobId!=null)id=String(window.jobId);
+        if(!id)id=new URLSearchParams(window.location.search).get('jobId')||'';
+    }catch(_e){return '';}
+    return /^\d+$/.test(id)?'sp-pdf-names-for-job-v1-'+id:'';
+}
+function spPdfRemember(names){
+    const key=spPdfMemoryKey();
+    if(!key||!names.length)return;
+    const seen=new Set(),valid=[];
+    names.forEach(function(name){
+        if(typeof name!=='string')return;
+        const value=name.trim(),lower=value.toLowerCase();
+        if(/\.pdf$/i.test(value)&&value.length<=260&&!seen.has(lower)){
+            valid.push(value);seen.add(lower);
+        }
+    });
+    if(!valid.length)return;
+    try{window.sessionStorage.setItem(key,JSON.stringify({seenAt:Date.now(),files:valid}));}
+    catch(_e){/* Original display still works if storage is unavailable. */}
+}
+function spPdfRecall(){
+    const key=spPdfMemoryKey();
+    if(!key)return [];
+    try{
+        const data=JSON.parse(window.sessionStorage.getItem(key)||'null');
+        if(!data||!Array.isArray(data.files)||!Number.isFinite(data.seenAt)||
+           Date.now()-data.seenAt>86400000||data.seenAt>Date.now()+60000)return [];
+        const found=[],seen=new Set();
+        data.files.forEach(function(name){
+            if(typeof name!=='string')return;
+            const value=name.trim(),lower=value.toLowerCase();
+            if(/\.pdf$/i.test(value)&&value.length<=260&&!seen.has(lower)){
+                found.push(value);seen.add(lower);
+            }
+        });
+        return found;
+    }catch(_e){return [];}
+}
 function spPdfNamesFromPage(){
     const found=[];
     const seen=new Set();
@@ -505,7 +551,14 @@ function spPdfNamesFromPage(){
     if(modalFiles){
         modalFiles.querySelectorAll('a').forEach(function(el){collect(el.textContent);});
     }
-    return found;
+    if(found.length){
+        spPdfNamesRestored=false;
+        spPdfRemember(found);
+        return found;
+    }
+    const restored=spPdfRecall();
+    spPdfNamesRestored=restored.length>0;
+    return restored;
 }
 function spRecipientNamesFromPage(){
     const list=document.querySelector('#contactListRow');
@@ -550,7 +603,7 @@ function spRefreshRecipientPdfOverview(){
     const count=countElement?Number.parseInt(countElement.textContent,10):0;
     const countLabel=Number.isFinite(count)&&count>0?count:recipientNames.length;
     const recipientKey=JSON.stringify([countLabel,recipientNames]);
-    const fileKey=JSON.stringify(pdfNames);
+    const fileKey=JSON.stringify([pdfNames,spPdfNamesRestored]);
     if(panel.dataset.recipientKey!==recipientKey){
         panel.dataset.recipientKey=recipientKey;
         panel.querySelector('#spOverviewRecipientCount').textContent=countLabel+' recipients';
@@ -587,6 +640,12 @@ function spRefreshRecipientPdfOverview(){
                 file.textContent=name;li.appendChild(file);
                 list.appendChild(li);
             });
+            if(spPdfNamesRestored){
+                const note=document.createElement('li');
+                note.className='sp-empty';
+                note.textContent='Remembered from before this page reloaded. Verify against Files if uploads changed.';
+                list.appendChild(note);
+            }
         }else{
             const li=document.createElement('li');li.className='sp-empty';
             li.textContent='No uploaded PDF filenames available yet.';
