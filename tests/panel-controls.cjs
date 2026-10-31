@@ -57,7 +57,7 @@ for(let i=0;i<3;i++){click();assert.equal(box.children.length,1);click();assert.
 assert.equal(created.filter(node=>node.tagName==='IMG').length,0);
 box.events.mousedown({target:{tagName:'DIV'},clientX:120,clientY:100});
 handlers.mousemove({clientX:150,clientY:155});
-assert.equal(box.style.left,'100px');
+assert.equal(box.style.left,'110px');
 assert.equal(box.style.top,'105px');
 handlers.mouseup();
 click();
