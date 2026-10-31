@@ -1518,12 +1518,12 @@ box.innerHTML = `
         <div id="liqJobCount" style="font-size:11px;text-align:right;opacity:.78;">0 processed · 0 pending</div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">
-        <strong style="font-size:12px;">Client containers</strong>
-        <button id="liqClearAll" type="button" style="font-size:11px;padding:4px 8px;border:1px solid #7e5b18;border-radius:5px;background:transparent;color:#261900;cursor:pointer;">Clear all</button>
+        <strong id="liqSessionLabel" style="font-size:12px;">No active client</strong>
+        <button id="liqClearAll" type="button" style="font-size:11px;padding:4px 8px;border:1px solid #7e5b18;border-radius:5px;background:transparent;color:#261900;cursor:pointer;">Reset session</button>
     </div>
     <div id="liqClientGroups" style="max-height:355px;overflow:auto;"></div>
     <div id="liqHint" style="font-size:10px;line-height:1.5;color:#49340c;margin-top:9px;">
-        Records are kept in this browser. Price is added after processing finishes, not when you click Process.
+        Only the current client's jobs are kept in this tab. Switching clients starts a fresh session; prices are added after processing.
     </div>
 </div>
 `;
@@ -1532,24 +1532,30 @@ box.innerHTML = `
 // CLIENT LIQUIDATION — STAGE JOB, THEN ATTACH ACTUAL PROCESSED PRICE
 ///////////////////////////////
 // Local, per-browser working container. Never add the hidden new-job estimate.
-const LIQ_STORE_KEY='sp-client-liquidation-v2';
+const LIQ_STORE_KEY='sp-client-liquidation-session-v3';
 const LIQ_TARGETS={EQU:'Equifax',EX:'Experian',TU:'TransUnion'};
-let liqMemory={jobs:{},excluded:{}};
-let liqPauseCapture=false;
+function liqEmptySession(){
+    return {clientKey:'',clientName:'',jobs:{}};
+}
+let liqMemory=liqEmptySession();
 function liqRead(){
     try{
-        const raw=localStorage.getItem(LIQ_STORE_KEY);
+        const raw=window.sessionStorage.getItem(LIQ_STORE_KEY);
         if(!raw)return liqMemory;
         const data=JSON.parse(raw);
-        if(data && data.jobs && typeof data.jobs==='object' && !Array.isArray(data.jobs)){
-            liqMemory={jobs:data.jobs,excluded:data.excluded||{}};
+        if(data && typeof data.clientKey==='string' &&
+           typeof data.clientName==='string' && data.jobs &&
+           typeof data.jobs==='object' && !Array.isArray(data.jobs)){
+            liqMemory={clientKey:data.clientKey,clientName:data.clientName,
+                       jobs:data.jobs};
         }
     }catch(_error){}
     return liqMemory;
 }
 function liqSave(data){
     liqMemory=data;
-    try{localStorage.setItem(LIQ_STORE_KEY,JSON.stringify(data));}catch(_error){}
+    try{window.sessionStorage.setItem(LIQ_STORE_KEY,JSON.stringify(data));}
+    catch(_error){}
 }
 function liqMoney(cents){
     return '$'+(cents/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1581,6 +1587,33 @@ function liqJobName(){
 }
 function liqKey(value){
     return String(value||'').trim().replace(/\s+/g,' ').toUpperCase();
+}
+function liqClientKey(value){
+    return liqKey(value).replace(/[.'\u2019]/g,'').replace(/\s*-\s*/g,'-');
+}
+function liqSwitchClient(client,jobId){
+    const key=liqClientKey(client);
+    if(!key || !jobId)return false;
+    const current=liqRead();
+    if(current.clientKey===key)return true;
+    // Don't automatically move an existing staged job to a new client.
+    if(Object.prototype.hasOwnProperty.call(current.jobs,jobId))return false;
+    liqSave({clientKey:key,clientName:String(client).trim(),jobs:{}});
+    liqRender();
+    return true;
+}
+function liqDetectNewClient(){
+    const status=document.querySelector('#jobState');
+    if(!status || !/^new\b/i.test(status.textContent.trim()) ||
+       !document.querySelector('#newJobContent'))return;
+    const id=liqJobId();
+    if(!id)return;
+    if(liqRead().jobs[id])return;
+    const parsed=liqFromFiles(spPdfNamesFromPage(),liqJobName());
+    // A new job with no trustworthy client name must never erase the
+    // previous client session or create a placeholder category.
+    if(parsed && liqValidAssignment(parsed.client,parsed.target))
+        liqSwitchClient(parsed.client,id);
 }
 function liqTarget(raw){
     const key=liqKey(raw);
@@ -1642,58 +1675,45 @@ function liqActualPrice(){
     return total?liqParsePrice(total.textContent):null;
 }
 function liqStageJob(){
-    if(liqPauseCapture)return;
     const id=liqJobId();
     if(!id)return;
-    const data=liqRead();
-    // An explicit fresh Process click may re-include a previously removed job.
-    if(data.excluded[id])delete data.excluded[id];
     const jobName=liqJobName();
     const names=spPdfNamesFromPage();
     const parsed=liqFromFiles(names,jobName);
+    // Require an identifiable client AND bureau/creditor.
+    if(!parsed || !liqValidAssignment(parsed.client,parsed.target))return;
+    if(!liqSwitchClient(parsed.client,id))return;
+    const data=liqRead();
     const prev=data.jobs[id];
-    // Skip unclear names: no placeholder groups or estimated price records.
-    if(!parsed && !(prev && prev.manual &&
-        liqValidAssignment(prev.client,prev.target)))return;
-    const details=parsed||{files:prev.files||[],client:prev.client,
-        target:prev.target,targetLabel:prev.targetLabel,source:prev.source};
-    // Processing has been requested, but the final price does not yet exist.
     const record={
-        id:id,jobName:jobName||'Job #'+id,files:details.files,client:details.client,
-        target:details.target,targetLabel:details.targetLabel,
-        source:details.source,priceCents:null,status:'processing',
+        id:id,jobName:jobName||'Job #'+id,files:parsed.files,
+        client:data.clientName,target:parsed.target,targetLabel:parsed.targetLabel,
+        source:parsed.source,priceCents:null,status:'processing',
         manual:false,updatedAt:Date.now()
     };
-    if(prev&&prev.manual){
-        record.client=prev.client;record.target=prev.target;
-        record.targetLabel=prev.targetLabel;record.manual=true;
+    if(prev&&prev.manual&&liqClientKey(prev.client)===data.clientKey){
+        record.target=prev.target;
+        record.targetLabel=prev.targetLabel;
+        record.manual=true;
     }
     data.jobs[id]=record;
     liqSave(data);
     liqRender();
 }
 function liqCaptureProcessed(){
-    if(liqPauseCapture)return;
     const id=liqJobId(),cents=liqActualPrice();
     if(!id||cents===null)return;
     const data=liqRead();
-    if(data.excluded[id])return;
+    // Never auto-import unrelated or historic jobs. A job must have been
+    // explicitly staged by Process within the current client session.
     const previous=data.jobs[id];
+    if(!previous||liqClientKey(previous.client)!==data.clientKey)return;
+    const record={...previous};
     const jobName=liqJobName();
-    // If the user opens a processed job without this tab's earlier click,
-    // fall back to its job name. Never invent an original PDF filename.
-    const parsed=previous?null:liqFromFiles([],jobName);
-    // Never create a fabricated client or destination for an unclear job.
-    if(!previous && !parsed)return;
-    if(previous && !liqValidAssignment(previous.client,previous.target))return;
-    const record=previous?{...previous}:{
-        id:id,jobName:jobName||'Job #'+id,files:[],
-        client:parsed.client,target:parsed.target,targetLabel:parsed.targetLabel,
-        source:'job name (filename unavailable)',manual:false
-    };
-    if(jobName && record.jobName!==jobName)record.jobName=jobName;
+    if(jobName)record.jobName=jobName;
     if(record.priceCents===cents && record.status==='processed')return;
-    record.priceCents=cents;record.status='processed';
+    record.priceCents=cents;
+    record.status='processed';
     record.updatedAt=Date.now();
     data.jobs[id]=record;
     liqSave(data);
@@ -1716,7 +1736,8 @@ function liqGroupData(data){
     const clients=new Map();
     const jobs=Object.values(data.jobs).filter(job=>job &&
         /^\d+$/.test(String(job.id)) &&
-        liqValidAssignment(job.client,job.target));
+        liqValidAssignment(job.client,job.target) &&
+        liqClientKey(job.client)===data.clientKey);
     jobs.forEach(job=>{
         const key=liqKey(job.client);
         if(!clients.has(key))clients.set(key,{
@@ -1748,12 +1769,14 @@ function liqRender(){
     const total=panel.querySelector('#liqGrandTotal');
     const count=panel.querySelector('#liqJobCount');
     const list=panel.querySelector('#liqClientGroups');
+    const label=panel.querySelector('#liqSessionLabel');
     if(!total||!count||!list)return;
+    if(label)label.textContent=data.clientName||'No active client';
     total.textContent=liqMoney(grand);
     count.textContent=processed+' processed · '+pending+' pending';
     list.replaceChildren();
     if(!clients.length){
-        list.appendChild(liqElement('p','No client jobs yet. Process a job to begin.',{
+        list.appendChild(liqElement('p',data.clientName?'No jobs processed for this client yet.':'Create a new client job to begin.',{
             fontSize:'11px',padding:'8px 0',margin:'0'
         }));
         return;
@@ -1851,38 +1874,39 @@ function liqConnectControls(){
         if(edit){
             const data=liqRead(),record=data.jobs[edit.dataset.liqEdit];
             if(!record)return;
-            const name=window.prompt('Client name for Job #'+record.id,record.client);
+            const name=window.prompt(
+                'Client name for this entire liquidation session:',data.clientName);
             if(name===null)return;
-            const label=window.prompt('Bureau or creditor for '+name,
+            const label=window.prompt('Bureau or creditor for Job #'+record.id,
                 record.targetLabel);
             if(label===null)return;
-            const target=liqTarget(label);
-            if(!name.trim()||!target){
-                window.alert('Please enter a client name and a valid bureau or creditor.');
+            const target=liqTarget(label),clean=name.trim(),key=liqClientKey(clean);
+            if(!clean||!key||!target){
+                window.alert('Enter a valid client name and bureau or creditor.');
                 return;
             }
-            record.client=name.trim();
+            // One session = one client. Renaming affects every job in it.
+            data.clientKey=key;
+            data.clientName=clean;
+            Object.values(data.jobs).forEach(function(job){job.client=clean;});
             record.target=target.key;
             record.targetLabel=target.label;
             record.manual=true;
-            liqSave(data);liqRender();return;
+            liqSave(data);
+            liqRender();
+            return;
         }
         if(remove){
             const id=remove.dataset.liqRemove,data=liqRead();
             delete data.jobs[id];
-            data.excluded[id]=true;
             liqSave(data);liqRender();return;
         }
         if(event.target.closest('#liqClearAll')){
-            if(!window.confirm('Clear this browser’s client liquidation records?'))return;
-            liqPauseCapture=true;
-            // Exclude the currently displayed processed job so refresh cannot
-            // immediately recreate the records the user just cleared.
-            const currentId=liqJobId();
-            const excluded=currentId?{[currentId]:true}:{};
-            liqSave({jobs:{},excluded:excluded});
+            if(!window.confirm('Reset this client liquidation session?'))return;
+            liqSave(liqEmptySession());
             liqRender();
         }
+
     });
     liqRender();
 }
@@ -1899,10 +1923,9 @@ function liqWatchProcessClick(){
 }
 liqConnectControls();
 liqWatchProcessClick();
-window.addEventListener('storage',function(event){
-    if(event.key===LIQ_STORE_KEY)liqRender();
-});
+liqDetectNewClient();
 liqCaptureProcessed();
+setInterval(liqDetectNewClient,1800);
 setInterval(liqCaptureProcessed,2500);
 
 ///////////////////////////////
