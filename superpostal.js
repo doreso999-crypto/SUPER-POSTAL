@@ -1114,6 +1114,103 @@ function spRecipientBureauStatus(message,type){
     el.textContent=message;
     el.dataset.status=type||'info';
 }
+// Recipient/PDF mismatch validation. Only explicit bureau labels in the PDF
+// filename count; names without a recognizable label must not be guessed.
+function spCheckRecipientPdfBureau(){
+    const modal=document.querySelector('#contactModal');
+    const selector=modal&&modal.querySelector('#spRecipientBureauSelect');
+    const warning=modal&&modal.querySelector('#spRecipientPdfMismatch');
+    if(!modal||!selector||!warning)return {type:'unavailable'};
+
+    const addressName=modal.querySelector('#address-name');
+    const nameBureau=spDetectBureauForRecipient(addressName?addressName.value:'');
+    const chosen=selector.value||'';
+    const addressBureau=nameBureau||chosen;
+    const files=spPdfNamesFromPage();
+    const recognized=[],unlabeled=[];
+    files.forEach(function(file){
+        const code=spDetectBureauForRecipient(String(file).replace(/\.pdf$/i,''));
+        if(code)recognized.push({file:file,code:code});
+        else unlabeled.push(file);
+    });
+    let type='unknown',message='';
+    if(chosen && nameBureau && chosen!==nameBureau){
+        type='address-mismatch';
+        message='The selected bureau ('+spBureauDisplayName(chosen)+
+            ') does not match the recipient name ('+spBureauDisplayName(nameBureau)+
+            '). Correct the recipient address before saving.';
+    }else if(addressBureau && recognized.length && !unlabeled.length &&
+             !recognized.some(function(entry){return entry.code===addressBureau;})){
+        type='pdf-mismatch';
+        const indicated=Array.from(new Set(recognized.map(function(entry){return entry.code;})));
+        message='PDF/recipient mismatch: '+recognized.slice(0,3).map(function(entry){
+            return entry.file;
+        }).join(', ')+(recognized.length>3?' and '+(recognized.length-3)+' more':'')+
+        ' indicates '+indicated.map(spBureauDisplayName).join(' / ')+
+        ', but the recipient address is '+spBureauDisplayName(addressBureau)+
+        '. Choose the matching bureau or correct the uploaded PDF.';
+    }else if(recognized.length && unlabeled.length && addressBureau &&
+             !recognized.some(function(entry){return entry.code===addressBureau;})){
+        type='uncertain';
+        message='Some PDF filenames indicate a different bureau, but others have no bureau label. Verify the files and recipient address before saving.';
+    }
+    warning.hidden=!message;
+    warning.textContent=message;
+    modal.querySelector('#spRecipientBureauPicker').classList.toggle('sp-pdf-bureau-error',
+        type==='pdf-mismatch'||type==='address-mismatch');
+    if(type==='pdf-mismatch'||type==='address-mismatch'){
+        selector.setAttribute('aria-invalid','true');
+    }else{
+        selector.removeAttribute('aria-invalid');
+    }
+    return {type:type,message:message,files:files};
+}
+function spBureauDisplayName(code){
+    return {EQU:'Equifax',EX:'Experian',TU:'TransUnion'}[code]||'Unknown bureau';
+}
+function spRecipientIsSubmitAction(btn){
+    if(!btn)return false;
+    const label=String(btn.tagName==='INPUT'?btn.value:
+        (btn.textContent||btn.getAttribute('aria-label')||''))
+        .replace(/\s+/g,' ').trim().toLowerCase();
+    if(/^(close|cancel|back|dismiss|delete|remove|reset|clear)$/.test(label)||
+       btn.matches('[data-dismiss="modal"],.close'))return false;
+    if(/\b(add|save|submit|confirm|create)\b/.test(label))return true;
+    const handler=btn.getAttribute('onclick')||'';
+    if(/\b(addAddress|saveAddress|createContact|saveContact|addContact)\s*\(/i.test(handler))
+        return true;
+    // Postalocity can submit using an unlabeled primary footer button.
+    return !!btn.closest('.modal-footer') &&
+        btn.matches('button.btn-primary,button.btn-success,input[type="submit"]');
+}
+function spInstallRecipientSaveCheck(modal){
+    if(modal.dataset.spRecipientSaveCheck==='true')return;
+    modal.dataset.spRecipientSaveCheck='true';
+    const block=function(event){
+        const result=spCheckRecipientPdfBureau();
+        if(result.type!=='pdf-mismatch'&&result.type!=='address-mismatch')return false;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const warning=modal.querySelector('#spRecipientPdfMismatch');
+        if(warning){warning.hidden=false;warning.focus();}
+        return true;
+    };
+    modal.addEventListener('click',function(event){
+        const button=event.target.closest('button,a,input[type="submit"],input[type="button"]');
+        if(button&&button.closest('#contactModal')===modal&&spRecipientIsSubmitAction(button))
+            block(event);
+    },true);
+    // Also catch a normal form submit that is not triggered by a button.
+    modal.addEventListener('submit',block,true);
+    modal.addEventListener('input',function(event){
+        if(event.target.matches('#address-name'))spCheckRecipientPdfBureau();
+    });
+    modal.addEventListener('change',function(event){
+        if(event.target.matches('#address-name,#spRecipientBureauSelect'))
+            spCheckRecipientPdfBureau();
+    });
+}
+
 function spFillRecipientBureau(code,method){
     const modal=document.querySelector('#contactModal');
     const data=SP_RECIPIENT_BUREAUS[code];
@@ -1134,6 +1231,7 @@ function spFillRecipientBureau(code,method){
     });
     const names={EX:'Experian',EQU:'Equifax',TU:'TransUnion'};
     spRecipientBureauStatus(names[code]+' address filled ('+method+'). Review before saving.','success');
+    spCheckRecipientPdfBureau();
     return true;
 }
 function populateRecipientFromJob(){
@@ -1146,6 +1244,7 @@ function populateRecipientFromJob(){
     else if(picker){
         spRecipientBureauStatus('No single bureau detected from the job name. Choose one from the dropdown.','info');
     }
+    spCheckRecipientPdfBureau();
 }
 function spAddRecipientBureauDropdown(){
     const modal=document.querySelector('#contactModal');
@@ -1162,7 +1261,11 @@ function spAddRecipientBureauDropdown(){
             '#contactModal #spRecipientBureauSelect:focus{outline:2px solid #6fa3e4;outline-offset:1px}',
             '#contactModal #spRecipientBureauStatus{font-size:12px;color:#62768e;line-height:1.5;margin:7px 0 0}',
             '#contactModal #spRecipientBureauStatus[data-status="success"]{color:#1f7544}',
-            '#contactModal #spRecipientBureauStatus[data-status="error"]{color:#aa3030}'
+            '#contactModal #spRecipientBureauStatus[data-status="error"]{color:#aa3030}',
+            '#contactModal #spRecipientBureauPicker.sp-pdf-bureau-error{border-color:#d86b6b;background:#fff7f7}',
+            '#contactModal #spRecipientBureauSelect[aria-invalid="true"]{border-color:#c83232;box-shadow:0 0 0 1px #c83232}',
+            '#contactModal #spRecipientPdfMismatch{margin:10px 0 0;padding:11px 12px;background:#ffe8e8;border:1px solid #df7171;border-radius:7px;color:#942424;font-size:12px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}',
+            '#contactModal #spRecipientPdfMismatch[hidden]{display:none!important}'
         ].join('\n');
         document.head.appendChild(style);
     }
@@ -1176,7 +1279,8 @@ function spAddRecipientBureauDropdown(){
         '<option value="EQU">Equifax</option>',
         '<option value="TU">TransUnion</option>',
         '</select>',
-        '<p id="spRecipientBureauStatus" role="status" aria-live="polite"></p>'
+        '<p id="spRecipientBureauStatus" role="status" aria-live="polite"></p>',
+        '<div id="spRecipientPdfMismatch" role="alert" tabindex="-1" hidden></div>'
     ].join('');
     body.insertBefore(control,body.firstChild);
     const picker=control.querySelector('#spRecipientBureauSelect');
@@ -1185,11 +1289,14 @@ function spAddRecipientBureauDropdown(){
         picker.dataset.manualChoice='true';
         if(picker.value)spFillRecipientBureau(picker.value,'manually selected');
         else spRecipientBureauStatus('Existing address fields are unchanged. Select a bureau to populate them.','info');
+        spCheckRecipientPdfBureau();
     });
+    spInstallRecipientSaveCheck(modal);
     const jq=window.jQuery||window.$;
     if(jq && jq.fn){
         jq(modal).on('shown.bs.modal.spRecipientBureauPicker',function(){
             if(picker.dataset.manualChoice!=='true')populateRecipientFromJob();
+            spCheckRecipientPdfBureau();
         });
         jq(modal).on('hidden.bs.modal.spRecipientBureauPicker',function(){
             // A fresh recipient can be auto-detected next time the modal opens.
@@ -1197,6 +1304,7 @@ function spAddRecipientBureauDropdown(){
         });
     }
     populateRecipientFromJob();
+    spCheckRecipientPdfBureau();
 }
 
 function watchJobName(){
