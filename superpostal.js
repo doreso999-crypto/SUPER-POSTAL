@@ -566,12 +566,12 @@ function spCleanLabel(text){
 // save's full reload. Tab-only storage avoids any new Postalocity API calls.
 let spPdfNamesRestored=false;
 function spPdfCurrentJobId(){
-    // Resolve once in the same way for filename caching and LIQUIDATION.
-    // A URL job ID is authoritative during same-tab job navigation.
+    // Explicit jobId URL parameters and the native Job # label are the
+    // strongest sources. A generic ?id can represent something else.
     try{
         const params=new URLSearchParams(window.location.search);
-        const urlId=params.get('jobId')||params.get('id');
-        if(urlId&&/^\d+$/.test(urlId))return urlId;
+        const explicit=params.get('jobId');
+        if(explicit&&/^\d+$/.test(explicit))return explicit;
     }catch(_error){}
     const label=document.querySelector('#jobNumberTop');
     const found=label&&String(label.textContent||'').match(
@@ -582,6 +582,9 @@ function spPdfCurrentJobId(){
             return String(jobId);
         if(window.jobId!=null&&/^\d+$/.test(String(window.jobId)))
             return String(window.jobId);
+        const params=new URLSearchParams(window.location.search);
+        const generic=params.get('id');
+        if(generic&&/^\d+$/.test(generic))return generic;
     }catch(_error){}
     return '';
 }
@@ -697,7 +700,11 @@ function spPdfNamesFromPage(){
     }
     const modalIsOtherJob=!!(current&&spPdfModalSnapshotJobId&&
        spPdfModalSnapshotJobId!==current);
-    const rows=modalIsOtherJob?[]:spPdfNativeModalNames();
+    const modal=document.querySelector('#fileListModal');
+    const visibleModal=!!(modal&&modal.classList&&
+       (modal.classList.contains('show')||modal.classList.contains('in')));
+    // A closed native modal might retain its previous job's old rows.
+    const rows=(modalIsOtherJob||!visibleModal)?[]:spPdfNativeModalNames();
     if(rows.length){
         spPdfRemember(rows);
         spPdfNamesRestored=false;
