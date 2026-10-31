@@ -1095,7 +1095,27 @@ const SP_PROCESS_SCARE_MEDIA={
     audio:'',
     fallbackMs:1900
 };
+// Roll independently per eligible processing attempt: a 1% surprise, not
+// every click. In the other 99%, Postalocity's original action runs normally.
+const SP_PROCESS_SCARE_CHANCE=0.01;
 let spScarePending=null,spScareBypass=false;
+// A button click may trigger a form submit in the same browser event cycle.
+// Use the SAME chance for that click/submit pair, never a second 1% roll.
+let spScareRegularSubmitForm=null,spScareRegularSubmitTimer=null;
+function spScareMarkRegularSubmit(form){
+    if(spScareRegularSubmitTimer!==null){
+        clearTimeout(spScareRegularSubmitTimer);
+        spScareRegularSubmitTimer=null;
+    }
+    spScareRegularSubmitForm=form||null;
+    if(form){
+        spScareRegularSubmitTimer=setTimeout(function(){
+            spScareRegularSubmitForm=null;
+            spScareRegularSubmitTimer=null;
+        },0);
+    }
+}
+
 function spProcessScareStop(event){
     if(!event)return;
     event.preventDefault();
@@ -1297,6 +1317,19 @@ function spScarePreview(control,form){
 function spProcessScareGuard(event,control){
     if(spBlockIncompleteProcess(event,control))return true;
     if(spScareBypass)return false;
+    // When an ordinary Process click submits its form, don't re-roll on submit.
+    if(event.type==='submit'&&spScareRegularSubmitForm===event.target){
+        spScareMarkRegularSubmit(null);
+        return false;
+    }
+    if(!spScarePending&&Math.random()>=SP_PROCESS_SCARE_CHANCE){
+        if(event.type==='click'){
+            const form=control&&(control.form||
+                (typeof control.closest==='function'?control.closest('form'):null));
+            spScareMarkRegularSubmit(form);
+        }
+        return false; // no interruption; original processing continues
+    }
     spProcessScareStop(event);
     if(!spScarePending){
         const form=event.type==='submit'?event.target:
