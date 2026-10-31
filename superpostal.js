@@ -1541,6 +1541,7 @@ const LIQ_PREFIX='sp-liq-temporary-v5:';
 const LIQ_ACTIVE_KEY=LIQ_PREFIX+'active';
 const LIQ_JOB_PREFIX=LIQ_PREFIX+'job:';
 const LIQ_OLD_TAB_KEY='sp-return-identity-liquidation-v4';
+const LIQ_MIGRATION_CLOSED=LIQ_PREFIX+'legacyImportClosed';
 const LIQ_MAX_AGE=24*60*60*1000;
 const LIQ_TARGETS={EQU:'Equifax',EX:'Experian',TU:'TransUnion'};
 let liqLastView='',liqLastNotice='';
@@ -1563,7 +1564,20 @@ function liqActive(){
            !session.clientKey||!session.clientName)return null;
         if(!Number.isFinite(session.createdAt)||
            Date.now()-session.createdAt>LIQ_MAX_AGE ||
-           session.createdAt>Date.now()+60000)return null;
+           session.createdAt>Date.now()+60000){
+            // Expiry must actually delete temporary job records, not merely
+            // hide them while leaving client details in browser storage.
+            try{
+                if(window.localStorage.getItem(LIQ_ACTIVE_KEY)===raw){
+                    window.localStorage.setItem(LIQ_ACTIVE_KEY,JSON.stringify({
+                        id:null,expiredAt:Date.now()
+                    }));
+                    window.localStorage.setItem(LIQ_MIGRATION_CLOSED,'true');
+                    liqPurgeSession(session);
+                }
+            }catch(_error){}
+            return null;
+        }
         return session;
     }catch(_error){return null;}
 }
@@ -1645,7 +1659,12 @@ function liqStartSession(identity,explicit){
         return null;
     }
     // The session pointer changes first, so old tabs cannot continue writing.
-    if(active)liqPurgeSession(active);
+    if(active){
+        // Once the client changes, old per-tab records must never be imported
+        // into a fresh temporary session.
+        try{window.localStorage.setItem(LIQ_MIGRATION_CLOSED,'true');}catch(_error){}
+        liqPurgeSession(active);
+    }
     liqLastNotice='';
     liqRender();
     return liqActive();
@@ -1657,11 +1676,16 @@ function liqResetSession(){
         window.localStorage.setItem(LIQ_ACTIVE_KEY,JSON.stringify({
             id:null,resetAt:Date.now()
         }));
+        window.localStorage.setItem(LIQ_MIGRATION_CLOSED,'true');
+        try{window.sessionStorage.removeItem(LIQ_OLD_TAB_KEY);}catch(_e){}
         if(current)liqPurgeSession(current);
     }catch(_error){liqLastNotice='Could not reset shared liquidation session.';}
     liqRender();
 }
 function liqMigrateTabJobs(){
+    try{
+        if(window.localStorage.getItem(LIQ_MIGRATION_CLOSED))return;
+    }catch(_error){return;}
     // One-time migration for jobs already tracked in separate v4 tabs.
     // Each tab may contribute a different job to the same shared session.
     const active=liqActive();
