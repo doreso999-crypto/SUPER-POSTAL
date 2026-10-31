@@ -1906,12 +1906,12 @@ document.body.appendChild(box);
     function countable(r){
         if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!norm(r.name))return false;
         const session=read('session:'+r.session);
-        return !!session&&!session.ended&&!!complete(session.address);
+        return !!session&&!session.ended&&!!complete(session.address)&&group(r).key!=='Unassigned';
     }
     const approvedState=status=>/^(?:approved|mailed)(?:\b|$)/i.test(String(status||'').trim());
     const isApproved=r=>!!r&&(r.approved===true||approvedState(r.status));
     function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted);}
-    function canClear(key){return !sessionJobs(key).some(r=>!isApproved(r));}
+    function canClear(key){const s=read('session:'+key);return !!s&&!s.ended;}
     function markLifecycle(jobId,action){
         const r=read('job:'+jobId);if(!r)return;
         const session=read('session:'+r.session);if(!session||session.ended)return;
@@ -2054,8 +2054,10 @@ document.body.appendChild(box);
             const style=el('style');style.textContent='#bureauTotals[data-minimized="true"] #spLedgerPanel{display:none} #spLedgerPanel summary{cursor:pointer;padding:7px 0} #spLedgerPanel button,#spLedgerPanel select{margin:5px 3px 0 0;max-width:100%} #spLedgerPanel small{display:block;overflow-wrap:anywhere}';document.head.appendChild(style);
         }
         const session=r&&read('session:'+r.session);
-        const jobs=session&&!session.ended?keys().filter(k=>k.startsWith('job:')).map(read).filter(j=>j&&j.session===r.session&&countable(j)):[];
-        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage,session&&canClear(r.session)]);if(view===lastView)return;lastView=view;
+        const tracked=session&&!session.ended?sessionJobs(r.session):[];
+        const jobs=tracked.filter(countable);
+        const unassigned=tracked.filter(j=>norm(j.name)&&group(j).key==='Unassigned');
+        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,unassigned,error,recovering,recoveryMessage,session&&canClear(r.session)]);if(view===lastView)return;lastView=view;
         panel.replaceChildren(el('strong','CLIENT TOTALS'));
         if(error)panel.append(el('p',error));
         if(!r||!session||session.ended){
@@ -2073,7 +2075,9 @@ document.body.appendChild(box);
         }
         panel.append(el('h4',session.address.name),el('small',[session.address.address1,session.address.address2,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(', ')));
         if(r.deleted)panel.append(el('p','This job was deleted. Its cost has been removed.'));
-        else if(!countable(r))panel.append(el('p','This job is excluded until it has both a saved return address and a job name.'));
+        else if(!countable(r))panel.append(el('p',group(r).key==='Unassigned'
+            ?'This job is unassigned and excluded from totals. Assign a bureau or recipient to count it.'
+            :'This job is excluded until it has both a saved return address and a job name.'));
         const groups=new Map();let total=0,pending=0;
         jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)){b.sum+=j.cents;total+=j.cents;}else pending++;});
         [...groups.values()].sort((a,b)=>a.label.localeCompare(b.label)).forEach(b=>{
@@ -2087,18 +2091,65 @@ document.body.appendChild(box);
                 select.onchange=()=>{const latest=read('job:'+j.id);if(latest){latest.override=select.value;write('job:'+j.id,latest);lastView='';tick();}};details.append(select);
             });panel.append(details);
         });
+        if(unassigned.length){
+            const details=el('details');details.append(el('summary','Unassigned — excluded · '+unassigned.length+' job(s)'));
+            unassigned.forEach(j=>{
+                details.append(el('small','#'+j.id+' — '+j.name+' — not included in totals'));
+                const select=el('select');select.setAttribute('aria-label','Assign job '+j.id);
+                [['','Automatic grouping'],['EX','Experian'],['EQU','Equifax'],['TU','TransUnion']].forEach(([v,l])=>{
+                    const option=el('option',l);option.value=v;select.append(option);
+                });
+                select.value=j.override||'';
+                select.onchange=()=>{
+                    const latest=read('job:'+j.id);
+                    if(latest){latest.override=select.value;write('job:'+j.id,latest);lastView='';tick();}
+                };
+                details.append(select);
+            });
+            panel.append(details);
+        }
         panel.append(el('h4','Total: '+money(total)),el('small',pending?pending+' job(s) awaiting price.':'Processed prices; approval status shown per job.'));
         const copy=el('button','Copy summary');copy.onclick=async()=>{try{await navigator.clipboard.writeText(session.address.name+'\n'+[...groups.values()].map(b=>b.label+': '+money(b.sum)).join('\n')+'\nTotal: '+money(total));copy.textContent='Copied';}catch(e){copy.textContent='Copy unavailable';}};
-        const end=el('button','Clear');end.disabled=!canClear(r.session);
-        end.title=end.disabled?'Approve or delete all pending jobs before clearing.':'Clear this client’s temporary totals in all tabs.';
-        end.onclick=()=>{if(clearSession(r.session))tick();};
-        const awaiting=sessionJobs(r.session).filter(j=>!isApproved(j)).length;
-        panel.append(el('small',awaiting?awaiting+' job(s) still awaiting approval.':'No jobs awaiting approval. You can clear these totals.'));
-        panel.append(copy,end,el('small','This browser only · expires after 15 minutes without an active matching tab.'));
+        const end=el('button','Clear');
+        end.title='Clear this client’s tracked totals in all tabs (Postalocity jobs are not deleted).';
+        end.onclick=()=>{
+            if(!window.confirm('Clear all temporary totals for this client, including pending and approved jobs? This cannot be undone here. Jobs in Postalocity will NOT be deleted.'))return;
+            if(clearSession(r.session))tick();
+        };
+        const awaiting=jobs.filter(j=>!isApproved(j)).length;
+        panel.append(el('small',awaiting?awaiting+' tracked job(s) still awaiting approval. You may clear anyway.':'No tracked jobs awaiting approval.'));
+        const nativeDelete=el('button','Delete job in Postalocity');
+        nativeDelete.title='Use Postalocity’s own Delete Job action before closing the tab.';
+        nativeDelete.onclick=requestNativeDeletion;
+        if(r.deleted||isApproved(r))nativeDelete.disabled=true;
+        panel.append(copy,end,nativeDelete,el('small','Closing a browser tab can only show a leave-page warning. To remove a Postalocity job, use Delete job in Postalocity. Totals stay on this browser for up to 15 minutes of inactivity.'));
+    }
+    function requestNativeDeletion(){
+        const current=read('job:'+id());
+        if(!current||current.deleted||isApproved(current))return;
+        // Invoke Postalocity's real Delete Job control; removing a local
+        // ledger entry alone does not delete a job on Postalocity.
+        const button=[...document.querySelectorAll('button[onclick],a[onclick]')].find(el=>
+            /^\s*(?:return\s+)?deleteJob\s*\(\s*\)\s*;?\s*$/.test(el.getAttribute('onclick')||'')
+            &&!el.closest('#spLedgerPanel')&&!el.disabled);
+        if(button){button.click();return;}
+        if(typeof window.deleteJob==='function'){window.deleteJob();return;}
+        window.alert('Postalocity’s Delete Job control was not found. Delete the job from Postalocity before closing the tab.');
+    }
+    function warnIfLeaving(event){
+        const current=read('job:'+id());
+        if(!current||current.deleted||isApproved(current))return;
+        const session=read('session:'+current.session);
+        if(!session||session.ended)return;
+        // Browsers cannot distinguish closing a tab from reloading/navigating
+        // or reliably finish an asynchronous server deletion after tab close.
+        event.preventDefault();
+        event.returnValue='';
     }
     function tick(){try{clean();hookRecipientSave();render(capture());}catch(e){console.warn('SUPER POSTAL totals:',e);}}
     window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
     document.addEventListener('click',e=>{if(e.target.closest('#processBtn')){const r=capture();if(r&&!r.deleted&&!isApproved(r)){r.cents=null;r.status='Processing';write('job:'+r.id,r);}}},true);
+    window.addEventListener('beforeunload',warnIfLeaving);
     window.addEventListener('pagehide',()=>capture());
     setInterval(tick,1500);tick();
 })();
