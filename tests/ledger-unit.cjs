@@ -5,14 +5,14 @@ function storage(){const data={};Object.defineProperties(data,{getItem:{value:k=
 const shared=storage();
 function tab(id,client='John Doe',store=shared){
  const state={client,id,name:'John EX',status:'New',cost:null,address:'123 Main St',priceSelector:'.totalPriceRow .totalPrice'};
- const ctx={console,Map,Set,JSON,Date,Number,String,Object,Array,URL,URLSearchParams,localStorage:store,location:{pathname:'/jobui'},
+ const ctx={console,Map,Set,JSON,Date,Number,String,Object,Array,URL,URLSearchParams,localStorage:store,location:{pathname:'/jobui'},window:{confirm:()=>true},tick:()=>{},
  spPdfCurrentJobId:()=>state.id,spStateCode:x=>x,spReturnSavedReady:()=>!!state.client,
  spReturnFormField:(_,k)=>({value:({name:state.client,address1:state.address,city:'Denver',state:'CO',zip:'80201'})[k]||''}),
  spDetectBureauForRecipient:n=>/\bEX\b/.test(n||'')?'EX':/\bTU\b/.test(n||'')?'TU':'',
  spBureauDisplayName:c=>({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[c]||'Unknown bureau',
  SP_RECIPIENT_BUREAUS:{EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}},
  document:{querySelector:s=>s==='#envelopeReturn-address'?{}:s==='#overview-jobName'?(state.name===null?null:{value:state.name}):s==='#jobState'?{textContent:state.status}:s===state.priceSelector?(state.cost?{textContent:state.cost}:null):null,querySelectorAll:()=>[]}};
- vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage,duplicateNameMatches,duplicateReviewKey,bureauSummary,priceSnapshot,sessionJobs};})();',ctx);return {api:ctx.api,state,ctx};
+ vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage,duplicateNameMatches,duplicateReviewKey,bureauSummary,priceSnapshot,sessionJobs,linkableSessions,linkJobToClient,isProcessed};})();',ctx);return {api:ctx.api,state,ctx};
 }
 const a=tab('101'),b=tab('102'),j=tab('103','Jane Doe');const ar=a.api.capture(),br=b.api.capture(),jr=j.api.capture();
 assert.equal(ar.session,br.session);assert.notEqual(ar.session,jr.session);
@@ -250,3 +250,43 @@ assert.notEqual(aSession,bSession,'different senders remain separate');
 separateA.state.address='New Street';separateA.api.capture();
 assert.equal(separateB.api.read('job:7202').session,bSession,'return address change cannot merge a different client');
 console.log('PASS: separate sender names remain isolated during address changes.');
+
+const recoveredStore=storage(),known=tab('9301','Recovery Client',recoveredStore);
+known.state.status='Processed - Ready for Approval';known.state.name='First EX';known.state.cost='$1.39';
+const firstTracked=known.api.capture();
+assert.ok(firstTracked,'the first processed job is tracked from its saved sender');
+const secondMissing=tab('9302',null,recoveredStore);
+secondMissing.state.status='Processed - Ready for Approval';secondMissing.state.name='Second TU';secondMissing.state.cost='$1.39';
+const thirdMissing=tab('9303',null,recoveredStore);
+thirdMissing.state.status='Processed - Ready for Approval';thirdMissing.state.name='Third EX';thirdMissing.state.cost='$1.39';
+assert.equal(secondMissing.api.capture(),null,'native HTML without address cannot be guessed automatically');
+assert.equal(thirdMissing.api.capture(),null,'third job cannot be guessed automatically');
+const links=secondMissing.api.linkableSessions();
+assert.equal(links.length,1,'one existing tracked sender can be selected');
+assert.equal(links[0].key,firstTracked.session);
+assert.equal(secondMissing.api.linkJobToClient(links[0].key),true);
+assert.equal(thirdMissing.api.linkJobToClient(links[0].key),true);
+const totalJobs=()=>known.api.sessionJobs(firstTracked.session);
+assert.equal(totalJobs().length,3,'all three processed jobs become visible under the same explicitly selected sender');
+assert.equal(totalJobs().reduce((sum,j)=>sum+j.cents,0),417,'three processed prices are preserved');
+assert.equal(known.api.countable(known.api.read('job:9302')),true);
+assert.equal(known.api.countable(known.api.read('job:9303')),true);
+known.api.leavePage();secondMissing.api.leavePage();thirdMissing.api.leavePage();
+assert.equal(totalJobs().length,3,'all three processed jobs persist when tabs close');
+assert.equal(totalJobs().reduce((sum,j)=>sum+j.cents,0),417);
+known.api.markLifecycle('9302','delete');
+assert.equal(totalJobs().length,2,'native deletion removes the processed job');
+assert.equal(totalJobs().reduce((sum,j)=>sum+j.cents,0),278,'native deletion deducts only deleted job');
+console.log('PASS: one existing tracked sender plus two previously unlinked processed jobs yields three durable totals; native deletion deducts one.');
+
+const declined=tab('9304',null,recoveredStore);
+declined.state.name='Unlinked EX';declined.state.status='Processed - Ready for Approval';
+declined.ctx.window.confirm=()=>false;
+assert.equal(declined.api.linkJobToClient(firstTracked.session),false,'canceling recovery cannot link job');
+assert.equal(declined.api.read('job:9304'),null,'canceling does not write to the ledger');
+declined.ctx.window.confirm=()=>true;
+declined.state.name='';
+assert.equal(declined.api.linkJobToClient(firstTracked.session),false,'blank job name cannot be linked');
+assert.equal(declined.api.read('job:9304'),null);
+assert.equal(declined.api.linkJobToClient('no-such-client'),false,'unknown local client cannot be linked');
+console.log('PASS: recovery link is explicit, rejects cancellation, missing job names and unknown clients.');
