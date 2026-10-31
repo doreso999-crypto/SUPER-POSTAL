@@ -917,7 +917,9 @@ function spJobDetailsReadiness(){
     const countEl=document.querySelector('#step3 .contactListSize');
     const count=countEl?Number.parseInt(countEl.textContent,10):NaN;
     const pdfNames=spPdfNamesFromPage();
+    const name=document.querySelector('#overview-jobName');
     const checks=[
+        {label:'Job name',ready:!!(name&&String(name.value||'').trim())},
         {label:'Recipient names',ready:(Number.isFinite(count)&&count>0)||recipients.length>0},
         {label:'Uploaded PDF filenames',ready:pdfNames.length>0},
         {label:'Saved return address',ready:spReturnSavedReady()}
@@ -1041,9 +1043,53 @@ function spBlockIncompleteProcess(event,control){
     spQueueRecipientOverview();
     return true;
 }
+// The click/submit guard remains authoritative. This adds visible readiness
+// and greys out only the native Process Job controls.
+let spProcessVisualTimer=null;
+function spUpdateProcessControlState(){
+    const step=document.querySelector('#step4');if(!step)return;
+    const controls=[...step.querySelectorAll('button,input[type="submit"],input[type="button"],a,[role="button"]')]
+        .filter(spIsNativeProcessJobControl);
+    if(!controls.length)return;
+    let readiness;
+    try{readiness=spJobDetailsReadiness();}
+    catch(_error){readiness={ready:false,missing:['Job details could not be verified']};}
+    if(!document.querySelector('#spProcessDisabledStyle')){
+        const style=document.createElement('style');style.id='spProcessDisabledStyle';
+        style.textContent='#step4 .sp-process-not-ready{opacity:.45!important;filter:grayscale(1)!important;cursor:not-allowed!important;box-shadow:none!important}#spProcessMissingHint{font:600 12px/1.5 Arial,sans-serif;color:#97502e;margin:8px 0 12px;overflow-wrap:anywhere}';
+        document.head.appendChild(style);
+    }
+    controls.forEach(el=>{
+        if(!readiness.ready){
+            if('disabled' in el&&!el.disabled){el.disabled=true;el.dataset.spGuardDisabled='true';}
+            if(!el.hasAttribute('data-sp-guard-title'))el.setAttribute('data-sp-guard-title',el.getAttribute('title')||'');
+            el.title='Missing: '+readiness.missing.join(', ');
+            el.classList.add('sp-process-not-ready');el.setAttribute('aria-disabled','true');
+        }else{
+            if(el.dataset.spGuardDisabled==='true'){el.disabled=false;delete el.dataset.spGuardDisabled;}
+            if(el.hasAttribute('data-sp-guard-title')){el.title=el.getAttribute('data-sp-guard-title');el.removeAttribute('data-sp-guard-title');}
+            el.classList.remove('sp-process-not-ready');
+            if(el.getAttribute('aria-disabled')==='true'&&!el.disabled)el.removeAttribute('aria-disabled');
+        }
+    });
+    let hint=document.querySelector('#spProcessMissingHint');
+    if(readiness.ready){if(hint)hint.remove();return;}
+    if(!hint){hint=document.createElement('p');hint.id='spProcessMissingHint';hint.setAttribute('role','status');controls[0].insertAdjacentElement('afterend',hint);}
+    const message='Complete before processing: '+readiness.missing.join(' · ');
+    if(hint.textContent!==message)hint.textContent=message;
+}
+function spScheduleProcessControlUpdate(){
+    if(spProcessVisualTimer!==null)return;
+    spProcessVisualTimer=setTimeout(()=>{spProcessVisualTimer=null;spUpdateProcessControlState();},100);
+}
 function spInstallProcessJobGuard(){
     if(document.documentElement.dataset.spProcessJobGuard==='true')return;
     document.documentElement.dataset.spProcessJobGuard='true';
+    document.addEventListener('input',spScheduleProcessControlUpdate,true);
+    document.addEventListener('change',spScheduleProcessControlUpdate,true);
+    document.addEventListener('click',spScheduleProcessControlUpdate,true);
+    setInterval(spUpdateProcessControlState,1300);
+    spScheduleProcessControlUpdate();
     document.addEventListener('click',function(event){
         const target=event.target;
         const control=target&&target.closest&&target.closest(
