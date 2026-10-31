@@ -1525,6 +1525,11 @@ Object.assign(box.style,{
 box.innerHTML = `
 <div id="calculator" style="width:100%;position:relative;z-index:10;font-family:Arial,sans-serif;">
     <div style="font-size:20px;font-weight:800;text-align:center;margin-bottom:10px;letter-spacing:1px;">LIQUIDATION</div>
+    <section id="liqReturnPreview" style="border-radius:8px;background:#fff9e9;padding:10px 11px;margin-bottom:10px;border:1px solid #b98a23;">
+        <div id="liqReturnStatus" style="font-size:10px;color:#76581a;font-weight:700;margin-bottom:4px;">RETURN ADDRESS</div>
+        <strong id="liqReturnName" style="display:block;font-size:13px;overflow-wrap:anywhere;">No return address entered</strong>
+        <div id="liqReturnAddress" style="font-size:11px;white-space:pre-line;line-height:1.5;overflow-wrap:anywhere;"></div>
+    </section>
     <div style="border-radius:9px;background:#222;color:#fff;padding:11px 12px;margin-bottom:11px;">
         <div style="font-size:11px;font-weight:700;opacity:.82;letter-spacing:.5px;">TOTAL PROCESSED COST</div>
         <div id="liqGrandTotal" style="font-size:28px;font-weight:800;text-align:right;">$0.00</div>
@@ -1534,7 +1539,11 @@ box.innerHTML = `
         <strong id="liqSessionLabel" style="font-size:12px;">No active client</strong>
         <button id="liqClearAll" type="button" style="font-size:11px;padding:4px 8px;border:1px solid #7e5b18;border-radius:5px;background:transparent;color:#261900;cursor:pointer;">Reset session</button>
     </div>
-    <div id="liqClientGroups" style="max-height:355px;overflow:auto;"></div>
+    <section id="liqDraftArea" style="margin-bottom:10px;">
+        <strong style="font-size:12px;">Uploaded files · live</strong>
+        <div id="liqDraftFiles" style="max-height:170px;overflow:auto;margin-top:6px;"></div>
+    </section>
+    <div id="liqClientGroups" style="max-height:245px;overflow:auto;"></div>
     <button id="liqRecoverCurrent" type="button" hidden style="margin-top:6px;width:100%;border:1px solid #7e5b18;border-radius:5px;padding:6px;background:#fff;color:#261900;cursor:pointer;font-size:11px;">Recover this processed job</button>
     <div id="liqHint" style="font-size:10px;line-height:1.5;color:#49340c;margin-top:9px;">
         Shared across Postalocity tabs. Saving a different return address starts a new temporary session; only processed prices are counted.
@@ -1555,8 +1564,9 @@ const LIQ_OLD_TAB_KEY='sp-return-identity-liquidation-v4';
 const LIQ_MIGRATION_CLOSED=LIQ_PREFIX+'legacyImportClosed';
 const LIQ_MAX_IDLE=24*60*60*1000;
 const LIQ_ACTIVITY_PREFIX=LIQ_PREFIX+'activity:';
+const LIQ_DRAFT_PREFIX=LIQ_PREFIX+'draft:';
 const LIQ_TARGETS={EQU:'Equifax',EX:'Experian',TU:'TransUnion'};
-let liqLastView='',liqLastNotice='';
+let liqLastView='',liqLastNotice='',liqLastLiveSignature='';
 function liqEmptySession(){
     return {clientKey:'',clientName:'',sessionId:'',jobs:{}};
 }
@@ -1600,6 +1610,192 @@ function liqActive(){
 function liqJobKey(session,id){
     return LIQ_JOB_PREFIX+session.id+':'+id;
 }
+function liqDraftKey(session,id){
+    return LIQ_DRAFT_PREFIX+session.id+':'+id;
+}
+function liqDraftRecords(session){
+    const drafts={};
+    if(!session)return drafts;
+    const prefix=LIQ_DRAFT_PREFIX+session.id+':';
+    try{
+        for(let i=0;i<window.localStorage.length;i++){
+            const key=window.localStorage.key(i);
+            if(!key||!key.startsWith(prefix))continue;
+            const id=key.slice(prefix.length);
+            if(!/^\d+$/.test(id))continue;
+            const candidate=JSON.parse(window.localStorage.getItem(key)||'null');
+            if(candidate&&candidate.id===id &&
+               candidate.sessionId===session.id &&
+               candidate.sessionKey===session.clientKey &&
+               Array.isArray(candidate.files))drafts[id]=candidate;
+        }
+    }catch(_error){}
+    return drafts;
+}
+function liqRemoveDraft(id,session){
+    if(!session||!/^\d+$/.test(String(id)))return;
+    try{window.localStorage.removeItem(liqDraftKey(session,String(id)));}
+    catch(_error){}
+}
+function liqCurrentReturnDisplay(){
+    const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
+    if(!form||spReturnIsSampleForm(form))return null;
+    const nameField=spReturnFormField(form,'name');
+    const name=String(nameField&&nameField.value||'').trim();
+    const lines=spReturnAddressLines();
+    if(!Array.isArray(lines)||!lines.length)return null;
+    const address=lines.slice(name&&lines[0]===name?1:0).join('\n').trim();
+    if(!name&&!address)return null;
+    const identity=liqReturnIdentity();
+    return {name:name,address:address,identity:identity,saved:!!identity};
+}
+function liqSharedReturnDisplay(session){
+    if(!session)return null;
+    const display=session.returnDisplay;
+    return display&&typeof display==='object'&&
+        typeof display.address==='string'?
+        {name:String(display.name||session.clientName),
+         address:display.address,saved:true,identity:null}:null;
+}
+function liqRememberReturnDisplay(identity){
+    const current=liqActive();
+    if(!current||!identity||current.clientKey!==identity.key)return;
+    const display=liqCurrentReturnDisplay();
+    if(!display||!display.saved)return;
+    const next={name:display.name,address:display.address};
+    const old=current.returnDisplay||null;
+    if(old&&old.name===next.name&&old.address===next.address)return;
+    const updated={...current,returnDisplay:next};
+    try{
+        // Temporary local shared display; removed on reset or expiry.
+        const raw=window.localStorage.getItem(LIQ_ACTIVE_KEY);
+        const stored=raw&&JSON.parse(raw);
+        if(!stored||stored.id!==current.id)return;
+        window.localStorage.setItem(LIQ_ACTIVE_KEY,JSON.stringify(updated));
+    }catch(_error){}
+}
+function liqPreviewFiles(files){
+    return files.map(function(name){
+        const parsed=liqParseFileLabel(name);
+        return {name:String(name),target:parsed?parsed.target:null,
+            label:parsed?parsed.targetLabel:'Check destination'};
+    });
+}
+function liqIsNewJob(){
+    const state=document.querySelector('#jobState');
+    return !!(state&&/^new\b/i.test(state.textContent.trim())&&
+        document.querySelector('#newJobContent'));
+}
+function liqSyncDraft(){
+    if(!liqIsNewJob())return;
+    const id=liqJobId();
+    if(!id)return;
+    const identity=liqReturnIdentity();
+    const active=liqActive();
+    if(!identity||!active||identity.key!==active.clientKey)return;
+    const names=spPdfNamesFromPage().filter(name=>/\.pdf$/i.test(String(name)));
+    const key=liqDraftKey(active,id);
+    const existing=liqDraftRecords(active)[id];
+    const tracked=liqJobRecords(active)[id];
+    if(tracked){
+        if(existing)liqRemoveDraft(id,active);
+        return;
+    }
+    if(!names.length){
+        if(existing)liqRemoveDraft(id,active);
+        return;
+    }
+    const name=liqJobName()||'Job #'+id;
+    if(existing&&existing.jobName===name &&
+       JSON.stringify(existing.files)===JSON.stringify(names))return;
+    const draft={id:id,sessionId:active.id,sessionKey:active.clientKey,
+        jobName:name,files:names,updatedAt:Date.now()};
+    try{
+        // Separate key for each Postalocity job.
+        window.localStorage.setItem(key,JSON.stringify(draft));
+    }catch(_error){}
+}
+function liqRenderLive(){
+    const panel=box.querySelector('#calculator');
+    if(!panel)return;
+    const active=liqActive(),saved=liqCurrentReturnDisplay();
+    const shared=liqSharedReturnDisplay(active);
+    const same=!!(saved&&saved.identity&&active&&
+        saved.identity.key===active.clientKey);
+    const display=saved||shared;
+    const status=!display?'RETURN ADDRESS':
+        !display.saved?'DRAFT RETURN ADDRESS · NOT SAVED':
+        same?'SAVED RETURN ADDRESS · ACTIVE SESSION':
+        saved?'SAVED RETURN ADDRESS · DIFFERENT CLIENT':'ACTIVE CLIENT · SHARED';
+    const localFiles=liqIsNewJob()?spPdfNamesFromPage().filter(
+        name=>/\.pdf$/i.test(String(name))):[];
+    const currentId=liqJobId();
+    const currentJobName=liqJobName();
+    const data=liqRead();
+    const entries=[];
+    const drafts=active?liqDraftRecords(active):{};
+    Object.values(drafts).forEach(function(draft){
+        if(data.jobs[draft.id])return;
+        if(draft.id===currentId&&liqIsNewJob())return;
+        entries.push({id:draft.id,jobName:draft.jobName,files:draft.files,
+            shared:true});
+    });
+    if(localFiles.length){
+        entries.unshift({id:currentId,jobName:currentJobName,
+            files:localFiles,shared:false});
+    }
+    const signature=JSON.stringify([
+        active&&active.id,display&&display.name,display&&display.address,
+        status,entries.map(x=>[x.id,x.jobName,x.files,x.shared])
+    ]);
+    if(signature===liqLastLiveSignature)return;
+    liqLastLiveSignature=signature;
+    const elStatus=panel.querySelector('#liqReturnStatus');
+    const elName=panel.querySelector('#liqReturnName');
+    const elAddress=panel.querySelector('#liqReturnAddress');
+    const elFiles=panel.querySelector('#liqDraftFiles');
+    if(elStatus)elStatus.textContent=status;
+    if(elName)elName.textContent=display&&display.name||'No return address entered';
+    if(elAddress)elAddress.textContent=display&&display.address||'';
+    if(!elFiles)return;
+    elFiles.replaceChildren();
+    if(!entries.length){
+        elFiles.appendChild(liqElement('div','No uploaded files in the active draft.',{
+            fontSize:'11px',padding:'7px 3px',opacity:'.75'
+        }));
+        return;
+    }
+    entries.forEach(function(entry){
+        const card=liqElement('div',null,{
+            background:'rgba(255,255,255,.6)',borderRadius:'6px',
+            padding:'6px 8px',marginBottom:'5px'
+        });
+        const source=entry.shared?'Other tab · uploaded, not processed':
+            'Current job · uploaded, not processed';
+        card.appendChild(liqElement('div',
+            source+(entry.id?' · Job #'+entry.id:''),{
+                fontSize:'10px',fontWeight:'700',opacity:'.76',
+                marginBottom:'4px'
+            }));
+        liqPreviewFiles(entry.files).forEach(function(file){
+            const row=liqElement('div',null,{
+                display:'flex',justifyContent:'space-between',gap:'5px',
+                alignItems:'flex-start',margin:'5px 0'
+            });
+            row.append(
+                liqElement('span',file.name,{
+                    minWidth:'0',flex:'1',fontSize:'11px',overflowWrap:'anywhere'
+                }),
+                liqElement('strong',file.label,{
+                    fontSize:'10px',whiteSpace:'nowrap'
+                })
+            );
+            card.appendChild(row);
+        });
+        elFiles.appendChild(card);
+    });
+}
+
 function liqJobRecords(session){
     const jobs={};
     if(!session)return jobs;
@@ -1663,6 +1859,13 @@ function liqPurgeSession(session){
             if(key&&key.startsWith(prefix))keys.push(key);
         }
         keys.forEach(key=>window.localStorage.removeItem(key));
+        const draftPrefix=LIQ_DRAFT_PREFIX+session.id+':';
+        const draftKeys=[];
+        for(let i=0;i<window.localStorage.length;i++){
+            const key=window.localStorage.key(i);
+            if(key&&key.startsWith(draftPrefix))draftKeys.push(key);
+        }
+        draftKeys.forEach(key=>window.localStorage.removeItem(key));
         window.localStorage.removeItem(LIQ_ACTIVITY_PREFIX+session.id);
     }catch(_error){}
 }
@@ -1718,6 +1921,7 @@ function liqStartSession(identity,explicit){
     }
     liqLastNotice='';
     liqTouchSession(fresh);
+    liqLastLiveSignature='';
     liqRender();
     return liqActive();
 }
@@ -1857,8 +2061,13 @@ function liqDetectNewClient(){
 function liqVerifiedReturnSaved(){
     const identity=liqReturnIdentity();
     if(!identity)return;
-    liqStartSession(identity,true);
-    liqMigrateTabJobs();
+    const active=liqStartSession(identity,true);
+    if(active&&active.clientKey===identity.key){
+        liqRememberReturnDisplay(identity);
+        liqMigrateTabJobs();
+        liqSyncDraft();
+    }
+    liqLastLiveSignature='';
     liqRender();
 }
 function liqTarget(raw){
@@ -1953,6 +2162,7 @@ function liqStageJob(){
     }
     if(!liqSaveJob(record,active))
         return fail('Unable to verify the shared liquidation record. Processing was stopped to prevent a missing expense.');
+    liqRemoveDraft(id,active);
     liqLastNotice='';
     liqRender();
     return {ready:true};
@@ -2048,6 +2258,7 @@ function liqRender(){
         list.appendChild(liqElement('p',data.clientName?'No jobs processed for this client yet.':'Create a new client job to begin.',{
             fontSize:'11px',padding:'8px 0',margin:'0'
         }));
+        liqRenderLive();
         return;
     }
     clients.forEach(cl=>{
@@ -2126,6 +2337,7 @@ function liqRender(){
         });
         list.appendChild(card);
     });
+    liqRenderLive();
 }
 function liqConnectControls(){
     const panel=box.querySelector('#calculator');
@@ -2206,11 +2418,29 @@ liqConnectControls();
 window.addEventListener('sp:verifiedReturnAddressSaved',liqVerifiedReturnSaved);
 window.addEventListener('storage',function(event){
     if(event.key===LIQ_ACTIVE_KEY||
-       (event.key&&event.key.startsWith(LIQ_JOB_PREFIX)))liqRender();
+       (event.key&&(event.key.startsWith(LIQ_JOB_PREFIX)||
+                    event.key.startsWith(LIQ_DRAFT_PREFIX)))){
+        liqLastLiveSignature='';
+        liqRender();
+    }
 });
+document.addEventListener('input',function(event){
+    if(event.target&&event.target.closest&&
+       event.target.closest('#settingsReturnAddress-Modal'))liqRenderLive();
+},true);
+document.addEventListener('change',function(event){
+    if(event.target&&event.target.closest&&
+       event.target.closest('#settingsReturnAddress-Modal'))liqRenderLive();
+},true);
 liqDetectNewClient();
 liqMigrateTabJobs();
 liqCaptureProcessed();
+liqSyncDraft();
+liqRenderLive();
+setInterval(function(){
+    liqSyncDraft();
+    liqRenderLive();
+},800);
 setInterval(function(){
     liqDetectNewClient();
     liqCaptureProcessed();
