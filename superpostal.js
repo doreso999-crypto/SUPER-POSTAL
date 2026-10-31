@@ -1794,4 +1794,206 @@ document.body.appendChild(box);
 
 })();
 
+///////////////////////////////
+// TEMPORARY, DEVICE-LOCAL CLIENT TOTALS
+///////////////////////////////
+(function spClientLedger(){
+    if(!/\/jobui\b/.test(location.pathname))return;
+    const PREFIX='sp-ledger-v1:', GRACE=15*60*1000;
+    const fields=['name','company1','company2','address1','address2','city','state','zip','country'];
+    let error='', lastView='', lastHeartbeat=0;
+    const observed=new Map();
+    const norm=v=>String(v||'').normalize('NFKC').trim().replace(/\s+/g,' ').toUpperCase();
+    function canonical(a){
+        return fields.map(k=>k==='state'?(spStateCode(a[k])||norm(a[k])):
+            k==='country'?(/^(US|USA|UNITED STATES)?$/.test(norm(a[k]))?'US':norm(a[k])):norm(a[k]));
+    }
+    const addressKey=a=>JSON.stringify(canonical(a));
+    const complete=a=>a&&['name','address1','city','state','zip'].every(k=>norm(a[k]));
+    function read(key){try{return JSON.parse(localStorage.getItem(PREFIX+key)||'null');}catch(e){error='Local storage unavailable. Totals cannot be shared.';return null;}}
+    function write(key,value){try{localStorage.setItem(PREFIX+key,JSON.stringify(value));return true;}catch(e){error='Local storage unavailable. Totals cannot be saved.';return false;}}
+    function keys(){try{return Object.keys(localStorage).filter(k=>k.startsWith(PREFIX)).map(k=>k.slice(PREFIX.length));}catch(e){error='Local storage unavailable.';return [];}}
+    function remove(key){try{localStorage.removeItem(PREFIX+key);}catch(e){error='Unable to clear local totals.';}}
+    function clean(){
+        const now=Date.now();
+        keys().filter(k=>k.startsWith('session:')).forEach(k=>{
+            const s=read(k);
+            if(!s||now-s.seen>GRACE){
+                keys().filter(j=>j.startsWith('job:')).forEach(j=>{const r=read(j);if(r&&r.session===k.slice(8))remove(j);});
+                remove(k);
+            }
+        });
+    }
+    function id(){
+        const known=spPdfCurrentJobId();if(known)return known;
+        const ids=new Set(Array.from(document.querySelectorAll('a[href*="jobId="]')).map(a=>new URL(a.href,location.href).searchParams.get('jobId')).filter(v=>/^\d+$/.test(v||'')));
+        return ids.size===1?[...ids][0]:'';
+    }
+    function returnAddress(){
+        // Native saved summary is authoritative; never group from unsaved input.
+        const summary=document.querySelector('#settingsReturnAddressSource-Link');
+        if(summary){
+            const clone=summary.cloneNode(true);clone.querySelectorAll('br').forEach(br=>br.replaceWith('\n'));
+            const raw=clone.textContent.replace(/^\s*FROM JOB SETTINGS:\s*/i,'');
+            if(!spReturnIsSampleText(raw)){
+                const parsed=spParseAddress(raw);
+                if(!parsed.errors.length)return parsed.data;
+            }
+        }
+        if(spReturnSavedReady()){
+            const form=document.querySelector('#envelopeReturn-address'),a={};
+            fields.forEach(k=>{const f=spReturnFormField(form,k);a[k]=f?f.value:'';});
+            return complete(a)?a:null;
+        }
+        return null;
+    }
+    function recipientForm(){
+        const a={};fields.forEach(k=>{const f=document.querySelector('#contactModal [name="extractedAddress.'+k+'"]');a[k]=f?f.value.trim():'';});return a;
+    }
+    function recipientsOnPage(){
+        const list=document.querySelector('#contactListRow');if(!list||!list.children.length)return null;
+        const found=[];
+        for(const card of list.children){
+            const a={};fields.forEach(k=>{const f=card.querySelector('[name="extractedAddress.'+k+'"],[name="'+k+'"]');a[k]=f?f.value:'';});
+            if(complete(a)){found.push(a);continue;}
+            const raw=card.innerText||card.textContent;
+            const parsed=spParseAddress(raw.replace(/^\s*(Edit|Delete|Remove)\s*$/gmi,''));
+            if(parsed.errors.length)return null; // Unknown markup must not invent a recipient.
+            found.push(parsed.data);
+        }
+        return found;
+    }
+    function bureau(a){
+        const street=v=>norm(v).replace(/[.,]/g,'').replace(/\bPOST OFFICE BOX\b/g,'PO BOX').replace(/\bP\s+O\s+BOX\b/g,'PO BOX');
+        return Object.keys(SP_RECIPIENT_BUREAUS).find(code=>{
+            const b=SP_RECIPIENT_BUREAUS[code];
+            return street(a.address1)===street(b.address1)&&norm(a.city)===norm(b.city)&&
+                (spStateCode(a.state)||norm(a.state))===b.state&&String(a.zip).slice(0,5)===b.zip.slice(0,5);
+        })||'';
+    }
+    function group(r){
+        if(r.override)return {key:r.override,label:({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[r.override]||r.override};
+        const rs=r.recipients||[], byName=spDetectBureauForRecipient(r.name);
+        if(rs.length){
+            const groups=rs.filter(complete).map(a=>({key:bureau(a)||addressKey(a),label:spBureauDisplayName(bureau(a))==='Unknown bureau'?a.name:spBureauDisplayName(bureau(a)),a:a}));
+            const unique=[...new Set(groups.map(g=>g.key))];
+            if(unique.length>1)return {key:'Mixed recipients',label:'Mixed recipients — review',warning:true};
+            if(groups.length===rs.length&&unique.length===1){
+                const g=groups[0];g.warning=!!byName&&g.key!==byName;return g;
+            }
+        }
+        return byName?{key:byName,label:spBureauDisplayName(byName)}:{key:'Unassigned',label:'Unassigned'};
+    }
+    function capture(patch){
+        const jobId=id();if(!jobId)return null;
+        let r=read('job:'+jobId), a=returnAddress();
+        if(r&&!read('session:'+r.session)){remove('job:'+jobId);r=null;}
+        if(!a&&!r)return null;
+        const prior=observed.get(jobId)||{};
+        const currentAddress=a?addressKey(a):'';
+        const key=a&&currentAddress!==prior.address?currentAddress:r?r.session:currentAddress;
+        let session=read('session:'+key);
+        if(session&&session.ended)return null;
+        if(!session){session={address:a,seen:Date.now()};write('session:'+key,session);}
+        const before=JSON.stringify(r);
+        r=Object.assign({id:jobId,recipients:[],cents:null},r||{},patch||{},{session:key});
+        const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
+        const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
+        const state=document.querySelector('#jobState');if(state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
+        const cost=document.querySelector('.totalPriceRow .totalPrice');
+        if(cost&&/processed|approved|mailed/i.test(r.status||'')){
+            const value=cost.textContent.trim().replace(/[$,\s]/g,'');
+            if(value!==prior.cost&&/^\d+(\.\d{1,2})?$/.test(value))r.cents=Math.round(Number(value)*100);
+        }
+        observed.set(jobId,{cost:cost?cost.textContent.trim().replace(/[$,\s]/g,''):undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
+        if(before!==JSON.stringify(r))write('job:'+jobId,r);
+        if(Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
+        return r;
+    }
+    // Capture recipient only after Postalocity reports a successful add.
+    function hookRecipientSave(){
+        let api;try{api=typeof apiAction!=='undefined'?apiAction:window.apiAction;}catch(e){}
+        if(!api||!api.job)return;
+        ['deleteInputDocList','buildInputDocList'].forEach(method=>{
+            const original=api.job[method];
+            if(typeof original!=='function'||original.spLedger)return;
+            function changed(handler){
+                const jobId=String(handler.request&&handler.request.jobId||id());
+                const success=handler.handleSuccessResponse;
+                handler.handleSuccessResponse=function(){
+                    const r=read('job:'+jobId);
+                    if(r){r.recipients=[];r.override='';write('job:'+jobId,r);}
+                    return success&&success.apply(this,arguments);
+                };
+                return original.apply(this,arguments);
+            }
+            changed.spLedger=true;api.job[method]=changed;
+        });
+        if(typeof api.job.addRecipient!=='function'||api.job.addRecipient.spLedger)return;
+        const original=api.job.addRecipient;
+        function wrapped(handler){
+            const a=JSON.parse(JSON.stringify(handler.request&&handler.request.address||recipientForm()));
+            const jobId=String(handler.request&&handler.request.jobId||id());
+            const success=handler.handleSuccessResponse;
+            handler.handleSuccessResponse=function(){
+                if(complete(a)&&jobId===id()){
+                    const r=capture();if(r){
+                        const list=r.recipients||[];
+                        if(!list.some(x=>addressKey(x)===addressKey(a)))list.push(a);
+                        r.recipients=list;write('job:'+jobId,r);
+                    }
+                }
+                return success&&success.apply(this,arguments);
+            };
+            return original.apply(this,arguments);
+        }
+        wrapped.spLedger=true;api.job.addRecipient=wrapped;
+    }
+    const money=c=>'$'+(c/100).toFixed(2);
+    const el=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
+    function render(r){
+        const box=document.querySelector('#bureauTotals');if(!box)return;
+        let panel=document.querySelector('#spLedgerPanel');
+        if(!panel){
+            panel=el('section');panel.id='spLedgerPanel';panel.style.cssText='position:relative;z-index:5;cursor:default;background:rgba(255,255,255,.94);border-radius:9px;padding:12px;font-size:13px;max-height:65vh;overflow:auto';
+            panel.addEventListener('mousedown',e=>e.stopPropagation());box.appendChild(panel);
+            const style=el('style');style.textContent='#bureauTotals[data-minimized="true"] #spLedgerPanel{display:none} #spLedgerPanel summary{cursor:pointer;padding:7px 0} #spLedgerPanel button,#spLedgerPanel select{margin:5px 3px 0 0;max-width:100%} #spLedgerPanel small{display:block;overflow-wrap:anywhere}';document.head.appendChild(style);
+        }
+        const session=r&&read('session:'+r.session);
+        const jobs=session&&!session.ended?keys().filter(k=>k.startsWith('job:')).map(read).filter(j=>j&&j.session===r.session):[];
+        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error]);if(view===lastView)return;lastView=view;
+        panel.replaceChildren(el('strong','CLIENT TOTALS'));
+        if(error)panel.append(el('p',error));
+        if(!r||!session||session.ended){
+            panel.append(el('p',(session&&session.ended)||(read('job:'+id())&&read('session:'+read('job:'+id()).session)?.ended)?'Session ended.':'Save a return address to start tracking. Processed jobs need their original client link.'));
+            const existing=read('job:'+id());const s=existing&&read('session:'+existing.session);
+            if(s&&s.ended){const start=el('button','Start new session');start.onclick=()=>{remove('session:'+existing.session);observed.clear();keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===existing.session)remove(k);});lastView='';tick();};panel.append(start);}
+            return;
+        }
+        panel.append(el('h4',session.address.name),el('small',[session.address.address1,session.address.address2,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(', ')));
+        const groups=new Map();let total=0,pending=0;
+        jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)){b.sum+=j.cents;total+=j.cents;}else pending++;});
+        [...groups.values()].sort((a,b)=>a.label.localeCompare(b.label)).forEach(b=>{
+            const details=el('details');details.append(el('summary',b.label+' · '+b.jobs.length+' job(s) · '+money(b.sum)));
+            b.jobs.forEach(({j,g})=>{
+                details.append(el('small','#'+j.id+' — '+(j.name||'Unnamed job')+' — '+(Number.isInteger(j.cents)?money(j.cents):'Awaiting price')),el('small',j.status||''));
+                (j.recipients||[]).forEach(a=>details.append(el('small',[a.name,a.address1,a.address2,a.city,a.state,a.zip].filter(Boolean).join(', '))));
+                if(g.warning)details.append(el('small','⚠ Recipient/job-name mismatch or multiple destinations. Review grouping.'));
+                const select=el('select');select.setAttribute('aria-label','Group job '+j.id);
+                [['','Automatic grouping'],['EX','Experian'],['EQU','Equifax'],['TU','TransUnion'],['Unassigned','Unassigned']].forEach(([v,l])=>{const o=el('option',l);o.value=v;select.append(o);});select.value=j.override||'';
+                select.onchange=()=>{const latest=read('job:'+j.id);if(latest){latest.override=select.value;write('job:'+j.id,latest);lastView='';tick();}};details.append(select);
+            });panel.append(details);
+        });
+        panel.append(el('h4','Total: '+money(total)),el('small',pending?pending+' job(s) awaiting price.':'Processed prices; approval status shown per job.'));
+        const copy=el('button','Copy summary');copy.onclick=async()=>{try{await navigator.clipboard.writeText(session.address.name+'\n'+[...groups.values()].map(b=>b.label+': '+money(b.sum)).join('\n')+'\nTotal: '+money(total));copy.textContent='Copied';}catch(e){copy.textContent='Copy unavailable';}};
+        const end=el('button','End session');end.onclick=()=>{const s=read('session:'+r.session);if(s){s.ended=true;s.seen=Date.now();write('session:'+r.session,s);keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===r.session){j.cents=null;j.recipients=[];j.name='';write(k,j);}});lastView='';tick();}};
+        panel.append(copy,end,el('small','This browser only · expires after 15 minutes without an active matching tab.'));
+    }
+    function tick(){try{clean();hookRecipientSave();render(capture());}catch(e){console.warn('SUPER POSTAL totals:',e);}}
+    window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
+    document.addEventListener('click',e=>{if(e.target.closest('#processBtn')){const r=capture();if(r){r.cents=null;r.status='Processing';write('job:'+r.id,r);}}},true);
+    window.addEventListener('pagehide',()=>capture());
+    setInterval(tick,1500);tick();
+})();
+
 })();
