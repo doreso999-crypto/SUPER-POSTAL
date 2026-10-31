@@ -2545,7 +2545,7 @@ document.body.appendChild(box);
            !complete(client.address)||existing&&existing.deleted)return false;
         // An explicitly cleared client's job must not silently reactivate.
         if(existing&&read('session:'+existing.session)?.ended)return false;
-        const input=document.querySelector('#overview-jobName, #jobNameTop');
+        const input=document.querySelector('#overview-jobName')||document.querySelector('#jobNameTop');
         const fetched=recovered.get(jobId);
         const name=String(input&&(input.value||input.textContent)||
             existing&&existing.name||fetched&&fetched.name||'').trim();
