@@ -1704,10 +1704,17 @@ function liqSyncDraft(){
     // Matching the already-verified shared client is safe for an uploaded
     // *preview*; it never creates a client session or counts a price.
     const identity=liqReturnIdentity()||liqReturnIdentity(false);
-    if(!identity||identity.key!==active.clientKey)return;
+    const existing=liqDraftRecords(active)[id];
+    if(!identity||identity.key!==active.clientKey){
+        // If the user replaces a saved return address with a different
+        // draft on this job, stop advertising its stale uploads as belonging
+        // to the previous client. An unloaded form (null identity) is left
+        // untouched because it might simply be loading asynchronously.
+        if(identity&&existing)liqRemoveDraft(id,active);
+        return;
+    }
     const names=spPdfNamesFromPage().filter(name=>/\.pdf$/i.test(String(name)));
     const key=liqDraftKey(active,id);
-    const existing=liqDraftRecords(active)[id];
     const tracked=liqJobRecords(active)[id];
     if(tracked){
         if(existing)liqRemoveDraft(id,active);
@@ -1738,13 +1745,11 @@ function liqRenderLive(){
     // Prefer the common saved client on every tab. The one exception is
     // a different, unsaved Return Address being entered in THIS tab: show
     // that draft with an explicit warning, without changing shared storage.
-    const display=(different&&local&&!local.saved)?local:
-        (shared||local);
+    const display=different&&local?local:(shared||local);
     const status=!display?'RETURN ADDRESS':
-        different&&local&&!local.saved?
-            'DRAFT RETURN ADDRESS · DIFFERENT CLIENT · NOT SHARED':
+        different?'DIFFERENT CLIENT ON THIS TAB · NOT SHARED':
         shared&&same&&local.saved?'SAVED RETURN ADDRESS · ACTIVE SESSION':
-        shared&&same?'ACTIVE CLIENT · PREVIEW MATCHED ACROSS TABS':
+        shared&&same?'ACTIVE CLIENT · LINKED ACROSS TABS':
         shared?'ACTIVE CLIENT · SHARED ACROSS TABS':
         local&&!local.saved?'DRAFT RETURN ADDRESS · NOT SAVED':
         'SAVED RETURN ADDRESS';
@@ -1767,9 +1772,14 @@ function liqRenderLive(){
         entries.unshift({id:currentId,jobName:currentJobName,
             files:localFiles,shared:false});
     }
+    const unlinked=!!(active&&localFiles.length&&liqIsNewJob()&&!same);
+    const warning=unlinked?(different?
+        'This tab belongs to a different client. These uploads are NOT included in the shared session.':
+        'This tab is not linked yet. Open Return Address to load and verify the client before sharing uploads.'):
+        '';
     const signature=JSON.stringify([
         active&&active.id,display&&display.name,display&&display.address,
-        status,entries.map(x=>[x.id,x.jobName,x.files,x.shared])
+        status,warning,entries.map(x=>[x.id,x.jobName,x.files,x.shared])
     ]);
     if(signature===liqLastLiveSignature)return;
     liqLastLiveSignature=signature;
@@ -1779,7 +1789,8 @@ function liqRenderLive(){
     const elFiles=panel.querySelector('#liqDraftFiles');
     if(elStatus)elStatus.textContent=status;
     if(elName)elName.textContent=display&&display.name||'No return address entered';
-    if(elAddress)elAddress.textContent=display&&display.address||'';
+    if(elAddress)elAddress.textContent=(display&&display.address||'')+
+        (warning?'\n'+warning:'');
     if(!elFiles)return;
     elFiles.replaceChildren();
     if(!entries.length){
