@@ -2149,7 +2149,9 @@ document.body.appendChild(box);
         // Keep uploaded letter filenames per Postalocity Job ID. Avoid
         // replacing saved filenames when a processed view hides the upload list.
         const uploaded=typeof spPdfNamesFromPage==='function'?spPdfNamesFromPage():[];
-        if(uploaded.length)r.letters=[...new Set(uploaded.filter(x=>typeof x==='string'&&/\.pdf$/i.test(x)).map(x=>x.trim()))];
+        if(uploaded.length||(typeof spPdfModalSnapshot!=='undefined'&&
+            spPdfModalSnapshot!==null&&String(spPdfModalSnapshotJobId)===String(jobId)))
+            r.letters=[...new Set(uploaded.filter(x=>typeof x==='string'&&/\.pdf$/i.test(x)).map(x=>x.trim()))];
         const state=document.querySelector('#jobState');if(!isApproved(r)&&state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
         if(approvedState(r.status))r.approved=true;
         const price=priceSnapshot();
