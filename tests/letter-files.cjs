@@ -1,0 +1,16 @@
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const src=fs.readFileSync('superpostal.js','utf8');
+const start=src.indexOf("        const uploaded=typeof spPdfNamesFromPage");
+const end=src.indexOf("        const state=document.querySelector('#jobState')",start);
+assert.ok(start>0&&end>start,'per-job PDF filename capture exists');
+const fragment=src.slice(start,end);
+const process=new Function('spPdfNamesFromPage','spPdfModalSnapshot','spPdfModalSnapshotJobId','jobId','r',fragment+';return r.letters;');
+let record={letters:['old.pdf']};
+assert.equal(JSON.stringify(process(()=>[],null,'','77',record)),JSON.stringify(['old.pdf']),'hidden files list preserves previous names');
+record={letters:['old.pdf']};
+assert.equal(JSON.stringify(process(()=>[],[],'77','77',record)),JSON.stringify([]),'confirmed empty file list removes stale names');
+record={letters:['old.pdf']};
+assert.equal(JSON.stringify(process(()=>[],[],'88','77',record)),JSON.stringify(['old.pdf']),'another job snapshot cannot clear current job');
+record={letters:[]};
+assert.equal(JSON.stringify(process(()=>['one.pdf','one.pdf','two.pdf'],null,'','77',record)),JSON.stringify(['one.pdf','two.pdf']),'filenames deduplicated');
+console.log('PASS: uploaded PDF filenames are job-scoped, deduplicated and cleared only on authoritative deletion.');

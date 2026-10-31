@@ -917,7 +917,9 @@ function spJobDetailsReadiness(){
     const countEl=document.querySelector('#step3 .contactListSize');
     const count=countEl?Number.parseInt(countEl.textContent,10):NaN;
     const pdfNames=spPdfNamesFromPage();
+    const name=document.querySelector('#overview-jobName');
     const checks=[
+        {label:'Job name',ready:!!(name&&String(name.value||'').trim())},
         {label:'Recipient names',ready:(Number.isFinite(count)&&count>0)||recipients.length>0},
         {label:'Uploaded PDF filenames',ready:pdfNames.length>0},
         {label:'Saved return address',ready:spReturnSavedReady()}
@@ -1041,9 +1043,53 @@ function spBlockIncompleteProcess(event,control){
     spQueueRecipientOverview();
     return true;
 }
+// The click/submit guard remains authoritative. This adds visible readiness
+// and greys out only the native Process Job controls.
+let spProcessVisualTimer=null;
+function spUpdateProcessControlState(){
+    const step=document.querySelector('#step4');if(!step)return;
+    const controls=[...step.querySelectorAll('button,input[type="submit"],input[type="button"],a,[role="button"]')]
+        .filter(spIsNativeProcessJobControl);
+    if(!controls.length)return;
+    let readiness;
+    try{readiness=spJobDetailsReadiness();}
+    catch(_error){readiness={ready:false,missing:['Job details could not be verified']};}
+    if(!document.querySelector('#spProcessDisabledStyle')){
+        const style=document.createElement('style');style.id='spProcessDisabledStyle';
+        style.textContent='#step4 .sp-process-not-ready{opacity:.45!important;filter:grayscale(1)!important;cursor:not-allowed!important;box-shadow:none!important}#spProcessMissingHint{font:600 12px/1.5 Arial,sans-serif;color:#97502e;margin:8px 0 12px;overflow-wrap:anywhere}';
+        document.head.appendChild(style);
+    }
+    controls.forEach(el=>{
+        if(!readiness.ready){
+            if('disabled' in el&&!el.disabled){el.disabled=true;el.dataset.spGuardDisabled='true';}
+            if(!el.hasAttribute('data-sp-guard-title'))el.setAttribute('data-sp-guard-title',el.getAttribute('title')||'');
+            el.title='Missing: '+readiness.missing.join(', ');
+            el.classList.add('sp-process-not-ready');el.setAttribute('aria-disabled','true');
+        }else{
+            if(el.dataset.spGuardDisabled==='true'){el.disabled=false;delete el.dataset.spGuardDisabled;}
+            if(el.hasAttribute('data-sp-guard-title')){el.title=el.getAttribute('data-sp-guard-title');el.removeAttribute('data-sp-guard-title');}
+            el.classList.remove('sp-process-not-ready');
+            if(el.getAttribute('aria-disabled')==='true'&&!el.disabled)el.removeAttribute('aria-disabled');
+        }
+    });
+    let hint=document.querySelector('#spProcessMissingHint');
+    if(readiness.ready){if(hint)hint.remove();return;}
+    if(!hint){hint=document.createElement('p');hint.id='spProcessMissingHint';hint.setAttribute('role','status');controls[0].insertAdjacentElement('afterend',hint);}
+    const message='Complete before processing: '+readiness.missing.join(' · ');
+    if(hint.textContent!==message)hint.textContent=message;
+}
+function spScheduleProcessControlUpdate(){
+    if(spProcessVisualTimer!==null)return;
+    spProcessVisualTimer=setTimeout(()=>{spProcessVisualTimer=null;spUpdateProcessControlState();},100);
+}
 function spInstallProcessJobGuard(){
     if(document.documentElement.dataset.spProcessJobGuard==='true')return;
     document.documentElement.dataset.spProcessJobGuard='true';
+    document.addEventListener('input',spScheduleProcessControlUpdate,true);
+    document.addEventListener('change',spScheduleProcessControlUpdate,true);
+    document.addEventListener('click',spScheduleProcessControlUpdate,true);
+    setInterval(spUpdateProcessControlState,1300);
+    spScheduleProcessControlUpdate();
     document.addEventListener('click',function(event){
         const target=event.target;
         const control=target&&target.closest&&target.closest(
@@ -1086,7 +1132,9 @@ function spRefreshRecipientPdfOverview(){
         {ready:pdfReady,label:'Uploaded PDFs'},
         {ready:returnReady,label:'Saved return address'}
     ];
-    const done=states.every(function(item){return item.ready;});
+    const nameField=document.querySelector('#overview-jobName');
+    const nameReady=!!(nameField&&String(nameField.value||'').trim());
+    const done=nameReady&&states.every(function(item){return item.ready;});
     panel.dataset.completion=done?'complete':'incomplete';
     panel.querySelectorAll('.sp-overview-col').forEach(function(section,i){
         section.dataset.completion=states[i]&&states[i].ready?'complete':'incomplete';
@@ -1094,6 +1142,7 @@ function spRefreshRecipientPdfOverview(){
     const header=panel.querySelector('#spOverviewCompletionLabel');
     if(header){
         const missing=states.filter(function(item){return !item.ready;}).map(function(item){return item.label;});
+        if(!nameReady)missing.unshift('Job name');
         const statusText=done?'All job details ready':'Missing: '+missing.join(', ');
         if(header.textContent!==statusText)header.textContent=statusText;
     }
@@ -1963,35 +2012,6 @@ document.body.appendChild(box);
     const isApproved=r=>!!r&&(r.approved===true||approvedState(r.status));
     function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted&&(isApproved(r)||active(r.id)));}
     function canClear(key){const s=read('session:'+key);return !!s&&!s.ended;}
-    function matchingSessions(a){
-        if(!complete(a))return [];
-        return keys().filter(k=>k.startsWith('session:')).map(k=>({key:k.slice(8),data:read(k)}))
-            .filter(x=>x.data&&!x.data.ended&&complete(x.data.address)&&addressKey(x.data.address)===addressKey(a))
-            .sort((a,b)=>String(a.data.label||'').localeCompare(String(b.data.label||'')));
-    }
-    function sessionLabel(key){
-        const s=read('session:'+key);
-        return s&&s.label?s.label:'Default client group';
-    }
-    function moveToClientGroup(jobId,key){
-        const r=read('job:'+jobId),dest=read('session:'+key);
-        if(!r||r.deleted||isApproved(r)||!dest||dest.ended||!complete(dest.address))return false;
-        const old=read('session:'+r.session);
-        if(!old||old.ended||addressKey(old.address)!==addressKey(dest.address))return false;
-        r.session=key;
-        if(!write('job:'+jobId,r))return false;
-        // Do not let the old draft's observed address reassign the job again.
-        observed.delete(String(jobId));lastView='';return true;
-    }
-    function separateClientGroup(jobId,label){
-        const r=read('job:'+jobId);
-        if(!r||r.deleted||isApproved(r)||!norm(label))return null;
-        const current=read('session:'+r.session);if(!current||current.ended)return null;
-        const key=addressKey(current.address)+'|client:'+Date.now().toString(36)+Math.random().toString(36).slice(2);
-        if(!write('session:'+key,{address:current.address,label:String(label).trim().slice(0,80),seen:Date.now()}))return null;
-        if(!moveToClientGroup(jobId,key)){remove('session:'+key);return null;}
-        return key;
-    }
     function duplicateNameMatches(r){
         if(!r||!countable(r))return [];
         return sessionJobs(r.session).filter(j=>String(j.id)!==String(r.id)&&norm(j.name)===norm(r.name)&&countable(j));
@@ -2065,17 +2085,33 @@ document.body.appendChild(box);
         });
     }
     function group(r){
-        if(r.override)return {key:r.override,label:({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[r.override]||r.override};
-        const rs=r.recipients||[], byName=spDetectBureauForRecipient(r.name);
-        if(rs.length){
-            const groups=rs.filter(complete).map(a=>({key:bureau(a)||addressKey(a),label:spBureauDisplayName(bureau(a))==='Unknown bureau'?a.name:spBureauDisplayName(bureau(a)),a:a}));
-            const unique=[...new Set(groups.map(g=>g.key))];
-            if(unique.length>1)return {key:'Mixed recipients',label:'Mixed recipients — review',warning:true};
-            if(groups.length===rs.length&&unique.length===1){
-                const g=groups[0];g.warning=!!byName&&g.key!==byName;return g;
-            }
+        const names={EX:'Experian',EQU:'Equifax',TU:'TransUnion',OTHER:'Other'};
+        if(r.override){
+            if(names[r.override])return {key:r.override,label:names[r.override]};
+            if(r.override==='Unassigned')return {key:'Unassigned',label:'Unassigned'};
         }
-        return byName?{key:byName,label:spBureauDisplayName(byName)}:{key:'Unassigned',label:'Unassigned'};
+        const recipients=r.recipients||[], inferred=spDetectBureauForRecipient(r.name);
+        if(recipients.length){
+            if(!recipients.every(complete))return {key:'Unassigned',label:'Unassigned',warning:true};
+            const codes=recipients.map(a=>bureau(a)||'OTHER');
+            const unique=[...new Set(codes)];
+            if(unique.length>1)return {key:'OTHER',label:'Other',warning:true};
+            const key=unique[0];
+            return {key,label:names[key],warning:!!inferred&&inferred!==key};
+        }
+        return inferred?{key:inferred,label:names[inferred]}:{key:'Unassigned',label:'Unassigned'};
+    }
+    function bureauSummary(jobs){
+        const groups=new Map();
+        ['EX','EQU','TU','OTHER'].forEach(key=>groups.set(key,{key,label:({EX:'Experian',EQU:'Equifax',TU:'TransUnion',OTHER:'Other'})[key],jobs:[],sum:0,pending:0}));
+        jobs.forEach(job=>{
+            const g=group(job),bucket=groups.get(g.key);
+            if(!bucket)return;
+            bucket.jobs.push({job,group:g});
+            if(Number.isInteger(job.cents)&&!job.priceNeedsReview)bucket.sum+=job.cents;
+            else bucket.pending++;
+        });
+        return [...groups.values()].filter(x=>x.jobs.length);
     }
     function capture(patch){
         const jobId=id();if(!jobId)return null;
@@ -2113,6 +2149,12 @@ document.body.appendChild(box);
         const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
         if(!name&&!r.name&&recovered.has(jobId))r.name=recovered.get(jobId).name;
         const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
+        // Keep uploaded letter filenames per Postalocity Job ID. Avoid
+        // replacing saved filenames when a processed view hides the upload list.
+        const uploaded=typeof spPdfNamesFromPage==='function'?spPdfNamesFromPage():[];
+        if(uploaded.length||(typeof spPdfModalSnapshot!=='undefined'&&
+            spPdfModalSnapshot!==null&&String(spPdfModalSnapshotJobId)===String(jobId)))
+            r.letters=[...new Set(uploaded.filter(x=>typeof x==='string'&&/\.pdf$/i.test(x)).map(x=>x.trim()))];
         const state=document.querySelector('#jobState');if(!isApproved(r)&&state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
         if(approvedState(r.status))r.approved=true;
         const price=priceSnapshot();
@@ -2205,107 +2247,145 @@ document.body.appendChild(box);
         const box=document.querySelector('#bureauTotals');if(!box)return;
         let panel=document.querySelector('#spLedgerPanel');
         if(!panel){
-            panel=el('section');panel.id='spLedgerPanel';panel.style.cssText='position:relative;z-index:5;cursor:default;background:rgba(255,255,255,.94);border-radius:9px;padding:12px;font-size:13px;max-height:65vh;overflow:auto';
-            panel.addEventListener('mousedown',e=>e.stopPropagation());box.appendChild(panel);
-            const style=el('style');style.textContent='#bureauTotals[data-minimized="true"] #spLedgerPanel{display:none} #spLedgerPanel summary{cursor:pointer;padding:7px 0} #spLedgerPanel button,#spLedgerPanel select{margin:5px 3px 0 0;max-width:100%} #spLedgerPanel small{display:block;overflow-wrap:anywhere}';document.head.appendChild(style);
+            panel=el('section');panel.id='spLedgerPanel';
+            panel.style.cssText='position:relative;z-index:5;cursor:default;max-height:72vh;overflow:auto;border-radius:12px;background:rgba(255,255,255,.98);padding:14px;color:#21344e;font:13px/1.5 Arial,sans-serif';
+            panel.addEventListener('mousedown',event=>event.stopPropagation());box.appendChild(panel);
+        }
+        if(!document.querySelector('#spLedgerV2Styles')){
+            const style=el('style');style.id='spLedgerV2Styles';
+            style.textContent=`
+            #bureauTotals[data-minimized="true"] #spLedgerPanel{display:none}
+            #spLedgerPanel,#spLedgerPanel *{box-sizing:border-box}
+            #spLedgerPanel .sp-ledger-title{font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;color:#637995}
+            #spLedgerPanel .sp-ledger-client{font-size:20px;line-height:1.25;font-weight:800;overflow-wrap:anywhere;margin:6px 0}
+            #spLedgerPanel .sp-ledger-address{font-size:11px;color:#71839a;overflow-wrap:anywhere}
+            #spLedgerPanel .sp-ledger-divider{border:0;border-top:1px solid #e6edf4;margin:13px 0}
+            #spLedgerPanel .sp-ledger-heading{font-size:11px;letter-spacing:.10em;font-weight:800;color:#71839a;margin:12px 0 8px}
+            #spLedgerPanel .sp-ledger-group{border:1px solid #dfe7f1;border-radius:11px;margin:0 0 10px;background:#fff;overflow:hidden}
+            #spLedgerPanel .sp-ledger-grouphead{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f5f8fc;padding:10px 11px;font-weight:800}
+            #spLedgerPanel .sp-ledger-count{font-size:11px;font-weight:600;color:#71839a}
+            #spLedgerPanel .sp-ledger-letter{padding:10px 11px;border-top:1px solid #eef1f6}
+            #spLedgerPanel .sp-ledger-letterhead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+            #spLedgerPanel .sp-ledger-lettername{font-weight:700;font-size:12px;overflow-wrap:anywhere;min-width:0}
+            #spLedgerPanel .sp-ledger-price{font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+            #spLedgerPanel .sp-ledger-meta{font-size:10px;color:#7a8ba0;overflow-wrap:anywhere;margin-top:2px}
+            #spLedgerPanel .sp-ledger-files{padding:0 0 0 16px;margin:6px 0 0;color:#526780;font-size:11px;overflow-wrap:anywhere}
+            #spLedgerPanel .sp-ledger-files li{margin:2px 0}
+            #spLedgerPanel .sp-ledger-warning{font-size:11px;color:#97502e;margin-top:6px}
+            #spLedgerPanel .sp-ledger-totals{display:grid;gap:7px}
+            #spLedgerPanel .sp-ledger-totalrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border:1px solid #dde6ef;border-radius:9px;padding:9px 10px;background:#fafcff}
+            #spLedgerPanel .sp-ledger-totalrow strong{font-size:13px;font-variant-numeric:tabular-nums}
+            #spLedgerPanel button,#spLedgerPanel select{font:600 11px Arial,sans-serif;border:1px solid #c6d4e4;border-radius:7px;padding:7px 9px;background:#fff;color:#2f517b;cursor:pointer;max-width:100%}
+            #spLedgerPanel button:disabled{opacity:.45;cursor:not-allowed}
+            #spLedgerPanel button:focus-visible,#spLedgerPanel select:focus-visible{outline:2px solid #376cb2;outline-offset:2px}
+            #spLedgerPanel .sp-ledger-footer{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+            #spLedgerPanel .sp-ledger-grand{font-size:15px;font-weight:800;margin-top:10px;font-variant-numeric:tabular-nums}
+            #spLedgerPanel .sp-ledger-status{padding:9px 10px;border-radius:8px;background:#fff7ed;color:#925124;font-size:11px;margin:10px 0}
+            #spLedgerPanel .sp-ledger-empty{font-size:12px;color:#71839a;padding:12px 0}
+            #spLedgerPanel .sp-ledger-needs{border:1px dashed #d1dcea;border-radius:9px;padding:10px;margin:10px 0;font-size:11px}
+            #spLedgerPanel .sp-ledger-needs label{display:block;margin:5px 0}
+            @media(max-width:380px){#spLedgerPanel .sp-ledger-totalrow{grid-template-columns:minmax(0,1fr) auto}#spLedgerPanel .sp-ledger-totalrow button{grid-column:1/-1}}
+            `;
+            document.head.append(style);
         }
         const session=r&&read('session:'+r.session);
         const tracked=session&&!session.ended?sessionJobs(r.session):[];
         const jobs=tracked.filter(countable);
+        const groups=bureauSummary(jobs);
         const unassigned=tracked.filter(j=>norm(j.name)&&group(j).key==='Unassigned');
-        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,unassigned,error,recovering,recoveryMessage,session&&canClear(r.session)]);if(view===lastView)return;lastView=view;
-        panel.replaceChildren(el('strong','CLIENT TOTALS'));
-        if(error)panel.append(el('p',error));
+        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,unassigned,error,recovering,recoveryMessage]);
+        if(view===lastView)return;lastView=view;
+        panel.replaceChildren();
+        panel.append(el('div','CLIENT TOTALS'));panel.lastChild.className='sp-ledger-title';
+        if(error){const warning=el('div',error);warning.className='sp-ledger-status';panel.append(warning);}
         if(!r||!session||session.ended){
-            panel.append(el('p',(session&&session.ended)||(read('job:'+id())&&read('session:'+read('job:'+id()).session)?.ended)?'Session ended.':'Save a return address to start tracking. Processed jobs need their original client link.'));
-            const existing=read('job:'+id());const s=existing&&read('session:'+existing.session);
-            if(s&&s.ended){const start=el('button','Start new session');start.onclick=()=>{remove('session:'+existing.session);observed.clear();keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===existing.session)remove(k);});lastView='';tick();};panel.append(start);}
-            if(!s||!s.ended){
-                panel.querySelector('p').textContent=recovering?'Reading this job’s saved return address…':recoveryMessage||'Looking for this job’s saved client link.';
+            const ended=!!(session&&session.ended);
+            const msg=el('p',ended?'Session ended. Start a new session to track more jobs.':recovering?'Reading saved job settings…':recoveryMessage||'Save a return address to start tracking.');msg.className='sp-ledger-empty';panel.append(msg);
+            const existing=read('job:'+id()),old=existing&&read('session:'+existing.session);
+            if(old&&old.ended){
+                const start=el('button','Start new session');
+                start.onclick=()=>{remove('session:'+existing.session);observed.clear();keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===existing.session)remove(k);});lastView='';tick();};
+                panel.append(start);
+            }else if(!recovering&&id()){
                 const link=el('a','Open saved job settings');
                 const url=new URL('/jobui',location.origin);url.searchParams.set('edit','true');url.searchParams.set('id',id());
                 link.href=url.href;panel.append(link);
-                if(!recovering&&!recoveryAttempts.has(id()))recoverSavedJob();
+                if(!recoveryAttempts.has(id()))recoverSavedJob();
             }
             return;
         }
-        panel.append(el('h4',session.address.name),el('small',[session.address.address1,session.address.address2,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(', ')));
-        const groupTitle=el('small','Client group: '+sessionLabel(r.session));
-        panel.append(groupTitle);
-        const related=matchingSessions(session.address);
-        if(related.length>1&&!isApproved(r)&&!r.deleted){
-            const select=el('select');select.setAttribute('aria-label','Move job to a separate client group');
-            related.forEach((entry,index)=>{const opt=el('option',(entry.data.label||'Default client group')+' · '+(index+1));opt.value=entry.key;select.append(opt);});
-            select.value=r.session;
-            select.onchange=()=>{
-                if(!window.confirm('Move only Job #'+r.id+' to the selected client group? Its Postalocity job will not change.')){select.value=r.session;return;}
-                if(moveToClientGroup(r.id,select.value))tick();else select.value=r.session;
-            };
-            panel.append(select);
-        }
-        if(!isApproved(r)&&!r.deleted){
-            const split=el('button','Separate client');
-            split.title='Create a distinct client group when two clients use the same saved return address.';
-            split.onclick=()=>{
-                const label=window.prompt('Name the separate client group (for example, client name). The return address stays unchanged:','');
-                if(label===null)return;
-                if(!norm(label)){window.alert('Enter a client group name.');return;}
-                if(separateClientGroup(r.id,label))tick();else window.alert('Could not create a separate client group.');
-            };
-            panel.append(split);
-        }
-        if(related.length>1)panel.append(el('small','Multiple client groups share this return address. Verify each job is assigned to the correct group.'));
-        else panel.append(el('small','Return addresses may be shared by different clients. Use Separate client to prevent combining their totals.'));
-        if(r.deleted)panel.append(el('p','This job was deleted. Its cost has been removed.'));
-        else if(!countable(r))panel.append(el('p',group(r).key==='Unassigned'
-            ?'This job is unassigned and excluded from totals. Assign a bureau or recipient to count it.'
-            :'This job is excluded until it has both a saved return address and a job name.'));
-        const groups=new Map();let total=0,pending=0;
-        jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)&&!j.priceNeedsReview){b.sum+=j.cents;total+=j.cents;}else pending++;});
-        [...groups.values()].sort((a,b)=>a.label.localeCompare(b.label)).forEach(b=>{
-            const details=el('details');details.append(el('summary',b.label+' · '+b.jobs.length+' job(s) · '+money(b.sum)));
-            b.jobs.forEach(({j,g})=>{
-                details.append(el('small','#'+j.id+' — '+(j.name||'Unnamed job')+' — '+(j.priceNeedsReview?'Price not verified':Number.isInteger(j.cents)?money(j.cents):'Awaiting price')),el('small',j.status||''));
-                (j.recipients||[]).forEach(a=>details.append(el('small',[a.name,a.address1,a.address2,a.city,a.state,a.zip].filter(Boolean).join(', '))));
-                if(g.warning)details.append(el('small','⚠ Recipient/job-name mismatch or multiple destinations. Review grouping.'));
-                const select=el('select');select.setAttribute('aria-label','Group job '+j.id);
-                [['','Automatic grouping'],['EX','Experian'],['EQU','Equifax'],['TU','TransUnion'],['Unassigned','Unassigned']].forEach(([v,l])=>{const o=el('option',l);o.value=v;select.append(o);});select.value=j.override||'';
-                select.onchange=()=>{const latest=read('job:'+j.id);if(latest){latest.override=select.value;write('job:'+j.id,latest);lastView='';tick();}};details.append(select);
-            });panel.append(details);
+        const client=el('div',session.address.name||'Client');client.className='sp-ledger-client';panel.append(client);
+        const address=el('div',[session.address.address1,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(' · '));
+        address.className='sp-ledger-address';panel.append(address);
+        if(r.deleted){const alert=el('div','This job was deleted. It is excluded from totals.');alert.className='sp-ledger-status';panel.append(alert);}
+        else if(!countable(r)){const alert=el('div',group(r).key==='Unassigned'?'This job is unassigned. Assign its bureau or Other below to count it.':'This job needs a saved return address and job name to be counted.');alert.className='sp-ledger-status';panel.append(alert);}
+        const sectionLabel=el('div','BUREAU LETTERS');sectionLabel.className='sp-ledger-heading';panel.append(sectionLabel);
+        let grand=0,missing=0;
+        if(!groups.length){const empty=el('p','No assigned jobs to display.');empty.className='sp-ledger-empty';panel.append(empty);}
+        groups.forEach(bucket=>{
+            grand+=bucket.sum;missing+=bucket.pending;
+            const section=el('section');section.className='sp-ledger-group';section.dataset.bureau=bucket.key;
+            const heading=el('div');heading.className='sp-ledger-grouphead';
+            const name=el('span',bucket.label.toUpperCase());
+            const count=el('span',bucket.jobs.length+' '+(bucket.jobs.length===1?'job':'jobs'));count.className='sp-ledger-count';
+            heading.append(name,count);section.append(heading);
+            bucket.jobs.forEach(({job,group:g})=>{
+                const letter=el('div');letter.className='sp-ledger-letter';
+                const line=el('div');line.className='sp-ledger-letterhead';
+                const name=el('div',job.name||'Untitled job');name.className='sp-ledger-lettername';
+                const verified=Number.isInteger(job.cents)&&!job.priceNeedsReview;
+                const price=el('div',verified?money(job.cents):'Pending price');price.className='sp-ledger-price';
+                line.append(name,price);letter.append(line);
+                const meta=el('div','#'+job.id+' · '+(job.status||'Awaiting processing')+(verified?' · Job total':' · Not included in total'));meta.className='sp-ledger-meta';letter.append(meta);
+                const letters=Array.isArray(job.letters)?job.letters:[];
+                if(letters.length){
+                    const files=el('ul');files.className='sp-ledger-files';
+                    letters.forEach(file=>files.append(el('li',file)));letter.append(files);
+                }else{
+                    const none=el('div','Letter filenames not available for this job');none.className='sp-ledger-meta';letter.append(none);
+                }
+                if(g.warning){const warning=el('div','Review recipient information: conflicting or mixed destinations.');warning.className='sp-ledger-warning';letter.append(warning);}
+                const selector=el('select');selector.setAttribute('aria-label','Assign bureau for Job #'+job.id);
+                [['','Auto bureau'],['EX','Experian'],['EQU','Equifax'],['TU','TransUnion'],['OTHER','Other'],['Unassigned','Unassigned']].forEach(([v,label])=>{const opt=el('option',label);opt.value=v;selector.append(opt);});
+                selector.value=job.override||'';
+                selector.onchange=()=>{const current=read('job:'+job.id);if(current){current.override=selector.value;write('job:'+job.id,current);lastView='';tick();}};
+                letter.append(selector);section.append(letter);
+            });
+            panel.append(section);
         });
         if(unassigned.length){
-            const details=el('details');details.append(el('summary','Unassigned — excluded · '+unassigned.length+' job(s)'));
-            unassigned.forEach(j=>{
-                details.append(el('small','#'+j.id+' — '+j.name+' — not included in totals'));
-                const select=el('select');select.setAttribute('aria-label','Assign job '+j.id);
-                [['','Automatic grouping'],['EX','Experian'],['EQU','Equifax'],['TU','TransUnion']].forEach(([v,l])=>{
-                    const option=el('option',l);option.value=v;select.append(option);
-                });
-                select.value=j.override||'';
-                select.onchange=()=>{
-                    const latest=read('job:'+j.id);
-                    if(latest){latest.override=select.value;write('job:'+j.id,latest);lastView='';tick();}
-                };
-                details.append(select);
-            });
-            panel.append(details);
+            const needs=el('div');needs.className='sp-ledger-needs';
+            needs.append(el('strong',unassigned.length+' unassigned job(s) · excluded from totals'));
+            unassigned.forEach(job=>{
+                const label=el('label','#'+job.id+' — '+job.name);
+                const select=el('select');select.setAttribute('aria-label','Assign Job #'+job.id);
+                [['','Choose category'],['EX','Experian'],['EQU','Equifax'],['TU','TransUnion'],['OTHER','Other']].forEach(([v,t])=>{const opt=el('option',t);opt.value=v;select.append(opt);});
+                select.onchange=()=>{const current=read('job:'+job.id);if(current){current.override=select.value;write('job:'+job.id,current);lastView='';tick();}};
+                label.append(select);needs.append(label);
+            });panel.append(needs);
         }
-        panel.append(el('h4',(pending?'Verified total (incomplete): ':'Total: ')+money(total)),
-            el('small',pending?pending+' job(s) have no verified price. Their amounts are excluded until the price is readable.':'All counted jobs have verified prices.'));
-        const copy=el('button','Copy summary');copy.onclick=async()=>{try{await navigator.clipboard.writeText(session.address.name+'\n'+[...groups.values()].map(b=>b.label+': '+money(b.sum)).join('\n')+'\n'+(pending?'Verified total (incomplete): ':'Total: ')+money(total)+(pending?'\n'+pending+' job(s) without verified prices.':''));copy.textContent='Copied';}catch(e){copy.textContent='Copy unavailable';}};
-        const end=el('button','Clear');
-        end.title='Clear this client’s tracked totals in all tabs (Postalocity jobs are not deleted).';
-        end.onclick=()=>{
-            if(!window.confirm('Clear all temporary totals for this client, including pending and approved jobs? This cannot be undone here. Jobs in Postalocity will NOT be deleted.'))return;
-            if(clearSession(r.session))tick();
-        };
-        const awaiting=jobs.filter(j=>!isApproved(j)).length;
-        panel.append(el('small',awaiting?awaiting+' tracked job(s) still awaiting approval. You may clear anyway.':'No tracked jobs awaiting approval.'));
-        const nativeDelete=el('button','Delete job in Postalocity');
-        nativeDelete.title='Use Postalocity’s own Delete Job action before closing the tab.';
-        nativeDelete.onclick=requestNativeDeletion;
-        if(r.deleted||isApproved(r))nativeDelete.disabled=true;
-        panel.append(copy,end,nativeDelete,el('small','Unapproved jobs are excluded after tab closure (unexpected crashes may take up to 90 seconds). Approved totals remain until Clear. Browser-only totals do not delete Postalocity jobs.'));
+        if(groups.length){
+            panel.append(el('hr'));panel.lastChild.className='sp-ledger-divider';
+            const totalsHeading=el('div','TOTAL BY BUREAU');totalsHeading.className='sp-ledger-heading';panel.append(totalsHeading);
+            const totals=el('div');totals.className='sp-ledger-totals';
+            groups.forEach(bucket=>{
+                const row=el('div');row.className='sp-ledger-totalrow';row.dataset.bureau=bucket.key;
+                row.append(el('span',bucket.label),el('strong',money(bucket.sum)+(bucket.pending?' *':'')));
+                const copy=el('button','Copy');copy.type='button';copy.title=bucket.pending?'One or more job prices are unverified. Cannot copy incomplete totals.':'Copy '+bucket.label+' total';
+                copy.disabled=bucket.pending>0;
+                copy.onclick=async()=>{try{await navigator.clipboard.writeText(money(bucket.sum));copy.textContent='Copied';}catch(_error){copy.textContent='Copy unavailable';}};
+                row.append(copy);totals.append(row);
+            });panel.append(totals);
+            const overall=el('div',(missing?'Verified subtotal (incomplete): ':'Total: ')+money(grand));overall.className='sp-ledger-grand';panel.append(overall);
+            if(missing){const warn=el('div',missing+' job(s) have unverified prices. Bureau totals marked * are incomplete; their Copy buttons are disabled.');warn.className='sp-ledger-status';panel.append(warn);}
+        }
+        const footer=el('div');footer.className='sp-ledger-footer';
+        const clear=el('button','Clear');clear.title='Clear this client’s tracked totals in all tabs. Postalocity jobs are not deleted.';
+        clear.onclick=()=>{if(window.confirm('Clear all local totals for this client, including pending and approved jobs? Postalocity jobs will NOT be deleted.')){if(clearSession(r.session))tick();}};
+        const del=el('button','Delete job in Postalocity');del.title='Use Postalocity’s own Delete Job action.';del.disabled=!!r.deleted||isApproved(r);del.onclick=requestNativeDeletion;
+        footer.append(clear,del);panel.append(footer);
+        const note=el('div','Approved totals remain until Clear. Closing an unapproved tab excludes it; the browser-only ledger does not delete Postalocity jobs.');
+        note.className='sp-ledger-meta';note.style.marginTop='9px';panel.append(note);
     }
     function requestNativeDeletion(){
         const current=read('job:'+id());
