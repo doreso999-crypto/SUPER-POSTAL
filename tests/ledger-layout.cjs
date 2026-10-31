@@ -24,11 +24,13 @@ const session={address:{name:'Casey Example',address1:'123 Main St',city:'Denver
 let jobs=[
     {id:'101',name:'EX Dispute Letter',session:'client',bureau:'EX',cents:139,status:'Processed',letters:['EX-01.pdf']},
     {id:'102',name:'Direct Creditor Letter',session:'client',bureau:'OTHER',cents:239,status:'Processed',letters:['THD-CBNA.pdf']},
-    {id:'103',name:'Unassigned',session:'client',bureau:'Unassigned',cents:999,status:'Processed'}
+    {id:'103',name:'Unassigned',session:'client',bureau:'Unassigned',cents:999,status:'Processed'},
+    {id:'104',name:'',session:'client',bureau:'EX',cents:499,status:'Processed'},
+    {id:'105',name:'Untitled job',session:'client',bureau:'OTHER',cents:599,status:'Processed'}
 ];
 const read=key=>key==='session:client'?session:key.startsWith('job:')?jobs.find(j=>j.id===key.slice(4)):null;
 const group=job=>({key:job.bureau,label:({EX:'Experian',EQU:'Equifax',TU:'TransUnion',OTHER:'Other',Unassigned:'Unassigned'})[job.bureau]});
-const countable=job=>job.bureau!=='Unassigned';
+const countable=job=>job.bureau!=='Unassigned'&&!!job.name&&!/^(?:UNNAMED|UNTITLED|UNASSIGNED)(?: JOB)?$/i.test(job.name);
 const bureauSummary=records=>['EX','EQU','TU','OTHER'].map(key=>{
     const entries=records.filter(j=>j.bureau===key);
     return {key,label:group({bureau:key}).label,jobs:entries.map(job=>({job,group:group(job)})),
@@ -49,11 +51,13 @@ assert.match(textAll(panel),/Casey Example/);
 assert.equal(flatten(panel).filter(el=>el.className==='sp-ledger-totalrow').length,2,'two total rows');
 assert.equal(flatten(panel).filter(el=>el.textContent==='Copy').length,2,'each available bureau has a Copy button');
 assert.match(textAll(panel),/Total: \$3\.78/);
-assert.match(textAll(panel),/1 unassigned job/);
+assert.doesNotMatch(textAll(panel),/unassigned|unnamed|untitled|#103|#104|#105/i);
+assert.equal(flatten(panel).filter(el=>el.tag==='select').length,0,'no manual bureau dropdown exists anywhere in client totals');
+assert.equal(flatten(panel).filter(el=>el.className==='sp-ledger-letter').length,2,'only two named, classified jobs are displayed');
 jobs[1].priceNeedsReview=true;
 render(jobs[0]);
 panel=document.querySelector('#spLedgerPanel');
 assert.match(textAll(panel),/Verified subtotal \(incomplete\): \$1\.39/);
 const otherTotal=flatten(panel).find(el=>el.className==='sp-ledger-totalrow'&&el.dataset.bureau==='OTHER');
 assert.equal(otherTotal.children[2].disabled,true,'unverified bureau cannot copy a misleading amount');
-console.log('PASS: client, letter names, per-job prices, conditional bureau sections, Copy buttons and incomplete totals.');
+console.log('PASS: only named, classified jobs; no bureau dropdown; hidden unassigned; conditional sections, Copy and incomplete totals.');

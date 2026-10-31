@@ -2003,8 +2003,13 @@ document.body.appendChild(box);
         }
         return {found,valid:false,cents:null};
     }
+    function named(r){
+        if(!r)return false;
+        const name=norm(r.name);
+        return !!name&&!/^(?:UNNAMED|UNTITLED|UNASSIGNED)(?:\s+(?:JOB|LETTER))?$/.test(name);
+    }
     function countable(r){
-        if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!norm(r.name))return false;
+        if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!named(r))return false;
         const session=read('session:'+r.session);
         return !!session&&!session.ended&&!!complete(session.address)&&group(r).key!=='Unassigned'&&(isApproved(r)||active(r.id));
     }
@@ -2085,11 +2090,9 @@ document.body.appendChild(box);
         });
     }
     function group(r){
+        // Bureau and Other are determined from the job's saved recipients
+        // and recognizable job title, never from manual ledger selectors.
         const names={EX:'Experian',EQU:'Equifax',TU:'TransUnion',OTHER:'Other'};
-        if(r.override){
-            if(names[r.override])return {key:r.override,label:names[r.override]};
-            if(r.override==='Unassigned')return {key:'Unassigned',label:'Unassigned'};
-        }
         const recipients=r.recipients||[], inferred=spDetectBureauForRecipient(r.name);
         if(recipients.length){
             if(!recipients.every(complete))return {key:'Unassigned',label:'Unassigned',warning:true};
@@ -2275,15 +2278,13 @@ document.body.appendChild(box);
             #spLedgerPanel .sp-ledger-totals{display:grid;gap:7px}
             #spLedgerPanel .sp-ledger-totalrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border:1px solid #dde6ef;border-radius:9px;padding:9px 10px;background:#fafcff}
             #spLedgerPanel .sp-ledger-totalrow strong{font-size:13px;font-variant-numeric:tabular-nums}
-            #spLedgerPanel button,#spLedgerPanel select{font:600 11px Arial,sans-serif;border:1px solid #c6d4e4;border-radius:7px;padding:7px 9px;background:#fff;color:#2f517b;cursor:pointer;max-width:100%}
+            #spLedgerPanel button{font:600 11px Arial,sans-serif;border:1px solid #c6d4e4;border-radius:7px;padding:7px 9px;background:#fff;color:#2f517b;cursor:pointer;max-width:100%}
             #spLedgerPanel button:disabled{opacity:.45;cursor:not-allowed}
-            #spLedgerPanel button:focus-visible,#spLedgerPanel select:focus-visible{outline:2px solid #376cb2;outline-offset:2px}
+            #spLedgerPanel button:focus-visible{outline:2px solid #376cb2;outline-offset:2px}
             #spLedgerPanel .sp-ledger-footer{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
             #spLedgerPanel .sp-ledger-grand{font-size:15px;font-weight:800;margin-top:10px;font-variant-numeric:tabular-nums}
             #spLedgerPanel .sp-ledger-status{padding:9px 10px;border-radius:8px;background:#fff7ed;color:#925124;font-size:11px;margin:10px 0}
             #spLedgerPanel .sp-ledger-empty{font-size:12px;color:#71839a;padding:12px 0}
-            #spLedgerPanel .sp-ledger-needs{border:1px dashed #d1dcea;border-radius:9px;padding:10px;margin:10px 0;font-size:11px}
-            #spLedgerPanel .sp-ledger-needs label{display:block;margin:5px 0}
             @media(max-width:380px){#spLedgerPanel .sp-ledger-totalrow{grid-template-columns:minmax(0,1fr) auto}#spLedgerPanel .sp-ledger-totalrow button{grid-column:1/-1}}
             `;
             document.head.append(style);
@@ -2292,8 +2293,7 @@ document.body.appendChild(box);
         const tracked=session&&!session.ended?sessionJobs(r.session):[];
         const jobs=tracked.filter(countable);
         const groups=bureauSummary(jobs);
-        const unassigned=tracked.filter(j=>norm(j.name)&&group(j).key==='Unassigned');
-        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,unassigned,error,recovering,recoveryMessage]);
+        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage]);
         if(view===lastView)return;lastView=view;
         panel.replaceChildren();
         panel.append(el('div','CLIENT TOTALS'));panel.lastChild.className='sp-ledger-title';
@@ -2318,10 +2318,8 @@ document.body.appendChild(box);
         const address=el('div',[session.address.address1,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(' · '));
         address.className='sp-ledger-address';panel.append(address);
         if(r.deleted){const alert=el('div','This job was deleted. It is excluded from totals.');alert.className='sp-ledger-status';panel.append(alert);}
-        else if(!countable(r)){const alert=el('div',group(r).key==='Unassigned'?'This job is unassigned. Assign its bureau or Other below to count it.':'This job needs a saved return address and job name to be counted.');alert.className='sp-ledger-status';panel.append(alert);}
-        const sectionLabel=el('div','BUREAU LETTERS');sectionLabel.className='sp-ledger-heading';panel.append(sectionLabel);
+        if(groups.length){const sectionLabel=el('div','BUREAU LETTERS');sectionLabel.className='sp-ledger-heading';panel.append(sectionLabel);}
         let grand=0,missing=0;
-        if(!groups.length){const empty=el('p','No assigned jobs to display.');empty.className='sp-ledger-empty';panel.append(empty);}
         groups.forEach(bucket=>{
             grand+=bucket.sum;missing+=bucket.pending;
             const section=el('section');section.className='sp-ledger-group';section.dataset.bureau=bucket.key;
@@ -2332,7 +2330,7 @@ document.body.appendChild(box);
             bucket.jobs.forEach(({job,group:g})=>{
                 const letter=el('div');letter.className='sp-ledger-letter';
                 const line=el('div');line.className='sp-ledger-letterhead';
-                const name=el('div',job.name||'Untitled job');name.className='sp-ledger-lettername';
+                const name=el('div',job.name);name.className='sp-ledger-lettername';
                 const verified=Number.isInteger(job.cents)&&!job.priceNeedsReview;
                 const price=el('div',verified?money(job.cents):'Pending price');price.className='sp-ledger-price';
                 line.append(name,price);letter.append(line);
@@ -2345,25 +2343,10 @@ document.body.appendChild(box);
                     const none=el('div','Letter filenames not available for this job');none.className='sp-ledger-meta';letter.append(none);
                 }
                 if(g.warning){const warning=el('div','Review recipient information: conflicting or mixed destinations.');warning.className='sp-ledger-warning';letter.append(warning);}
-                const selector=el('select');selector.setAttribute('aria-label','Assign bureau for Job #'+job.id);
-                [['','Auto bureau'],['EX','Experian'],['EQU','Equifax'],['TU','TransUnion'],['OTHER','Other'],['Unassigned','Unassigned']].forEach(([v,label])=>{const opt=el('option',label);opt.value=v;selector.append(opt);});
-                selector.value=job.override||'';
-                selector.onchange=()=>{const current=read('job:'+job.id);if(current){current.override=selector.value;write('job:'+job.id,current);lastView='';tick();}};
-                letter.append(selector);section.append(letter);
+                section.append(letter);
             });
             panel.append(section);
         });
-        if(unassigned.length){
-            const needs=el('div');needs.className='sp-ledger-needs';
-            needs.append(el('strong',unassigned.length+' unassigned job(s) · excluded from totals'));
-            unassigned.forEach(job=>{
-                const label=el('label','#'+job.id+' — '+job.name);
-                const select=el('select');select.setAttribute('aria-label','Assign Job #'+job.id);
-                [['','Choose category'],['EX','Experian'],['EQU','Equifax'],['TU','TransUnion'],['OTHER','Other']].forEach(([v,t])=>{const opt=el('option',t);opt.value=v;select.append(opt);});
-                select.onchange=()=>{const current=read('job:'+job.id);if(current){current.override=select.value;write('job:'+job.id,current);lastView='';tick();}};
-                label.append(select);needs.append(label);
-            });panel.append(needs);
-        }
         if(groups.length){
             panel.append(el('hr'));panel.lastChild.className='sp-ledger-divider';
             const totalsHeading=el('div','TOTAL BY BUREAU');totalsHeading.className='sp-ledger-heading';panel.append(totalsHeading);
