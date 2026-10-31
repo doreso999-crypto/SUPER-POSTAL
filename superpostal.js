@@ -669,6 +669,10 @@ function spRefreshBureauMismatchWarning(){
         recipient:{root:document.querySelector('#contactModal'),code:spSelectedRecipientBureau()},
         sender:{root:document.querySelector('#settingsReturnAddress-Modal'),code:spReturnAddressBureau()}
     };
+    const recipientCheck=spVerifiedBureauDecision(labels.recipient.code);
+    if(recipientCheck.type==='mismatch'){
+        spRecipientBureauStatus('Warning: verified PDF filenames indicate '+recipientCheck.bureaus.map(spBureauCaption).join(', ')+'. The selected recipient address indicates '+spBureauCaption(labels.recipient.code)+'.','error');
+    }
     Object.keys(labels).forEach(function(key){
         const entry=labels[key];if(!entry.root)return;
         const warning=entry.root.querySelector('.sp-pdf-address-warning');
@@ -979,7 +983,12 @@ function spFillRecipientBureau(code,method){
         spSetField(fields[key],data[key]);
     });
     const names={EX:'Experian',EQU:'Equifax',TU:'TransUnion'};
-    spRecipientBureauStatus(names[code]+' address filled ('+method+'). Review before saving.','success');
+    const check=spVerifiedBureauDecision(code);
+    if(check.type==='mismatch'){
+        spRecipientBureauStatus('Warning: verified PDF filenames indicate '+check.bureaus.map(spBureauCaption).join(', ')+', but the selected address is '+names[code]+'. Review before saving.','error');
+    }else{
+        spRecipientBureauStatus(names[code]+' address filled ('+method+'). Review before saving.','success');
+    }
     return true;
 }
 function populateRecipientFromJob(){
