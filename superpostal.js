@@ -871,6 +871,104 @@ function spWatchReturnSaveAction(){
     }
 }
 
+// Stop Postalocity's own "Process this job" UI action unless every Job
+// Details section is ready. Capture-phase listeners run before the native
+// click / inline onclick / delegated click and before form submission.
+function spJobDetailsReadiness(){
+    const recipients=spRecipientNamesFromPage();
+    const countEl=document.querySelector('#step3 .contactListSize');
+    const count=countEl?Number.parseInt(countEl.textContent,10):NaN;
+    const pdfNames=spPdfNamesFromPage();
+    const checks=[
+        {label:'Recipient names',ready:(Number.isFinite(count)&&count>0)||recipients.length>0},
+        {label:'Uploaded PDF filenames',ready:pdfNames.length>0},
+        {label:'Saved return address',ready:spReturnSavedReady()}
+    ];
+    return {ready:checks.every(function(item){return item.ready;}),
+        missing:checks.filter(function(item){return !item.ready;}).map(function(item){return item.label;})};
+}
+function spIsNativeProcessJobControl(el){
+    if(!el||!el.closest||!el.closest('#step4'))return false;
+    if(el.id==='spQuickReturnButton'||el.closest('#spRecipientPdfOverview'))return false;
+    const label=String(el.tagName==='INPUT'?el.value:
+        (el.textContent||el.getAttribute('aria-label')||el.getAttribute('title')||''))
+        .replace(/\s+/g,' ').trim();
+    const action=[el.id,el.getAttribute('name'),el.getAttribute('onclick')]
+        .filter(Boolean).join(' ');
+    // Restrict this rule to actual job-processing controls, not navigation,
+    // the Return Address shortcut, or general "Process" text elsewhere.
+    return /\bprocess\s+(?:this\s+)?job\b/i.test(label)||
+        /(?:^|[^a-z])(?:process|submit|approve)(?:This)?Job(?:Btn|Button)?(?:$|[^a-z])/i.test(action) ||
+        /(?:process|submit|approve)Job\s*\(/i.test(action);
+}
+function spProcessJobWarning(missing,control){
+    const area=document.querySelector('#step4 #alertApproveDiv')||
+        (control&&control.closest('#step4'))||document.querySelector('#step4');
+    if(!area)return;
+    let box=area.querySelector('#spProcessJobBlocked');
+    if(!box){
+        box=document.createElement('div');
+        box.id='spProcessJobBlocked';
+        box.setAttribute('role','alert');
+        box.tabIndex=-1;
+        box.style.cssText='margin:12px 0;padding:12px 14px;border:2px solid #c53030;border-radius:9px;background:#fff0f0;color:#8b1e1e;font:600 13px/1.5 Arial,sans-serif;overflow-wrap:anywhere';
+        area.appendChild(box);
+    }
+    box.textContent='Cannot process this job. Complete these Job Details first: '+missing.join(', ')+'.';
+    const details=document.querySelector('#spRecipientPdfOverview');
+    if(details){
+        details.dataset.completion='incomplete';
+        const label=details.querySelector('#spOverviewCompletionLabel');
+        if(label)label.textContent='Missing: '+missing.join(', ');
+    }
+    try{box.focus({preventScroll:true});}catch(_e){box.focus();}
+    if(box.scrollIntoView)box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function spBlockIncompleteProcess(event,control){
+    let result;
+    try{result=spJobDetailsReadiness();}
+    catch(_e){
+        // If a required field cannot be checked, fail closed rather than send
+        // a potentially incomplete mail job.
+        result={ready:false,missing:['Job details could not be verified']};
+    }
+    if(result.ready){
+        const previous=document.querySelector('#spProcessJobBlocked');
+        if(previous)previous.remove();
+        return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    spProcessJobWarning(result.missing,control);
+    spQueueRecipientOverview();
+    return true;
+}
+function spInstallProcessJobGuard(){
+    if(document.documentElement.dataset.spProcessJobGuard==='true')return;
+    document.documentElement.dataset.spProcessJobGuard='true';
+    document.addEventListener('click',function(event){
+        const target=event.target;
+        const control=target&&target.closest&&target.closest(
+            'button,input[type="submit"],input[type="button"],a,[role="button"]'
+        );
+        if(control&&spIsNativeProcessJobControl(control))
+            spBlockIncompleteProcess(event,control);
+    },true);
+    document.addEventListener('submit',function(event){
+        const form=event.target;
+        if(!form||!form.closest||!form.closest('#step4'))return;
+        const clicked=event.submitter||document.activeElement;
+        if(clicked&&spIsNativeProcessJobControl(clicked)){
+            spBlockIncompleteProcess(event,clicked);
+        }else if(form.querySelector&&form.querySelector(
+            'button[id*="processJob"],button[id*="processBtn"],button[onclick*="processJob"],button[onclick*="submitJob"]'
+        )){
+            spBlockIncompleteProcess(event,form);
+        }
+    },true);
+}
+
 function spRefreshRecipientPdfOverview(){
     const panel=document.querySelector('#spRecipientPdfOverview');
     if(!panel)return;
@@ -1088,6 +1186,7 @@ watchUploadedFiles();
 hidePostalocitySettingsButtons();
 addQuickReturnAddress();
 addRecipientPdfOverview();
+spInstallProcessJobGuard();
 
 ///////////////////////////////
 // RECIPIENT MODAL — AUTO-DETECT OR CHOOSE A BUREAU
