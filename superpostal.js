@@ -1239,7 +1239,9 @@ function spScarePreview(control,form){
         stage.insertBefore(iframe,actions);
         pending.visual=iframe;
         const note=document.createElement('div');note.className='sp-scare-source';
-        note.append('If the player does not start automatically, press Play. ');
+        const hint=document.createElement('span');
+        hint.textContent='If the player does not start automatically, press Play. ';
+        note.append(hint);
         const link=document.createElement('a');
         link.href=SP_PROCESS_SCARE_MEDIA.page;
         link.target='_blank';link.rel='noopener noreferrer';
