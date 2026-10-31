@@ -1584,8 +1584,15 @@ box.innerHTML = `
 // Local, per-browser working container. Never add the hidden new-job estimate.
 // Same-origin localStorage is shared by all Postalocity tabs in this browser
 // profile. Each job has a separate record to avoid last-writer-wins data loss.
-const LIQ_PREFIX='sp-liq-temporary-v5:';
-const LIQ_ACTIVE_KEY=LIQ_PREFIX+'active';
+const LIQ_PREFIX='sp-liq-temporary-v6:';
+const LIQ_LEGACY_PREFIX='sp-liq-temporary-v5:';
+const LIQ_LEGACY_ACTIVE_KEY=LIQ_LEGACY_PREFIX+'active';
+const LIQ_LEGACY_JOB_PREFIX=LIQ_LEGACY_PREFIX+'job:';
+const LIQ_LEGACY_DRAFT_PREFIX=LIQ_LEGACY_PREFIX+'draft:';
+const LIQ_SESSION_PREFIX=LIQ_PREFIX+'session:';
+const LIQ_TAB_BIND_PREFIX=LIQ_PREFIX+'tab-job-client:';
+const LIQ_MIGRATED_PREFIX=LIQ_PREFIX+'migrated:';
+const LIQ_ACTIVE_KEY=LIQ_SESSION_PREFIX;
 const LIQ_JOB_PREFIX=LIQ_PREFIX+'job:';
 const LIQ_OLD_TAB_KEY='sp-return-identity-liquidation-v4';
 const LIQ_MIGRATION_CLOSED=LIQ_PREFIX+'legacyImportClosed';
@@ -1597,42 +1604,53 @@ let liqLastView='',liqLastNotice='',liqLastLiveSignature='';
 function liqEmptySession(){
     return {clientKey:'',clientName:'',sessionId:'',jobs:{},drafts:{}};
 }
+function liqSessionStorageKey(key){return LIQ_SESSION_PREFIX+key;}
+function liqBindingKey(id){return LIQ_TAB_BIND_PREFIX+id;}
+function liqBindTab(session){
+    const id=liqJobId();
+    if(!id||!session)return;
+    try{window.sessionStorage.setItem(liqBindingKey(id),session.clientKey);}
+    catch(_error){}
+}
+function liqBoundClient(){
+    const id=liqJobId();
+    if(!id)return '';
+    try{return window.sessionStorage.getItem(liqBindingKey(id))||'';}
+    catch(_error){return '';}
+}
+function liqGetClientSession(clientKey){
+    if(!clientKey)return null;
+    try{
+        const name=liqSessionStorageKey(clientKey);
+        const raw=window.localStorage.getItem(name);
+        if(!raw)return null;
+        const data=JSON.parse(raw);
+        if(!data||data.clientKey!==clientKey||!data.id||!data.clientName)return null;
+        const last=Number(window.localStorage.getItem(
+            LIQ_ACTIVITY_PREFIX+data.id))||data.createdAt;
+        if(!Number.isFinite(last)||last>Date.now()+60000||
+           Date.now()-last>LIQ_MAX_IDLE){
+            window.localStorage.removeItem(name);
+            liqPurgeSession(data);
+            return null;
+        }
+        return data;
+    }catch(_error){return null;}
+}
 function liqNewSessionId(){
     if(window.crypto&&typeof window.crypto.randomUUID==='function')
         return window.crypto.randomUUID();
     return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,14);
 }
 function liqActive(){
-    let raw;
-    try{raw=window.localStorage.getItem(LIQ_ACTIVE_KEY);}
-    catch(_error){liqLastNotice='Shared browser storage unavailable.';return null;}
-    if(!raw)return null;
-    try{
-        const session=JSON.parse(raw);
-        if(!session||typeof session!=='object'||!session.id||
-           !session.clientKey||!session.clientName)return null;
-        const last=Number(window.localStorage.getItem(
-            LIQ_ACTIVITY_PREFIX+session.id))||session.createdAt;
-        if(!Number.isFinite(session.createdAt)||
-           !Number.isFinite(last)||
-           Date.now()-last>LIQ_MAX_IDLE ||
-           last>Date.now()+60000||
-           session.createdAt>Date.now()+60000){
-            // Expiry must actually delete temporary job records, not merely
-            // hide them while leaving client details in browser storage.
-            try{
-                if(window.localStorage.getItem(LIQ_ACTIVE_KEY)===raw){
-                    window.localStorage.setItem(LIQ_ACTIVE_KEY,JSON.stringify({
-                        id:null,expiredAt:Date.now()
-                    }));
-                    window.localStorage.setItem(LIQ_MIGRATION_CLOSED,'true');
-                    liqPurgeSession(session);
-                }
-            }catch(_error){}
-            return null;
-        }
+    const identity=liqReturnIdentity(false);
+    if(identity){
+        const session=liqGetClientSession(identity.key);
+        if(session)liqBindTab(session);
         return session;
-    }catch(_error){return null;}
+    }
+    const bound=liqBoundClient();
+    return bound?liqGetClientSession(bound):null;
 }
 function liqJobKey(session,id){
     return LIQ_JOB_PREFIX+session.id+':'+id;
@@ -1700,10 +1718,11 @@ function liqRememberReturnDisplay(identity){
     const updated={...current,returnDisplay:next};
     try{
         // Temporary local shared display; removed on reset or expiry.
-        const raw=window.localStorage.getItem(LIQ_ACTIVE_KEY);
+        const key=liqSessionStorageKey(current.clientKey);
+        const raw=window.localStorage.getItem(key);
         const stored=raw&&JSON.parse(raw);
         if(!stored||stored.id!==current.id)return;
-        window.localStorage.setItem(LIQ_ACTIVE_KEY,JSON.stringify(updated));
+        window.localStorage.setItem(key,JSON.stringify(updated));
     }catch(_error){}
 }
 function liqPreviewFiles(files){
@@ -1893,7 +1912,7 @@ function liqRead(){
 function liqSaveJob(record,session){
     if(!session||!record||!/^\d+$/.test(String(record.id)))return false;
     const current=liqActive();
-    // An older tab cannot write into a superseded client session.
+    // Verify this job belongs to the session selected by its Return Address.
     if(!current||current.id!==session.id ||current.clientKey!==session.clientKey)return false;
     const item={...record,id:String(record.id),sessionKey:session.clientKey,
                 sessionId:session.id,client:current.clientName};
@@ -1948,89 +1967,83 @@ function liqTouchSession(session){
 }
 function liqStartSession(identity,explicit){
     if(!identity||!identity.key||!identity.name)return null;
-    const active=liqActive();
-    if(active&&active.clientKey===identity.key){
-        if(explicit)liqTouchSession(active);
-        return active;
+    const existing=liqGetClientSession(identity.key);
+    if(existing){
+        liqBindTab(existing);
+        if(explicit)liqTouchSession(existing);
+        return existing;
     }
-    // Only a fresh verified Save action can switch an existing session.
-    // An old open tab may display a different address but cannot reset it.
-    if(active&&!explicit)return null;
-    if(!explicit){
-        // A deliberate Reset is a tombstone; don't recreate from old fields.
-        try{if(window.localStorage.getItem(LIQ_ACTIVE_KEY))return null;}
-        catch(_error){return null;}
-    }
-    if(active&&explicit){
-        const pending=Object.values(liqJobRecords(active)).filter(function(job){
-            return !Number.isSafeInteger(job.priceCents);
-        }).length;
-        if(pending&&!window.confirm(
-            'The current client still has '+pending+' job(s) awaiting a processed price. '+
-            'Starting '+identity.name+' will clear those pending records. Continue?')){
-            liqLastNotice='Client switch cancelled: finish pending jobs before changing sessions.';
-            liqRender();
-            return null;
-        }
-    }
-    const fresh={id:liqNewSessionId(),clientKey:identity.key,
-                 clientName:identity.name,createdAt:Date.now()};
+    if(!explicit&&!spReturnSavedReady())return null;
+    const key=liqSessionStorageKey(identity.key);
+    const newSession={id:liqNewSessionId(),clientKey:identity.key,
+        clientName:identity.name,createdAt:Date.now()};
     try{
-        window.localStorage.setItem(LIQ_ACTIVE_KEY,JSON.stringify(fresh));
+        // Recheck to reduce the chance of a simultaneous-tab overwrite.
+        const found=liqGetClientSession(identity.key);
+        if(found){liqBindTab(found);return found;}
+        window.localStorage.setItem(key,JSON.stringify(newSession));
+        const saved=liqGetClientSession(identity.key);
+        if(!saved)return null;
+        liqBindTab(saved);
+        liqTouchSession(saved);
+        liqLastNotice='';
+        liqLastLiveSignature='';
+        liqRender();
+        return saved;
     }catch(_error){
-        liqLastNotice='Shared browser storage unavailable.';
+        liqLastNotice='Cannot create this client session.';
         return null;
     }
-    // The session pointer changes first, so old tabs cannot continue writing.
-    if(active){
-        // Once the client changes, old per-tab records must never be imported
-        // into a fresh temporary session.
-        try{window.localStorage.setItem(LIQ_MIGRATION_CLOSED,'true');}catch(_error){}
-        liqPurgeSession(active);
-    }
-    liqLastNotice='';
-    liqTouchSession(fresh);
-    liqLastLiveSignature='';
-    liqRender();
-    return liqActive();
 }
 function liqResetSession(){
     const current=liqActive();
-    // Keep a reset marker to stop older tabs from silently reactivating.
+    if(!current)return;
     try{
-        window.localStorage.setItem(LIQ_ACTIVE_KEY,JSON.stringify({
-            id:null,resetAt:Date.now()
-        }));
-        window.localStorage.setItem(LIQ_MIGRATION_CLOSED,'true');
-        try{window.sessionStorage.removeItem(LIQ_OLD_TAB_KEY);}catch(_e){}
-        if(current)liqPurgeSession(current);
-    }catch(_error){liqLastNotice='Could not reset shared liquidation session.';}
+        window.localStorage.removeItem(liqSessionStorageKey(current.clientKey));
+        liqPurgeSession(current);
+        const id=liqJobId();
+        if(id)window.sessionStorage.removeItem(liqBindingKey(id));
+    }catch(_error){liqLastNotice='Could not reset this client session.';}
+    liqLastLiveSignature='';
     liqRender();
 }
 function liqMigrateTabJobs(){
-    try{
-        if(window.localStorage.getItem(LIQ_MIGRATION_CLOSED))return;
-    }catch(_error){return;}
-    // One-time migration for jobs already tracked in separate v4 tabs.
-    // Each tab may contribute a different job to the same shared session.
     const active=liqActive();
-    const identity=liqReturnIdentity();
-    if(!active||!identity||active.clientKey!==identity.key)return;
+    if(!active)return;
+    const flag=LIQ_MIGRATED_PREFIX+active.clientKey;
     try{
-        const raw=window.sessionStorage.getItem(LIQ_OLD_TAB_KEY);
-        if(!raw)return;
-        const legacy=JSON.parse(raw);
-        if(!legacy||legacy.clientKey!==active.clientKey||
-           !legacy.jobs||typeof legacy.jobs!=='object')return;
-        Object.values(legacy.jobs).forEach(function(job){
-            if(!job||!/^\d+$/.test(String(job.id))||
-               job.sessionKey!==active.clientKey||
-               !liqValidAssignment(job.client,job.target))return;
-            const key=liqJobKey(active,String(job.id));
-            if(window.localStorage.getItem(key))return;
-            liqSaveJob(job,active);
-        });
-        window.sessionStorage.removeItem(LIQ_OLD_TAB_KEY);
+        if(window.localStorage.getItem(flag))return;
+        const oldRaw=window.localStorage.getItem(LIQ_LEGACY_ACTIVE_KEY);
+        const old=oldRaw&&JSON.parse(oldRaw);
+        if(old&&old.id&&old.clientKey===active.clientKey){
+            const oldJobPrefix=LIQ_LEGACY_JOB_PREFIX+old.id+':';
+            const oldDraftPrefix=LIQ_LEGACY_DRAFT_PREFIX+old.id+':';
+            const keys=[];
+            for(let i=0;i<window.localStorage.length;i++){
+                const key=window.localStorage.key(i);
+                if(key&&(key.startsWith(oldJobPrefix)||key.startsWith(oldDraftPrefix)))
+                    keys.push(key);
+            }
+            keys.forEach(function(key){
+                try{
+                    const item=JSON.parse(window.localStorage.getItem(key)||'null');
+                    if(!item||!/^\d+$/.test(String(item.id))||
+                        item.sessionKey!==active.clientKey)return;
+                    if(key.startsWith(oldJobPrefix)){
+                        const dest=liqJobKey(active,String(item.id));
+                        if(!window.localStorage.getItem(dest))
+                            liqSaveJob({...item,sessionId:active.id},active);
+                    }else{
+                        const dest=liqDraftKey(active,String(item.id));
+                        if(!window.localStorage.getItem(dest))
+                            window.localStorage.setItem(dest,JSON.stringify({
+                                ...item,sessionId:active.id
+                            }));
+                    }
+                }catch(_error){}
+            });
+        }
+        window.localStorage.setItem(flag,'true');
     }catch(_error){}
 }
 function liqNewJobTotal(){
@@ -2139,10 +2152,7 @@ function liqDetectNewClient(){
        !document.querySelector('#newJobContent'))return;
     const identity=liqReturnIdentity();
     if(!identity)return;
-    // If there is no current session and no reset marker, initialize it.
-    // NEVER change an existing client based on a stale open tab.
-    const active=liqActive();
-    if(!active)liqStartSession(identity,false);
+    liqStartSession(identity,false);
     liqMigrateTabJobs();
 }
 function liqVerifiedReturnSaved(){
@@ -2248,7 +2258,7 @@ function liqStageJob(){
     if(!parsed||!parsed.target)return fail('LIQUIDATION cannot assign this job to one bureau or creditor.');
     const active=liqActive()||liqStartSession(identity,false);
     if(!active||active.clientKey!==identity.key)return fail(
-        'LIQUIDATION has a different active client. Save Return Address again to switch.');
+        'LIQUIDATION cannot match this job to its saved Return Address.');
     liqMigrateTabJobs();
     const previous=liqRead().jobs[id];
     if(previous&&previous.status==='processed'&&Number.isSafeInteger(previous.priceCents))
@@ -2394,7 +2404,7 @@ function liqRender(){
     }
     const hint=panel.querySelector('#liqHint');
     if(hint)hint.textContent=liqLastNotice||
-        'LIQUIDATION sums each job’s Postalocity Total Price before Process, by bureau. It reconciles final prices if they change.';
+        'Separate temporary session per saved Return Address; matching jobs share totals across tabs.';
     total.textContent=liqMoney(grand);
     count.textContent=processed+' processed · '+quoted+' quoted · '+pending+' awaiting price';
     list.replaceChildren();
@@ -2573,8 +2583,8 @@ spLiquidationStageJob=liqStageJob;
 liqConnectControls();
 window.addEventListener('sp:verifiedReturnAddressSaved',liqVerifiedReturnSaved);
 window.addEventListener('storage',function(event){
-    if(event.key===LIQ_ACTIVE_KEY||
-       (event.key&&event.key.startsWith(LIQ_JOB_PREFIX))){
+    if(event.key&&(event.key.startsWith(LIQ_SESSION_PREFIX)||
+                   event.key.startsWith(LIQ_JOB_PREFIX))){
         liqLastLiveSignature='';
         liqRender();
     }else if(event.key&&event.key.startsWith(LIQ_DRAFT_PREFIX)){
