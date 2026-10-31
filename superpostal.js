@@ -2531,7 +2531,7 @@ document.body.appendChild(box);
             keys().some(k=>{
                 if(!k.startsWith('job:'))return false;
                 const j=read(k);
-                return j&&!j.deleted&&j.session===x.key&&named(j);
+                return j&&!j.deleted&&j.session===x.key&&named(j)&&visibleJob(j);
             })).sort((a,b)=>norm(a.record.address.name).localeCompare(norm(b.record.address.name)))
             .map(x=>({key:x.key,label:x.record.address.name+' — '+
                 x.record.address.city+', '+x.record.address.state+' '+x.record.address.zip}));
