@@ -1580,6 +1580,33 @@ document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
 const box=document.createElement('div');
 box.id='bureauTotals';
 box.dataset.minimized='false';
+box.dataset.empty='true'; // Keep the larger empty state until named jobs are visible.
+
+// At normal size the panel stays 320 × 240. With no visible jobs its
+// dimensions grow by 2.5× (800 × 600), capped to the browser viewport.
+// The minimized mascot is never enlarged.
+const EMPTY_SIZE_SCALE=2.5;
+const emptyStyle=document.createElement('style');
+emptyStyle.id='spEmptyTotalsSize';
+emptyStyle.textContent=`
+#bureauTotals[data-empty="true"][data-minimized="false"]{
+    width:min(${320*EMPTY_SIZE_SCALE}px,calc(100vw - 30px))!important;
+    min-height:max(140px,min(${240*EMPTY_SIZE_SCALE}px,calc(100vh - 150px)))!important;
+    display:flex!important;
+    align-items:center;
+    justify-content:center;
+}
+#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel{
+    width:100%;
+    max-width:480px;
+    margin:auto;
+    background:transparent!important;
+    text-align:center;
+    max-height:none;
+    overflow:visible;
+}
+`;
+document.head.appendChild(emptyStyle);
 
 Object.assign(box.style,{
     position:'fixed',
@@ -2409,6 +2436,9 @@ document.body.appendChild(box);
         const tracked=session&&!session.ended?sessionJobs(r.session):[];
         const jobs=tracked.filter(countable);
         const groups=bureauSummary(jobs);
+        // Empty means no visible, named, classified job cards. This does not
+        // include the informational return-address prompt or an empty client.
+        box.dataset.empty=groups.length?'false':'true';
         const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage]);
         if(view===lastView)return;lastView=view;
         panel.replaceChildren();
