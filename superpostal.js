@@ -898,7 +898,7 @@ function spWatchReturnSaveAction(){
         const label=String(target.tagName==='INPUT'?target.value:
             (target.textContent||target.getAttribute('aria-label')||''))
             .replace(/\s+/g,' ').trim().toLowerCase();
-        if(label==='save changes'||label==='save change'){
+        if(/^save(?:\s+(?:changes?|settings|address))?$/.test(label)){
             const form=modal.querySelector('#envelopeReturn-address');
             spReturnSaveState.pending=spReturnAddressComplete(form)?
                 {signature:spReturnSignature(form),started:Date.now()}:null;
@@ -913,22 +913,34 @@ function spWatchReturnSaveAction(){
     modal.addEventListener('keydown',function(event){
         if(event.key==='Escape'){spReturnSaveState.pending=null;spQueueRecipientOverview();}
     },true);
+    function finalizeSave(){
+        const pending=spReturnSaveState.pending;
+        spReturnSaveState.pending=null;
+        const form=modal.querySelector('#envelopeReturn-address');
+        if(pending && Date.now()-pending.started<45000 &&
+           spReturnAddressComplete(form) &&
+           spReturnSignature(form)===pending.signature &&
+           !spReturnSaveHasVisibleError(modal)){
+            // Confirmation requires the native Save action AND a completed
+            // modal close without visible errors. Merely editing is not enough.
+            spReturnMarkSaved(form);
+        }
+        spQueueRecipientOverview();
+    }
     const jq=window.jQuery||window.$;
-    if(jq&&jq.fn){
-        jq(modal).on('hidden.bs.modal.spReturnSave',function(){
-            const pending=spReturnSaveState.pending;
-            spReturnSaveState.pending=null;
-            const form=modal.querySelector('#envelopeReturn-address');
-            if(pending && Date.now()-pending.started<45000 &&
-               spReturnAddressComplete(form) &&
-               spReturnSignature(form)===pending.signature &&
-               !spReturnSaveHasVisibleError(modal)){
-                // Confirmation requires the native Save Changes action AND
-                // the native modal completing its close without visible errors.
-                spReturnMarkSaved(form);
-            }
-            spQueueRecipientOverview();
+    if(jq&&jq.fn)jq(modal).on('hidden.bs.modal.spReturnSave',finalizeSave);
+    // Some Postalocity builds hide the modal without firing Bootstrap's
+    // hidden event. Observe the same confirmed close as a fallback.
+    if(typeof MutationObserver!=='undefined'){
+        let wasOpen=modal.classList.contains('show')||modal.classList.contains('in')||
+            modal.style.display==='block';
+        const observer=new MutationObserver(function(){
+            const opened=modal.classList.contains('show')||modal.classList.contains('in')||
+                modal.style.display==='block';
+            if(wasOpen&&!opened&&spReturnSaveState.pending)finalizeSave();
+            wasOpen=opened;
         });
+        observer.observe(modal,{attributes:true,attributeFilter:['class','style','aria-hidden']});
     }
 }
 
