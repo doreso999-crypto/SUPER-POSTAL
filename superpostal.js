@@ -945,7 +945,7 @@ function spShowProcessToast(missing){
     const title=document.createElement('strong');
     title.textContent='Job cannot be processed';
     const summary=document.createElement('p');
-    summary.textContent='Complete these missing Job Details first:';
+    summary.textContent='Resolve these checks before processing:';
     const list=document.createElement('ul');
     missing.forEach(function(item){
         const line=document.createElement('li');
@@ -976,7 +976,7 @@ function spProcessJobWarning(missing,control){
         box.style.cssText='margin:12px 0;padding:12px 14px;border:2px solid #c53030;border-radius:9px;background:#fff0f0;color:#8b1e1e;font:600 13px/1.5 Arial,sans-serif;overflow-wrap:anywhere';
         area.appendChild(box);
     }
-    box.textContent='Cannot process this job. Complete these Job Details first: '+missing.join(', ')+'.';
+    box.textContent='Cannot process this job. Resolve these checks first: '+missing.join(', ')+'.';
     const details=document.querySelector('#spRecipientPdfOverview');
     if(details){
         details.dataset.completion='incomplete';
@@ -993,6 +993,16 @@ function spBlockIncompleteProcess(event,control){
         // If a required field cannot be checked, fail closed rather than send
         // a potentially incomplete mail job.
         result={ready:false,missing:['Job details could not be verified']};
+    }
+    if(result.ready){
+        try{
+            // A Postalocity job must not proceed unless its liquidation
+            // record has also been written and read back successfully.
+            const tracking=liqStageJob();
+            if(!tracking.ready)result={ready:false,missing:[tracking.reason]};
+        }catch(_error){
+            result={ready:false,missing:['Unable to save this job to LIQUIDATION. Check shared browser storage.']};
+        }
     }
     if(result.ready){
         const previous=document.querySelector('#spProcessJobBlocked');
@@ -1525,6 +1535,7 @@ box.innerHTML = `
         <button id="liqClearAll" type="button" style="font-size:11px;padding:4px 8px;border:1px solid #7e5b18;border-radius:5px;background:transparent;color:#261900;cursor:pointer;">Reset session</button>
     </div>
     <div id="liqClientGroups" style="max-height:355px;overflow:auto;"></div>
+    <button id="liqRecoverCurrent" type="button" hidden style="margin-top:6px;width:100%;border:1px solid #7e5b18;border-radius:5px;padding:6px;background:#fff;color:#261900;cursor:pointer;font-size:11px;">Recover this processed job</button>
     <div id="liqHint" style="font-size:10px;line-height:1.5;color:#49340c;margin-top:9px;">
         Shared across Postalocity tabs. Saving a different return address starts a new temporary session; only processed prices are counted.
     </div>
@@ -1542,7 +1553,8 @@ const LIQ_ACTIVE_KEY=LIQ_PREFIX+'active';
 const LIQ_JOB_PREFIX=LIQ_PREFIX+'job:';
 const LIQ_OLD_TAB_KEY='sp-return-identity-liquidation-v4';
 const LIQ_MIGRATION_CLOSED=LIQ_PREFIX+'legacyImportClosed';
-const LIQ_MAX_AGE=24*60*60*1000;
+const LIQ_MAX_IDLE=24*60*60*1000;
+const LIQ_ACTIVITY_PREFIX=LIQ_PREFIX+'activity:';
 const LIQ_TARGETS={EQU:'Equifax',EX:'Experian',TU:'TransUnion'};
 let liqLastView='',liqLastNotice='';
 function liqEmptySession(){
@@ -1562,8 +1574,12 @@ function liqActive(){
         const session=JSON.parse(raw);
         if(!session||typeof session!=='object'||!session.id||
            !session.clientKey||!session.clientName)return null;
+        const last=Number(window.localStorage.getItem(
+            LIQ_ACTIVITY_PREFIX+session.id))||session.createdAt;
         if(!Number.isFinite(session.createdAt)||
-           Date.now()-session.createdAt>LIQ_MAX_AGE ||
+           !Number.isFinite(last)||
+           Date.now()-last>LIQ_MAX_IDLE ||
+           last>Date.now()+60000||
            session.createdAt>Date.now()+60000){
             // Expiry must actually delete temporary job records, not merely
             // hide them while leaving client details in browser storage.
@@ -1616,15 +1632,26 @@ function liqSaveJob(record,session){
     if(!current||current.id!==session.id ||current.clientKey!==session.clientKey)return false;
     const item={...record,id:String(record.id),sessionKey:session.clientKey,
                 sessionId:session.id,client:current.clientName};
-    try{window.localStorage.setItem(liqJobKey(session,item.id),JSON.stringify(item));}
-    catch(_error){liqLastNotice='Cannot save shared liquidation job.';return false;}
+    const jobKey=liqJobKey(session,item.id);
+    const value=JSON.stringify(item);
+    try{
+        window.localStorage.setItem(jobKey,value);
+        // Verify the write and session pointer before native processing.
+        if(window.localStorage.getItem(jobKey)!==value ||
+           !liqTouchSession(session)){
+            liqLastNotice='Shared liquidation record could not be verified.';
+            return false;
+        }
+    }catch(_error){liqLastNotice='Cannot save shared liquidation job.';return false;}
     return true;
 }
 function liqRemoveJob(id){
     const active=liqActive();
     if(!active||!/^\d+$/.test(String(id)))return;
-    try{window.localStorage.removeItem(liqJobKey(active,String(id)));}
-    catch(_error){liqLastNotice='Cannot remove job from shared records.';}
+    try{
+        window.localStorage.removeItem(liqJobKey(active,String(id)));
+        liqTouchSession(active);
+    }catch(_error){liqLastNotice='Cannot remove job from shared records.';}
 }
 function liqPurgeSession(session){
     if(!session)return;
@@ -1636,12 +1663,24 @@ function liqPurgeSession(session){
             if(key&&key.startsWith(prefix))keys.push(key);
         }
         keys.forEach(key=>window.localStorage.removeItem(key));
+        window.localStorage.removeItem(LIQ_ACTIVITY_PREFIX+session.id);
     }catch(_error){}
+}
+function liqTouchSession(session){
+    const active=liqActive();
+    if(!active||active.id!==session.id)return false;
+    try{
+        window.localStorage.setItem(LIQ_ACTIVITY_PREFIX+session.id,String(Date.now()));
+        return true;
+    }catch(_error){return false;}
 }
 function liqStartSession(identity,explicit){
     if(!identity||!identity.key||!identity.name)return null;
     const active=liqActive();
-    if(active&&active.clientKey===identity.key)return active;
+    if(active&&active.clientKey===identity.key){
+        if(explicit)liqTouchSession(active);
+        return active;
+    }
     // Only a fresh verified Save action can switch an existing session.
     // An old open tab may display a different address but cannot reset it.
     if(active&&!explicit)return null;
@@ -1666,6 +1705,7 @@ function liqStartSession(identity,explicit){
         liqPurgeSession(active);
     }
     liqLastNotice='';
+    liqTouchSession(fresh);
     liqRender();
     return liqActive();
 }
@@ -1744,13 +1784,37 @@ function liqReturnIdentity(){
     // Only the saved return address is authoritative, not pasted text,
     // a draft form, a sample address, or an old job's cached PDF name.
     if(!form || !spReturnSavedReady())return null;
-    const fields=['name','address1','address2','city','state','zip','country'];
-    const parts=fields.map(function(fieldName){
-        const field=spReturnFormField(form,fieldName);
-        const text=String(field&&field.value||'');
-        return liqKey(text).replace(/[.,#'’]/g,'').replace(/\s+/g,' ');
-    });
-    if(!parts[0]||!parts[1]||!parts[3]||!parts[4]||!parts[5])return null;
+    const read=function(key){
+        const field=spReturnFormField(form,key);
+        return String(field&&field.value||'');
+    };
+    const clean=function(value){
+        return liqKey(value).replace(/[.,'’]/g,'').replace(/\s+/g,' ').trim();
+    };
+    const street=function(value){
+        // Common USPS suffix, direction and unit spelling variations.
+        const words=liqKey(value).replace(/#/g,' UNIT ').replace(/[.,'’]/g,' ')
+            .replace(/\s+/g,' ').trim().split(' ');
+        const aliases={
+            STREET:'ST',ROAD:'RD',AVENUE:'AVE',BOULEVARD:'BLVD',
+            DRIVE:'DR',LANE:'LN',COURT:'CT',PLACE:'PL',
+            PARKWAY:'PKWY',HIGHWAY:'HWY',CIRCLE:'CIR',
+            NORTH:'N',SOUTH:'S',EAST:'E',WEST:'W',
+            APARTMENT:'UNIT',APT:'UNIT',SUITE:'UNIT',STE:'UNIT',
+            FLOOR:'FL'
+        };
+        return words.map(word=>aliases[word]||word).join(' ').trim();
+    };
+    const state=spStateCode(read('state'))||clean(read('state'));
+    const zipcode=clean(read('zip')).replace(/^(\d{5})[- ]\d{4}$/,'$1');
+    const country=clean(read('country')).replace(
+        /^(UNITED STATES(?: OF AMERICA)?|USA|U S A)$/,'US')||'US';
+    const parts=[
+        clean(read('name')),
+        street([read('address1'),read('address2')].filter(Boolean).join(' ')),
+        clean(read('city')),state,zipcode,country
+    ];
+    if(!parts[0]||!parts[1]||!parts[2]||!parts[3]||!parts[4])return null;
     // Two independent compact checksums avoid storing the raw address.
     // These identify the same saved name+address across separate jobs.
     const value=JSON.stringify(parts);
@@ -1845,23 +1909,24 @@ function liqActualPrice(){
     return total?liqParsePrice(total.textContent):null;
 }
 function liqStageJob(){
+    const fail=function(reason){return {ready:false,reason:reason};};
     const id=liqJobId();
-    if(!id)return;
+    if(!id)return fail('Job number is unavailable; the cost cannot be tracked.');
     const identity=liqReturnIdentity();
-    if(!identity)return;
+    if(!identity)return fail('Return Address is not confirmed saved for this job.');
     const jobName=liqJobName();
-    const names=spPdfNamesFromPage();
-    const parsed=liqFromFiles(names,jobName);
-    if(!parsed||!parsed.target)return;
-    // Explicit save (or clean initialization) starts the client session.
-    // Clicking Process on a stale tab must not reset a different client.
+    const parsed=liqFromFiles(spPdfNamesFromPage(),jobName);
+    if(!parsed||!parsed.target)
+        return fail('Cannot identify one bureau or creditor from PDF/job name. Correct the filename or job name first.');
     const active=liqActive()||liqStartSession(identity,false);
     if(!active||active.clientKey!==identity.key){
-        liqLastNotice='Different client active in another tab. Save this return address again to switch.';
-        liqRender();return;
+        return fail('Another client is active in LIQUIDATION. Save this job’s Return Address again to switch.');
     }
     liqMigrateTabJobs();
     const prev=liqRead().jobs[id];
+    // Repeated clicks or submit events must not erase an actual processed price.
+    if(prev&&prev.status==='processed'&&Number.isSafeInteger(prev.priceCents))
+        return {ready:true};
     const record={
         id:id,jobName:jobName||'Job #'+id,files:parsed.files,
         client:active.clientName,sessionKey:active.clientKey,sessionId:active.id,
@@ -1874,10 +1939,11 @@ function liqStageJob(){
         record.targetLabel=prev.targetLabel;
         record.manual=true;
     }
-    if(liqSaveJob(record,active)){
-        liqLastNotice='';
-        liqRender();
-    }
+    if(!liqSaveJob(record,active))
+        return fail('Unable to verify the shared liquidation record. Processing was stopped to prevent a missing expense.');
+    liqLastNotice='';
+    liqRender();
+    return {ready:true};
 }
 function liqCaptureProcessed(){
     const id=liqJobId(),cents=liqActualPrice();
@@ -1889,6 +1955,9 @@ function liqCaptureProcessed(){
     // Only previously staged jobs from the active shared session qualify.
     if(!previous||previous.sessionId!==active.id||
        previous.sessionKey!==active.clientKey)return;
+    // Never let an unrelated processed-page tab write a price for this ID.
+    const identity=liqReturnIdentity();
+    if(identity&&identity.key!==active.clientKey)return;
     const record={...previous};
     const jobName=liqJobName();
     if(jobName)record.jobName=jobName;
@@ -1951,6 +2020,13 @@ function liqRender(){
     const label=panel.querySelector('#liqSessionLabel');
     if(!total||!count||!list)return;
     if(label)label.textContent=data.clientName||'No active client';
+    const recover=panel.querySelector('#liqRecoverCurrent');
+    if(recover){
+        const id=liqJobId(),price=liqActualPrice();
+        const identity=liqReturnIdentity(),active=liqActive();
+        recover.hidden=!(active&&id&&price!==null&&!data.jobs[id]&&
+            (!identity||identity.key===active.clientKey));
+    }
     const hint=panel.querySelector('#liqHint');
     if(hint)hint.textContent=liqLastNotice||'Shared across Postalocity tabs. New verified return addresses create a new temporary session.';
     total.textContent=liqMoney(grand);
@@ -2073,6 +2149,10 @@ function liqConnectControls(){
             liqRemoveJob(remove.dataset.liqRemove);
             liqRender();return;
         }
+        if(event.target.closest('#liqRecoverCurrent')){
+            liqRecoverCurrentJob();
+            return;
+        }
         if(event.target.closest('#liqClearAll')){
             if(!window.confirm('Reset this client liquidation session?'))return;
             liqResetSession();
@@ -2081,19 +2161,36 @@ function liqConnectControls(){
     });
     liqRender();
 }
-function liqWatchProcessClick(){
-    // The existing missing-details blocker runs first in capture phase and
-    // stops propagation. A blocked click therefore never stages a job.
-    if(document.documentElement.dataset.liqStageInstalled==='true')return;
-    document.documentElement.dataset.liqStageInstalled='true';
-    document.addEventListener('click',function(event){
-        const node=event.target.closest&&event.target.closest('#processBtn');
-        if(node&&node.matches('button')&&document.querySelector('#newJobContent'))
-            liqStageJob();
-    },true);
+function liqRecoverCurrentJob(){
+    const active=liqActive(),id=liqJobId(),cents=liqActualPrice();
+    if(!active||!id||cents===null)return;
+    const identity=liqReturnIdentity();
+    if(identity&&identity.key!==active.clientKey){
+        window.alert('This processed job has a different saved Return Address. It cannot be recovered into the current client.');
+        return;
+    }
+    if(liqRead().jobs[id])return;
+    const name=liqJobName();
+    const parsed=liqFromFiles([],name);
+    const fallback=parsed?null:window.prompt('Enter the bureau or creditor for this job (TU, EQ, EX, AMEX, etc.):','');
+    if(fallback===null && !parsed)return;
+    const target=parsed?{key:parsed.target,label:parsed.targetLabel}:liqTarget(fallback);
+    if(!target){
+        window.alert('Choose a valid bureau or creditor.');
+        return;
+    }
+    if(!window.confirm('Recover processed Job #'+id+' ('+liqMoney(cents)+
+        ') into '+active.clientName+'? Confirm the job belongs to this client.'))return;
+    if(liqRead().jobs[id])return;
+    const job={id:id,jobName:name||'Job #'+id,files:[],
+        client:active.clientName,sessionKey:active.clientKey,sessionId:active.id,
+        target:target.key,targetLabel:target.label,
+        source:'manual recovery (original PDF filename unavailable)',
+        priceCents:cents,status:'processed',manual:true,updatedAt:Date.now()};
+    if(liqSaveJob(job,active)){liqLastNotice='';liqRender();}
+    else window.alert('Recovery could not be saved. The active client may have changed.');
 }
 liqConnectControls();
-liqWatchProcessClick();
 window.addEventListener('sp:verifiedReturnAddressSaved',liqVerifiedReturnSaved);
 window.addEventListener('storage',function(event){
     if(event.key===LIQ_ACTIVE_KEY||
