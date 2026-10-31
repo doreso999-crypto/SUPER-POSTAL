@@ -352,6 +352,158 @@ function hidePostalocitySettingsButtons() {
 }
 
 ///////////////////////////////
+// QUICK RETURN ADDRESS – JOB CREATION PANEL
+///////////////////////////////
+// The space alongside "Process this job" is #alertApproveDiv. Preserve that
+// container and any native alerts; add only our own isolated card within it.
+function spQuickStatus(type,message){
+    const el=document.querySelector('#spQuickReturnStatus');
+    if(!el)return;
+    el.hidden=false;
+    el.dataset.type=type;
+    el.setAttribute('role',type==='error'?'alert':'status');
+    el.textContent=message;
+}
+
+function spOpenReturnAddressModal(onShown){
+    const modal=document.querySelector('#settingsReturnAddress-Modal');
+    const jq=window.jQuery||window.$;
+    if(!modal)return {error:'The Return Address settings modal is not loaded on this page.'};
+    if(!jq||!jq.fn||typeof jq.fn.modal!=='function')
+        return {error:'Postalocity modal controls are unavailable. Open Return Address from Job Settings.'};
+    try{
+        // Add the existing parser and its modal-only sizing, if needed.
+        addParser();
+        if(modal.classList.contains('in')||modal.classList.contains('show')||modal.style.display==='block'){
+            if(onShown)onShown();
+        }else{
+            if(onShown)jq(modal).one('shown.bs.modal',onShown);
+            try{jq(modal).modal('show');}catch(err){
+                if(onShown)jq(modal).off('shown.bs.modal',onShown);
+                throw err;
+            }
+        }
+    }catch(err){
+        return {error:'Could not open Return Address: '+(err && err.message?err.message:String(err))};
+    }
+    return {ok:true};
+}
+
+function spQuickReviewAddress(){
+    const input=document.querySelector('#spQuickReturnInput');
+    if(!input)return;
+    const raw=input.value;
+    const parsed=spParseAddress(raw);
+    if(parsed.errors.length){
+        spQuickStatus('error',parsed.errors.join(' '));
+        input.focus();
+        return;
+    }
+    const modal=document.querySelector('#settingsReturnAddress-Modal');
+    if(!modal || !modal.querySelector('#envelopeReturn-address')){
+        spQuickStatus('error','The Return Address form could not be found. No address was filled.');
+        return;
+    }
+    // All parsing and field setting stays in the existing Return Address parser.
+    // Saving remains the user's explicit action in the original Postalocity modal.
+    function fillForReview(){
+        const modalPaste=modal.querySelector('#returnAddressPaste');
+        if(!modalPaste){
+            spQuickStatus('error','Return Address parser is unavailable. No address was filled.');
+            return;
+        }
+        modalPaste.value=raw;
+        modalPaste.dispatchEvent(new Event('input',{bubbles:true}));
+        parseAddress();
+        const feedback=modal.querySelector('#spParserStatus');
+        if(feedback && feedback.dataset.type==='error'){
+            spQuickStatus('error',feedback.textContent||'Could not fill the Return Address form.');
+            return;
+        }
+        const source=modal.querySelector('#settingsReturnAddressSource-Value');
+        if(source && source.value!=='STATIC'){
+            spQuickStatus('warning','Address filled for review. Select "From Job Settings" as the return-address source, then Save changes.');
+        }else{
+            spQuickStatus('success','Address filled in Return Address settings. Check the fields, then click Save changes.');
+        }
+    }
+    const opened=spOpenReturnAddressModal(fillForReview);
+    if(opened.error)spQuickStatus('error',opened.error);
+}
+
+function spQuickOpenSettings(){
+    const opened=spOpenReturnAddressModal();
+    if(opened.error)spQuickStatus('error',opened.error);
+}
+
+function addQuickReturnAddress(){
+    // Do not display this on unrelated Postalocity pages.
+    const target=document.querySelector('#step4 #alertApproveDiv');
+    if(!target || target.querySelector('#spQuickReturnCard'))return;
+
+    if(!document.querySelector('#spQuickReturnStyles')){
+        const style=document.createElement('style');
+        style.id='spQuickReturnStyles';
+        style.textContent=[
+            '#step4 #spQuickReturnCard{box-sizing:border-box;width:100%;max-width:100%;min-width:0;border:1px solid #d8e3ed;background:#fff;border-radius:11px;padding:12px;box-shadow:0 2px 9px rgba(0,0,0,.06);font-family:Arial,sans-serif;color:#23354c;text-align:left}',
+            '#step4 #spQuickReturnCard *{box-sizing:border-box}',
+            '#step4 #spQuickReturnCard .spqr-title{display:flex;align-items:center;justify-content:space-between;gap:7px;margin:0 0 7px}',
+            '#step4 #spQuickReturnCard .spqr-title strong{font-size:13px;letter-spacing:.2px}',
+            '#step4 #spQuickReturnCard .spqr-hint{font-size:11px;color:#62738a;line-height:1.4;margin:0 0 8px}',
+            '#step4 #spQuickReturnCard textarea{display:block;width:100%;height:76px;min-height:66px;resize:vertical;padding:8px;border:1px solid #ccd7e4;border-radius:7px;background:#f9fbfe;color:#1c314a;font-size:12px;line-height:1.4}',
+            '#step4 #spQuickReturnCard textarea:focus{outline:2px solid #7ca9ea;outline-offset:1px}',
+            '#step4 #spQuickReturnCard button{cursor:pointer;font-size:11px;font-weight:700;padding:7px 10px;border-radius:7px;line-height:1.3;min-height:29px}',
+            '#step4 #spQuickReturnCard button:focus-visible{outline:2px solid #3c82d9;outline-offset:2px}',
+            '#step4 #spQuickReturnCard .spqr-edit{border:1px solid #d3deed;background:#fff;color:#315c89;padding:5px 8px}',
+            '#step4 #spQuickReturnCard .spqr-actions{margin-top:8px;display:flex;gap:6px}',
+            '#step4 #spQuickReturnCard .spqr-primary{flex:1;border:1px solid #215eb5;background:#215eb5;color:#fff}',
+            '#step4 #spQuickReturnCard .spqr-primary:hover{background:#184d96}',
+            '#step4 #spQuickReturnCard .spqr-clear{border:1px solid #d3ddea;background:#fff;color:#455b74}',
+            '#step4 #spQuickReturnCard #spQuickReturnStatus{margin-top:8px;padding:8px;border:1px solid #b7d9c4;border-radius:7px;background:#eff9f2;color:#1d5d36;font-size:11px;line-height:1.5;overflow-wrap:anywhere}',
+            '#step4 #spQuickReturnCard #spQuickReturnStatus[data-type="error"]{background:#fff1f1;color:#8a2525;border-color:#ebbbbb}',
+            '#step4 #spQuickReturnCard #spQuickReturnStatus[data-type="warning"]{background:#fff7e6;color:#735218;border-color:#e6d29d}',
+            '#step4 #spQuickReturnCard .spqr-note{font-size:10px;color:#708099;margin-top:7px;line-height:1.4}',
+            '#step4 #spQuickReturnCard [hidden]{display:none!important}'
+        ].join('\n');
+        document.head.appendChild(style);
+    }
+
+    const card=document.createElement('section');
+    card.id='spQuickReturnCard';
+    card.setAttribute('aria-label','Quick Return Address');
+    card.innerHTML=[
+       '<div class="spqr-title"><strong>Return Address</strong>',
+       '<button id="spQuickOpenSettings" type="button" class="spqr-edit">Edit</button></div>',
+       '<p class="spqr-hint">Paste the client return address here.</p>',
+       '<label for="spQuickReturnInput" class="sr-only">Client return address</label>',
+       '<textarea id="spQuickReturnInput" spellcheck="false" rows="3" placeholder="Jane Doe&#10;123 Main St&#10;Orlando, Florida 32801"></textarea>',
+       '<div class="spqr-actions"><button type="button" class="spqr-primary" id="spQuickFillReturn">Fill &amp; review</button>',
+       '<button type="button" class="spqr-clear" id="spQuickClearReturn">Clear</button></div>',
+       '<div id="spQuickReturnStatus" role="status" aria-live="polite" hidden></div>',
+       '<div class="spqr-note">Review in Return Address settings, then Save changes.</div>'
+    ].join('');
+    // The host is used for native job alerts too. Never clear/replace its content.
+    target.appendChild(card);
+    card.querySelector('#spQuickFillReturn').addEventListener('click',spQuickReviewAddress);
+    card.querySelector('#spQuickOpenSettings').addEventListener('click',spQuickOpenSettings);
+    const paste=card.querySelector('#spQuickReturnInput');
+    card.querySelector('#spQuickClearReturn').addEventListener('click',function(){
+        paste.value='';
+        card.querySelector('#spQuickReturnStatus').hidden=true;
+        paste.focus();
+    });
+    paste.addEventListener('input',function(){
+        card.querySelector('#spQuickReturnStatus').hidden=true;
+    });
+    paste.addEventListener('keydown',function(event){
+        if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){
+            event.preventDefault();
+            spQuickReviewAddress();
+        }
+    });
+}
+
+///////////////////////////////
 // WATCH PAGE CHANGES
 ///////////////////////////////
 
@@ -363,6 +515,8 @@ const observer = new MutationObserver(() => {
 
     hidePostalocitySettingsButtons();
 
+    addQuickReturnAddress();
+
 });
 
 observer.observe(document.body, {
@@ -373,6 +527,7 @@ observer.observe(document.body, {
 addParser();
 watchUploadedFiles();
 hidePostalocitySettingsButtons();
+addQuickReturnAddress();
 
 ///////////////////////////////
 // AUTO POPULATE RECIPIENT BASED ON JOB NAME
