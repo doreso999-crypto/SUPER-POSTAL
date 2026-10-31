@@ -1582,7 +1582,7 @@ box.id='bureauTotals';
 box.dataset.minimized='false';
 Object.assign(box.style,{
     position:'fixed',
-    top:'145px',
+    top:'150px',
     right:'15px',
     width:'320px',
     minHeight:'240px',
@@ -1720,7 +1720,7 @@ function minimizeBox(){
         background:'#f2b32e',
         boxShadow:'none',
         right:'15px',
-        top:'145px',
+        top:'150px',
         left:'auto',
         display:'flex',
         alignItems:'center',
@@ -1759,7 +1759,7 @@ function restoreBox(){
         border:'2px solid #202a36',
         background:'#fff',
         boxShadow:'none',
-        top:'145px',
+        top:'150px',
         right:'15px',
         left:'auto',
         display:'block',
@@ -2309,9 +2309,9 @@ document.body.appendChild(box);
             #bureauTotals[data-minimized="true"] #spLedgerPanel{display:none}
             #spLedgerPanel,#spLedgerPanel *{box-sizing:border-box}
             #spLedgerPanel .sp-ledger-title{display:none}
-            #spLedgerPanel .sp-ledger-client{font-size:19px;line-height:1.25;letter-spacing:-.02em;font-weight:800;overflow-wrap:anywhere;margin:3px 0 13px;color:#1d2732}
-            #spLedgerPanel .sp-ledger-client-chip{display:inline-block;max-width:100%;padding:6px 10px;border:1px solid #b4dec3;border-radius:8px;background:#eaf7ef;color:#225a39;font-size:17px;line-height:1.3;font-weight:800;overflow-wrap:anywhere}
-            #spLedgerPanel .sp-ledger-client-chip[data-placeholder="true"]{background:#fff5dd;border-color:#edcb87;color:#805c18}
+            #spLedgerPanel .sp-ledger-client{display:flex;align-items:center;width:100%;min-height:46px;padding:10px 12px;margin:3px 0 13px;border:1px solid #b4dec3;border-radius:8px;background:#eaf7ef;color:#225a39}
+            #spLedgerPanel .sp-ledger-client-chip{display:block;flex:1 1 auto;min-width:0;font-size:17px;line-height:1.3;font-weight:800;letter-spacing:-.02em;overflow-wrap:anywhere;color:inherit}
+            #spLedgerPanel .sp-ledger-client[data-placeholder="true"]{background:#fff5dd;border-color:#edcb87;color:#805c18}
             #spLedgerPanel .sp-ledger-address{font-size:11px;color:#718094;overflow-wrap:anywhere}
             #spLedgerPanel .sp-ledger-divider{border:0;border-top:1px solid #cbd2db;margin:13px 0 11px}
             #spLedgerPanel .sp-ledger-heading{font-size:10px;letter-spacing:.12em;font-weight:800;color:#536171;margin:10px 0 7px}
@@ -2365,7 +2365,7 @@ document.body.appendChild(box);
         // Do not render placeholder jobs or expand the panel when empty.
         function emptyCard(step,title,detail){
             const card=el('div');card.className='sp-ledger-onboard';
-            const mark=el('span',step);mark.className='sp-ledger-onboard-index';card.append(mark);
+            if(step){const mark=el('span',step);mark.className='sp-ledger-onboard-index';card.append(mark);}
             const heading=el('div',title);heading.className='sp-ledger-onboard-title';card.append(heading);
             const desc=el('p',detail);desc.className='sp-ledger-onboard-desc';card.append(desc);
             panel.append(card);
@@ -2402,6 +2402,7 @@ document.body.appendChild(box);
         const clientName=el('span',needsName?'Client name':sourceName);
         clientName.className='sp-ledger-client-chip';
         if(needsName){
+            client.dataset.placeholder='true';
             clientName.dataset.placeholder='true';
             clientName.title='Example name. Update the saved return address to show the client name.';
         }else{
@@ -2409,7 +2410,7 @@ document.body.appendChild(box);
         }
         client.append(clientName);panel.append(client);
         if(!groups.length){
-            emptyCard('02','No letters yet','Add a named job and its recipient to see bureau totals here.');
+            emptyCard(null,'No letters yet','Add a named job and its recipient to see bureau totals here.');
         }
         // No repeated address/status paragraphs: the client name is enough.
         // The bureau cards below show only existing, named jobs.
