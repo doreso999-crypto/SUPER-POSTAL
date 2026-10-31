@@ -1510,420 +1510,272 @@ Object.assign(box.style,{
 });
 
 box.innerHTML = `
-
-<div
-    id="calculator"
-    style="
-        width:100%;
-        position:relative;
-        z-index:10;
-    "
->
-
-    <div style="
-        font-size:20px;
-        font-weight:800;
-        text-align:center;
-        margin-bottom:12px;
-        letter-spacing:1px;
-    ">
-        TOTALOCITY
+<div id="calculator" style="width:100%;position:relative;z-index:10;font-family:Arial,sans-serif;">
+    <div style="font-size:20px;font-weight:800;text-align:center;margin-bottom:12px;letter-spacing:1px;">LIQUIDATION</div>
+    <div style="border-radius:9px;background:#222;color:#fff;padding:11px 12px;margin-bottom:11px;">
+        <div style="font-size:11px;font-weight:700;opacity:.8;letter-spacing:.5px;">TOTAL PROCESSED COST</div>
+        <div id="liqGrandTotal" style="font-size:28px;font-weight:800;text-align:right;">$0.00</div>
+        <div id="liqJobCount" style="font-size:11px;text-align:right;opacity:.78;">0 jobs tracked</div>
     </div>
-
-    <input
-        id="calcDisplay"
-        type="text"
-        value=""
-        placeholder="0"
-        autocomplete="off"
-        spellcheck="false"
-        style="
-            width:100%;
-            height:55px;
-            box-sizing:border-box;
-            border:none;
-            border-radius:8px;
-            background:#222;
-            color:white;
-            font-size:27px;
-            font-weight:bold;
-            text-align:right;
-            padding:8px 12px;
-            outline:none;
-            margin-bottom:12px;
-        "
-    >
-
-    <div
-        id="calcButtons"
-        style="
-            display:grid;
-            grid-template-columns:repeat(4,1fr);
-            gap:7px;
-        "
-    >
-
-        <button data-action="clear">AC</button>
-        <button data-action="backspace">⌫</button>
-        <button data-value="/">÷</button>
-        <button data-value="*">×</button>
-
-        <button data-value="7">7</button>
-        <button data-value="8">8</button>
-        <button data-value="9">9</button>
-        <button data-value="-">−</button>
-
-        <button data-value="4">4</button>
-        <button data-value="5">5</button>
-        <button data-value="6">6</button>
-        <button data-value="+">+</button>
-
-        <button data-value="1">1</button>
-        <button data-value="2">2</button>
-        <button data-value="3">3</button>
-        <button
-            data-action="equals"
-            style="
-                grid-row:span 2;
-                background:#111;
-                color:white;
-            "
-        >=</button>
-
-        <button
-            data-value="0"
-            style="grid-column:span 2;"
-        >
-            0
-        </button>
-
-        <button data-value=".">.</button>
-
+    <div id="liqGroups" style="margin-bottom:12px;"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:7px;">
+        <strong style="font-size:12px;">Recorded jobs</strong>
+        <button id="liqClearAll" type="button" style="font-size:11px;padding:4px 8px;border:1px solid #7e5b18;border-radius:5px;background:transparent;color:#261900;cursor:pointer;">Clear all</button>
     </div>
-
+    <div id="liqJobRows" style="max-height:190px;overflow:auto;border-top:1px solid rgba(0,0,0,.22);"></div>
+    <div id="liqHint" style="font-size:10px;line-height:1.45;color:#49340c;margin-top:9px;">Totals are saved in this browser as you visit processed jobs.</div>
 </div>
-
 `;
 
-const buttons =
-box.querySelectorAll("#calcButtons button");
-
-buttons.forEach(button => {
-
-    Object.assign(button.style,{
-        height:"48px",
-        border:"none",
-        borderRadius:"8px",
-        background:"#f5f5f5",
-        color:"#111",
-        fontSize:"20px",
-        fontWeight:"700",
-        cursor:"pointer",
-        boxShadow:"0 2px 4px rgba(0,0,0,.25)",
-        transition:"transform .05s"
-    });
-
-    button.addEventListener("mousedown",()=>{
-        button.style.transform="scale(.94)";
-    });
-
-    button.addEventListener("mouseup",()=>{
-        button.style.transform="scale(1)";
-    });
-
-    button.addEventListener("mouseleave",()=>{
-        button.style.transform="scale(1)";
-    });
-
-});
-
-const STORAGE_KEY = "postalCalcValue";
-
-function syncToStorage(){
-
-    const display =
-        box.querySelector("#calcDisplay");
-
-    if(!display)
-        return;
-
-    localStorage.setItem(STORAGE_KEY, display.value);
-
-}
-
-const display =
-box.querySelector("#calcDisplay");
-
-const existingValue =
-localStorage.getItem(STORAGE_KEY);
-
-if(existingValue !== null){
-    display.value = existingValue;
-}
-
-window.addEventListener("storage",function(e){
-
-    if(e.key === STORAGE_KEY && e.newValue !== null){
-
-        const liveDisplay =
-            box.querySelector("#calcDisplay");
-
-        if(liveDisplay){
-            liveDisplay.value = e.newValue;
+///////////////////////////////
+// LIQUIDATION — COLLECT PROCESSED JOB PRICES ONCE PER JOB ID
+///////////////////////////////
+const LIQ_STORE_KEY='sp-processed-liquidation-v1';
+const LIQ_LABELS={EQU:'Equifax',EX:'Experian',TU:'TransUnion',OTHER:'Unassigned'};
+let liqMemory={jobs:{},hints:{},excluded:{}};
+let liqPauseCapture=false;
+function liqRead(){
+    try{
+        const raw=localStorage.getItem(LIQ_STORE_KEY);
+        if(!raw)return liqMemory;
+        const data=JSON.parse(raw);
+        if(data&&typeof data==='object'&&data.jobs&&typeof data.jobs==='object'){
+            liqMemory={jobs:data.jobs,hints:data.hints||{},excluded:data.excluded||{}};
         }
-
+    }catch(_error){}
+    return liqMemory;
+}
+function liqSave(data){
+    liqMemory=data;
+    try{localStorage.setItem(LIQ_STORE_KEY,JSON.stringify(data));}catch(_error){}
+}
+function liqMoney(cents){
+    return '$'+(cents/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function liqParsePrice(value){
+    const text=String(value||'').trim();
+    const match=text.match(/^\$?\s*((?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.(\d{1,2}))?\s*$/);
+    if(!match)return null;
+    const dollars=Number(match[1].replace(/,/g,''));
+    const cents=dollars*100+Number((match[2]||'').padEnd(2,'0'));
+    return Number.isSafeInteger(cents)&&cents>=0?cents:null;
+}
+function liqJobId(){
+    const heading=document.querySelector('#jobNumberTop');
+    const match=heading&&heading.textContent.match(/\bJob\s*#\s*(\d+)\b/i);
+    if(match)return match[1];
+    try{
+        if(typeof jobId!=='undefined' && /^\d+$/.test(String(jobId)))return String(jobId);
+        if(window.jobId!=null && /^\d+$/.test(String(window.jobId)))return String(window.jobId);
+        const q=new URLSearchParams(window.location.search);
+        const id=q.get('id')||q.get('jobId');
+        if(id&&/^\d+$/.test(id))return id;
+    }catch(_error){}
+    return '';
+}
+function liqJobName(){
+    const header=document.querySelector('#jobName');
+    const input=document.querySelector('#overview-jobName');
+    return String((header&&header.textContent.trim())||(input&&input.value)||'').trim();
+}
+function liqRecipientBureau(){
+    const cards=Array.from(document.querySelectorAll('#contactListRow .docCardAddress'));
+    // No recipient address loaded: don't treat a job-name guess as verified.
+    if(!cards.length)return '';
+    const codes=cards.map(function(card){
+        return spDetectBureauForRecipient(card.textContent);
+    });
+    if(codes.some(function(code){return !code;}))return '';
+    return new Set(codes).size===1?codes[0]:'';
+}
+function liqProcessPrice(){
+    const state=document.querySelector('#jobState');
+    const approval=document.querySelector('#approveJobContent');
+    // A NEW job may contain a hidden sample estimate: never record it.
+    if(!state||!approval||!/^(processed|approved|mailed)\b/i.test(state.textContent.trim()))return null;
+    const total=approval.querySelector('.totalPriceRow .totalPrice');
+    return total?liqParsePrice(total.textContent):null;
+}
+function liqCapturePage(){
+    if(liqPauseCapture)return;
+    const id=liqJobId();
+    if(!id)return;
+    const data=liqRead();
+    if(data.excluded[id])return;
+    const name=liqJobName();
+    let changed=false;
+    const actual=liqRecipientBureau();
+    if(actual&&(!data.hints[id]||data.hints[id].bureau!==actual)){
+        data.hints[id]={bureau:actual,source:'recipient address'};
+        changed=true;
     }
-
-});
-
-function calculateDisplay(targetDisplay){
-
-    const expression =
-        targetDisplay.value.trim();
-
-    if(!expression)
-        return;
-
-    try {
-
-        if(!/^[0-9+\-*/().\s]+$/.test(expression))
-            throw new Error();
-
-        const result =
-            Function(
-                '"use strict"; return (' +
-                expression +
-                ')'
-            )();
-
-        if(
-            typeof result !== "number" ||
-            !Number.isFinite(result)
-        ){
-            throw new Error();
+    const cents=liqProcessPrice();
+    if(cents!==null){
+        const previous=data.jobs[id];
+        const bureau=(previous&&previous.manual&&previous.bureau)||
+            (data.hints[id]&&data.hints[id].bureau)||
+            spDetectBureauForRecipient(name)||'OTHER';
+        const source=(previous&&previous.manual&&previous.bureau)?'manual':
+            (data.hints[id]&&data.hints[id].bureau)?'recipient address':
+            bureau==='OTHER'?'unassigned':'job name';
+        const record={id:id,name:name||'Job #'+id,bureau:bureau,
+            priceCents:cents,source:source,manual:!!(previous&&previous.manual)};
+        if(!previous||previous.name!==record.name||previous.bureau!==record.bureau||
+           previous.priceCents!==cents||previous.source!==source||
+           previous.manual!==record.manual){
+            data.jobs[id]=record;
+            changed=true;
         }
-
-        targetDisplay.value =
-            String(
-                Number(
-                    result.toFixed(10)
-                )
-            );
-
-        syncToStorage();
-
     }
-    catch {
-
-        targetDisplay.value = "Error";
-
-        syncToStorage();
-
-        setTimeout(()=>{
-
-            if(targetDisplay.value === "Error"){
-                targetDisplay.value = "";
-                syncToStorage();
-            }
-
-        },800);
-
+    if(changed){liqSave(data);liqRender();}
+}
+function liqElement(tag,text,styles){
+    const el=document.createElement(tag);
+    if(text!==null && text!==undefined)el.textContent=String(text);
+    if(styles)Object.assign(el.style,styles);
+    return el;
+}
+function liqRender(){
+    const panel=box.querySelector('#calculator');
+    if(!panel)return;
+    const data=liqRead();
+    const entries=Object.values(data.jobs).filter(function(job){
+        return job&&/^\d+$/.test(String(job.id))&&
+            Number.isSafeInteger(job.priceCents)&&job.priceCents>=0;
+    }).sort(function(a,b){return Number(b.id)-Number(a.id);});
+    const sums={EQU:0,EX:0,TU:0,OTHER:0};
+    const counts={EQU:0,EX:0,TU:0,OTHER:0};
+    entries.forEach(function(job){
+        const code=Object.prototype.hasOwnProperty.call(sums,job.bureau)?job.bureau:'OTHER';
+        sums[code]+=job.priceCents;
+        counts[code]++;
+    });
+    const grand=Object.values(sums).reduce(function(sum,n){return sum+n;},0);
+    const totalEl=panel.querySelector('#liqGrandTotal');
+    const countEl=panel.querySelector('#liqJobCount');
+    const groupsEl=panel.querySelector('#liqGroups');
+    const rowsEl=panel.querySelector('#liqJobRows');
+    if(!totalEl||!countEl||!groupsEl||!rowsEl)return;
+    totalEl.textContent=liqMoney(grand);
+    countEl.textContent=entries.length+' '+(entries.length===1?'job':'jobs')+' tracked';
+    groupsEl.replaceChildren();
+    ['EQU','EX','TU','OTHER'].forEach(function(code){
+        if(code==='OTHER' && counts.OTHER===0)return;
+        const row=liqElement('div',null,{
+            display:'flex',alignItems:'center',justifyContent:'space-between',
+            gap:'7px',padding:'7px 8px',marginBottom:'4px',borderRadius:'6px',
+            background:code==='OTHER'?'#fff2d7':'rgba(255,255,255,.6)',fontSize:'12px'
+        });
+        const label=liqElement('span',LIQ_LABELS[code]+' · '+counts[code],{fontWeight:'700'});
+        const money=liqElement('strong',liqMoney(sums[code]),{fontSize:'13px',whiteSpace:'nowrap'});
+        row.append(label,money);
+        groupsEl.appendChild(row);
+    });
+    rowsEl.replaceChildren();
+    if(!entries.length){
+        rowsEl.appendChild(liqElement('p','No processed jobs recorded yet.',{
+            margin:'10px 0',fontSize:'11px',lineHeight:'1.5'
+        }));
+        return;
     }
-
+    entries.forEach(function(job){
+        const row=liqElement('div',null,{borderBottom:'1px solid rgba(0,0,0,.18)',
+            padding:'9px 2px',fontSize:'11px'});
+        const heading=liqElement('div',null,{display:'flex',gap:'5px',
+            alignItems:'flex-start',justifyContent:'space-between'});
+        const label=liqElement('span','#'+job.id+' · '+job.name,{
+            minWidth:'0',flex:'1',overflowWrap:'anywhere',lineHeight:'1.4'
+        });
+        const price=liqElement('strong',liqMoney(job.priceCents),{whiteSpace:'nowrap'});
+        heading.append(label,price);
+        const actions=liqElement('div',null,{
+            display:'flex',alignItems:'center',gap:'5px',marginTop:'5px'
+        });
+        const select=liqElement('select',null,{
+            minWidth:'0',flex:'1',fontSize:'11px',padding:'4px 3px',
+            borderRadius:'5px',border:'1px solid #aa852c',background:'#fff',
+            color:'#222'
+        });
+        select.dataset.liqJob=idSafe(job.id);
+        select.setAttribute('aria-label','Bureau for job '+job.id);
+        [['AUTO','Auto: '+(LIQ_LABELS[job.bureau]||'Unassigned')],
+         ['EQU','Equifax'],['EX','Experian'],['TU','TransUnion'],
+         ['OTHER','Unassigned']].forEach(function(option){
+            const el=liqElement('option',option[1]);
+            el.value=option[0];
+            select.appendChild(el);
+        });
+        select.value=job.manual?job.bureau:'AUTO';
+        const remove=liqElement('button','×',{width:'25px',height:'25px',
+            border:'1px solid #ad8244',background:'#fff7ec',borderRadius:'5px',
+            fontWeight:'700',fontSize:'16px',cursor:'pointer',flexShrink:'0'});
+        remove.type='button';
+        remove.dataset.liqRemove=idSafe(job.id);
+        remove.setAttribute('aria-label','Remove job '+job.id+' from liquidation');
+        actions.append(select,remove);
+        row.append(heading,actions);
+        rowsEl.appendChild(row);
+    });
 }
-
-function calculate(){
-    calculateDisplay(display);
-}
-
-function clearCalculator(){
-
-    display.value="";
-
-    display.focus();
-
-    syncToStorage();
-
-}
-
-function backspace(){
-
-    display.value =
-        display.value.slice(0,-1);
-
-    display.focus();
-
-    syncToStorage();
-
-}
-
-function addValue(value){
-
-    if(display.value==="Error")
-        display.value="";
-
-    display.value += value;
-
-    display.focus();
-
-    syncToStorage();
-
-}
-
-box.querySelectorAll(
-    "#calcButtons button"
-).forEach(button => {
-
-    button.addEventListener("click",function(e){
-
-        e.stopPropagation();
-
-        const value =
-            this.dataset.value;
-
-        const action =
-            this.dataset.action;
-
-        if(action==="clear"){
-            clearCalculator();
+function idSafe(id){return String(id);}
+function liqConnectControls(){
+    const panel=box.querySelector('#calculator');
+    if(!panel||panel.dataset.liqControls==='true')return;
+    panel.dataset.liqControls='true';
+    // Don't start dragging the preserved floating panel while opening a select.
+    panel.addEventListener('mousedown',function(event){
+        if(event.target.closest('select'))event.stopPropagation();
+    });
+    panel.addEventListener('change',function(event){
+        const selector=event.target.closest('select[data-liq-job]');
+        if(!selector)return;
+        const id=selector.dataset.liqJob;
+        const data=liqRead();
+        const record=data.jobs[id];
+        if(!record)return;
+        const choice=selector.value;
+        if(choice==='AUTO'){
+            record.manual=false;
+            record.bureau=(data.hints[id]&&data.hints[id].bureau)||
+                spDetectBureauForRecipient(record.name)||'OTHER';
+            record.source=(data.hints[id]&&data.hints[id].bureau)?
+                'recipient address':record.bureau==='OTHER'?'unassigned':'job name';
+        }else if(Object.prototype.hasOwnProperty.call(LIQ_LABELS,choice)){
+            record.manual=true;
+            record.bureau=choice;
+            record.source='manual';
+        }else return;
+        liqSave(data);
+        liqRender();
+    });
+    panel.addEventListener('click',function(event){
+        const remove=event.target.closest('button[data-liq-remove]');
+        if(remove){
+            const id=remove.dataset.liqRemove;
+            const data=liqRead();
+            delete data.jobs[id];
+            data.excluded[id]=true; // Do not re-add a removed job on refresh.
+            liqSave(data);
+            liqRender();
             return;
         }
-
-        if(action==="backspace"){
-            backspace();
-            return;
+        if(event.target.closest('#liqClearAll')){
+            if(!window.confirm('Clear all recorded liquidation jobs and totals?'))return;
+            liqPauseCapture=true; // Avoid instantly re-adding this page's job.
+            liqSave({jobs:{},hints:{},excluded:{}});
+            liqRender();
         }
-
-        if(action==="equals"){
-            calculate();
-            return;
-        }
-
-        if(value){
-            addValue(value);
-        }
-
     });
-
-});
-
-function handleCalculatorKeydown(e, actions){
-
-    if(e.ctrlKey || e.metaKey){
-
-        if(
-            e.key.toLowerCase()==="a" ||
-            e.key.toLowerCase()==="c" ||
-            e.key.toLowerCase()==="x" ||
-            e.key.toLowerCase()==="v"
-        ){
-
-            e.stopPropagation();
-
-            return;
-
-        }
-
-    }
-
-    const numpadValues = {
-        Numpad0:"0",
-        Numpad1:"1",
-        Numpad2:"2",
-        Numpad3:"3",
-        Numpad4:"4",
-        Numpad5:"5",
-        Numpad6:"6",
-        Numpad7:"7",
-        Numpad8:"8",
-        Numpad9:"9",
-        NumpadDecimal:".",
-        NumpadAdd:"+",
-        NumpadSubtract:"-",
-        NumpadMultiply:"*",
-        NumpadDivide:"/"
-    };
-
-    const numpadValue =
-        numpadValues[e.code];
-
-    if(numpadValue !== undefined){
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        actions.addValue(numpadValue);
-
-        return;
-
-    }
-
-    if(e.key==="Enter" || e.code==="NumpadEnter"){
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        actions.calculate();
-
-        return;
-
-    }
-
-    if(e.key==="Escape"){
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        actions.clear();
-
-        return;
-
-    }
-
-    if(
-        e.key==="Backspace" ||
-        e.key==="Delete" ||
-        e.key==="ArrowLeft" ||
-        e.key==="ArrowRight" ||
-        e.key==="Home" ||
-        e.key==="End" ||
-        e.key==="Tab"
-    ){
-
-        e.stopPropagation();
-
-        return;
-
-    }
-
-    if(
-        /^[0-9+\-*/().]$/.test(e.key)
-    ){
-
-        e.stopPropagation();
-
-        return;
-
-    }
-
-    e.preventDefault();
-    e.stopPropagation();
-
+    liqRender();
 }
-
-display.addEventListener("keydown",function(e){
-
-    handleCalculatorKeydown(e,{
-
-        addValue,
-        calculate,
-        clear: clearCalculator
-
-    });
-
+liqConnectControls();
+window.addEventListener('storage',function(event){
+    if(event.key===LIQ_STORE_KEY)liqRender();
 });
-
-display.addEventListener("input",syncToStorage);
+liqCapturePage();
+// Postalocity fills job information asynchronously; revisit without fetching
+// other jobs, modifying server state, or counting the same job twice.
+setInterval(liqCapturePage,2500);
 
 ///////////////////////////////
 // MASCOT SETTINGS
@@ -2176,107 +2028,14 @@ function restoreBox(){
 
     };
 
-    reconnectCalculator();
+    reconnectLiquidation();
 
     enableDrag();
 
 }
 
-function reconnectCalculator(){
-
-    const display =
-        box.querySelector("#calcDisplay");
-
-    if(!display)
-        return;
-
-    const existingValue =
-        localStorage.getItem(STORAGE_KEY);
-
-    if(existingValue !== null){
-        display.value = existingValue;
-    }
-
-    box.querySelectorAll(
-        "#calcButtons button"
-    ).forEach(button => {
-
-        button.onclick=function(e){
-
-            e.stopPropagation();
-
-            const value =
-                this.dataset.value;
-
-            const action =
-                this.dataset.action;
-
-            if(action==="clear"){
-                display.value="";
-            }
-
-            else if(action==="backspace"){
-                display.value =
-                    display.value.slice(0,-1);
-            }
-
-            else if(action==="equals"){
-
-                calculateDisplay(display);
-
-            }
-
-            else if(value){
-
-                if(display.value==="Error")
-                    display.value="";
-
-                display.value += value;
-
-            }
-
-            display.focus();
-
-            syncToStorage();
-
-        };
-
-    });
-
-display.onkeydown=function(e){
-
-    handleCalculatorKeydown(e,{
-
-        addValue:function(value){
-
-            if(display.value==="Error")
-                display.value="";
-
-            display.value += value;
-            display.focus();
-            syncToStorage();
-
-        },
-
-        calculate:function(){
-            calculateDisplay(display);
-            display.focus();
-        },
-
-        clear:function(){
-
-            display.value="";
-            display.focus();
-            syncToStorage();
-
-        }
-
-    });
-
-};
-
-display.oninput = syncToStorage;
-
+function reconnectLiquidation(){
+    liqConnectControls();
 }
 
 minimize.onclick=function(e){
@@ -2289,15 +2048,7 @@ minimize.onclick=function(e){
 
 document.body.appendChild(box);
 
-setTimeout(()=>{
-
-    const display =
-        box.querySelector("#calcDisplay");
-
-    if(display)
-        display.focus();
-
-},100);
+// Liquidation is ready; no input needs focus.
 
 })();
 
