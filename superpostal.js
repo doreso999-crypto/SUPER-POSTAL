@@ -1134,7 +1134,17 @@ function spScareClose(pending){
     if(pending.timer!==null)clearTimeout(pending.timer);
     if(pending.media){try{pending.media.pause();}catch(_e){}}
     if(pending.stopSound)pending.stopSound();
-    if(pending.overlay)pending.overlay.remove();
+    if(pending.onKeyDown)document.removeEventListener('keydown',pending.onKeyDown,true);
+    if(pending.onFullscreenChange)document.removeEventListener('fullscreenchange',pending.onFullscreenChange);
+    if(pending.overlay){
+        if(document.fullscreenElement===pending.overlay&&typeof document.exitFullscreen==='function'){
+            try{
+                const exiting=document.exitFullscreen();
+                if(exiting&&typeof exiting.catch==='function')exiting.catch(function(){});
+            }catch(_e){}
+        }
+        pending.overlay.remove();
+    }
     if(spScarePending===pending)spScarePending=null;
     return true;
 }
@@ -1171,19 +1181,16 @@ function spScarePreview(control,form){
         const style=document.createElement('style');
         style.id='spProcessScareStyles';
         style.textContent=[
-            '#spProcessScare{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.96);padding:18px;box-sizing:border-box;color:#fff;font-family:Arial,sans-serif}',
-            '#spProcessScare .sp-scare-stage{position:relative;width:min(740px,100%);max-height:90vh;overflow:hidden;background:#090608;border:1px solid #54252b;text-align:center}',
-            '#spProcessScare video,#spProcessScare img,#spProcessScare iframe{display:block;width:100%;height:min(65vh,480px);object-fit:contain;background:#000;border:0}',
-            '#spProcessScare .sp-scare-source{padding:9px 12px;color:#ccc;font:12px/1.4 Arial,sans-serif}',
-            '#spProcessScare .sp-scare-source a{color:#f2b32e;text-decoration:underline}',
-            '#spProcessScare .sp-scare-original{height:min(64vh,430px);min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 45%,#63131b 0%,#18080b 32%,#020203 78%)}',
-            '#spProcessScare .sp-scare-face{position:relative;width:190px;height:190px;background:#17070b;border:5px solid #450b14;border-radius:42% 42% 48% 48%;transform:scale(.5);animation:spScareReveal .5s cubic-bezier(.12,.9,.2,1) forwards}',
-            '#spProcessScare .sp-scare-face::before{content:"";position:absolute;left:25px;top:60px;width:33px;height:24px;border-radius:50%;background:#fce6d5;box-shadow:99px 0 #fce6d5,0 0 20px #dd1a25,99px 0 20px #dd1a25}',
-            '#spProcessScare .sp-scare-face::after{content:"";position:absolute;left:64px;bottom:22px;width:52px;height:61px;border-radius:10px 10px 48% 48%;background:#030206;border:3px solid #8e3036}',
-            '#spProcessScare .sp-scare-horror{margin:14px 0 0;color:#dcb9b9;font-size:clamp(17px,4vw,29px);font-weight:900;letter-spacing:.12em}',
-            '#spProcessScare .sp-scare-actions{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;padding:13px;background:#0f0e10}',
-            '#spProcessScare button{border:1px solid #b4a5a5;border-radius:8px;background:#262126;color:#fff;font:700 12px Arial,sans-serif;padding:10px 16px;cursor:pointer}',
-            '#spProcessScare button:hover{background:#473038}#spProcessScare button:focus-visible{outline:3px solid #f2b32e;outline-offset:2px}',
+            // Completely cover the window, including the browser's Fullscreen API mode.
+            '#spProcessScare{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;z-index:2147483600;display:block;margin:0;padding:0;overflow:hidden;background:#000;box-sizing:border-box}',
+            '#spProcessScare:fullscreen{width:100vw;height:100vh;height:100dvh;background:#000}',
+            '#spProcessScare .sp-scare-stage{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;overflow:hidden;border:0;background:#000}',
+            '#spProcessScare video,#spProcessScare img,#spProcessScare iframe{display:block;width:100%;height:100%;margin:0;padding:0;object-fit:cover;border:0;background:#000}',
+            '#spProcessScare .sp-scare-original{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 45%,#63131b 0%,#18080b 32%,#020203 78%)}',
+            '#spProcessScare .sp-scare-face{position:relative;width:min(46vw,330px);height:min(46vw,330px);background:#17070b;border:5px solid #450b14;border-radius:42% 42% 48% 48%;transform:scale(.5);animation:spScareReveal .5s cubic-bezier(.12,.9,.2,1) forwards}',
+            '#spProcessScare .sp-scare-face::before{content:"";position:absolute;left:14%;top:30%;width:18%;height:13%;border-radius:50%;background:#fce6d5;box-shadow:130px 0 #fce6d5,0 0 25px #dd1a25}',
+            '#spProcessScare .sp-scare-face::after{content:"";position:absolute;left:34%;bottom:10%;width:28%;height:32%;border-radius:10px 10px 48% 48%;background:#030206;border:3px solid #8e3036}',
+            '#spProcessScare .sp-scare-horror{margin:20px 0 0;color:#dcb9b9;font:900 clamp(20px,5vw,48px) Arial,sans-serif;letter-spacing:.12em}',
             '@keyframes spScareReveal{to{transform:scale(1.12)}}',
             '@media(prefers-reduced-motion:reduce){#spProcessScare .sp-scare-face{animation:none;transform:scale(1)}}'
         ].join('\n');
@@ -1192,21 +1199,37 @@ function spScarePreview(control,form){
     const overlay=document.createElement('div');overlay.id='spProcessScare';
     overlay.setAttribute('role','dialog');
     overlay.setAttribute('aria-modal','true');
-    overlay.setAttribute('aria-label','Horror preview before processing job');
+    overlay.setAttribute('aria-label','Fullscreen horror clip before processing job; press Escape to cancel');
+    overlay.tabIndex=-1;
     const stage=document.createElement('div');stage.className='sp-scare-stage';
-    const actions=document.createElement('div');actions.className='sp-scare-actions';
-    const skip=document.createElement('button');skip.type='button';skip.textContent='Skip and process';
-    const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';
-    const pending={control,form,overlay,media:null,visual:null,stopSound:null,timer:null,done:false,fallback:false};
+    const pending={control,form,overlay,media:null,visual:null,stopSound:null,timer:null,done:false,fallback:false,
+        fullscreenActive:false,onKeyDown:null,onFullscreenChange:null};
     spScarePending=pending;
-    skip.addEventListener('click',function(){spScareProceed(pending);});
-    cancel.addEventListener('click',function(){spScareClose(pending);});
-    overlay.addEventListener('keydown',function(e){
-        if(e.key==='Escape'){e.preventDefault();spScareClose(pending);}
-    });
-    actions.append(skip,cancel);
-    stage.append(actions);overlay.append(stage);document.body.appendChild(overlay);
-    skip.focus({preventScroll:true});
+    pending.onKeyDown=function(e){
+        if(e.key==='Escape'){
+            e.preventDefault();
+            spScareClose(pending);
+        }
+    };
+    pending.onFullscreenChange=function(){
+        if(document.fullscreenElement===overlay)pending.fullscreenActive=true;
+        else if(pending.fullscreenActive&&!pending.done)spScareClose(pending);
+    };
+    document.addEventListener('keydown',pending.onKeyDown,true);
+    document.addEventListener('fullscreenchange',pending.onFullscreenChange);
+    overlay.append(stage);
+    document.body.appendChild(overlay);
+    if(typeof overlay.focus==='function')overlay.focus({preventScroll:true});
+    function enterFullscreen(){
+        // Run synchronously inside the original user click gesture.
+        // If the browser declines fullscreen, the fixed overlay still covers the page.
+        if(typeof overlay.requestFullscreen==='function'){
+            try{
+                const request=overlay.requestFullscreen({navigationUI:'hide'});
+                if(request&&typeof request.catch==='function')request.catch(function(){});
+            }catch(_e){}
+        }
+    }
     const videoURL=SP_PROCESS_SCARE_MEDIA.video.trim();
     const gifURL=SP_PROCESS_SCARE_MEDIA.gif.trim();
     const audioURL=SP_PROCESS_SCARE_MEDIA.audio.trim();
@@ -1221,7 +1244,7 @@ function spScarePreview(control,form){
         const headline=document.createElement('div');headline.className='sp-scare-horror';
         headline.textContent='DON’T LOOK BACK';
         art.append(face,headline);
-        stage.insertBefore(art,actions);
+        stage.appendChild(art);
         pending.stopSound=spScareFallbackSound();
         pending.timer=setTimeout(function(){spScareProceed(pending);},SP_PROCESS_SCARE_MEDIA.fallbackMs);
     }
@@ -1236,27 +1259,17 @@ function spScarePreview(control,form){
         iframe.src=SP_PROCESS_SCARE_MEDIA.embed+'?autoplay=1';
         iframe.allow='autoplay; fullscreen';
         iframe.setAttribute('referrerpolicy','strict-origin-when-cross-origin');
-        stage.insertBefore(iframe,actions);
+        stage.appendChild(iframe);
         pending.visual=iframe;
-        const note=document.createElement('div');note.className='sp-scare-source';
-        const hint=document.createElement('span');
-        hint.textContent='If the player does not start automatically, press Play. ';
-        note.append(hint);
-        const link=document.createElement('a');
-        link.href=SP_PROCESS_SCARE_MEDIA.page;
-        link.target='_blank';link.rel='noopener noreferrer';
-        link.textContent='Open the clip on Vlipsy';
-        note.append(link);
-        stage.insertBefore(note,actions);
         // Cross-origin embeds do not expose a trusted "ended" event.
-        // Keep processing finite, with Skip and Cancel available.
+        // Keep processing finite even when the embedded player does not expose ended events.
         pending.timer=setTimeout(function(){spScareProceed(pending);},8000);
     }
     if(videoURL){
         const video=document.createElement('video');
         video.src=videoURL;video.preload='auto';video.playsInline=true;video.muted=false;video.volume=0.6;
         pending.media=video;pending.visual=video;
-        stage.insertBefore(video,actions);
+        stage.appendChild(video);
         video.addEventListener('ended',function(){spScareProceed(pending);},{once:true});
         const mediaFallback=SP_PROCESS_SCARE_MEDIA.embed&&SP_PROCESS_SCARE_MEDIA.page?sourceEmbed:original;
         video.addEventListener('error',mediaFallback,{once:true});
@@ -1269,7 +1282,7 @@ function spScarePreview(control,form){
         const picture=document.createElement('img');picture.src=gifURL;picture.alt='Horror preview';
         const audio=document.createElement('audio');audio.src=audioURL;audio.volume=0.6;
         pending.media=audio;pending.visual=picture;
-        stage.insertBefore(picture,actions);
+        stage.appendChild(picture);
         pending.timer=setTimeout(function(){spScareProceed(pending);},SP_PROCESS_SCARE_MEDIA.fallbackMs+1200);
         audio.addEventListener('error',original,{once:true});
         try{
@@ -1279,6 +1292,7 @@ function spScarePreview(control,form){
     }else{
         original();
     }
+    enterFullscreen();
 }
 function spProcessScareGuard(event,control){
     if(spBlockIncompleteProcess(event,control))return true;
