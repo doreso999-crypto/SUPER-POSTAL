@@ -1649,15 +1649,18 @@ function liqCurrentReturnDisplay(){
     const address=lines.slice(name&&lines[0]===name?1:0).join('\n').trim();
     if(!name&&!address)return null;
     const identity=liqReturnIdentity();
-    return {name:name,address:address,identity:identity,saved:!!identity};
+    const previewIdentity=identity||liqReturnIdentity(false);
+    return {name:name,address:address,identity:identity,
+        previewIdentity:previewIdentity,saved:!!identity};
 }
 function liqSharedReturnDisplay(session){
     if(!session)return null;
     const display=session.returnDisplay;
-    return display&&typeof display==='object'&&
-        typeof display.address==='string'?
-        {name:String(display.name||session.clientName),
-         address:display.address,saved:true,identity:null}:null;
+    // Every tab must have at least the same shared client label. The postal
+    // address appears after its original tab publishes a verified save.
+    return {name:String(display&&display.name||session.clientName),
+        address:String(display&&display.address||''),
+        saved:true,identity:null};
 }
 function liqRememberReturnDisplay(identity){
     const current=liqActive();
@@ -1694,9 +1697,14 @@ function liqSyncDraft(){
     if(!liqIsNewJob())return;
     const id=liqJobId();
     if(!id)return;
-    const identity=liqReturnIdentity();
     const active=liqActive();
-    if(!identity||!active||identity.key!==active.clientKey)return;
+    if(!active)return;
+    // A second tab may have a fully preloaded Return Address but not the
+    // sessionStorage save receipt created in the original tab.
+    // Matching the already-verified shared client is safe for an uploaded
+    // *preview*; it never creates a client session or counts a price.
+    const identity=liqReturnIdentity()||liqReturnIdentity(false);
+    if(!identity||identity.key!==active.clientKey)return;
     const names=spPdfNamesFromPage().filter(name=>/\.pdf$/i.test(String(name)));
     const key=liqDraftKey(active,id);
     const existing=liqDraftRecords(active)[id];
@@ -1722,15 +1730,24 @@ function liqSyncDraft(){
 function liqRenderLive(){
     const panel=box.querySelector('#calculator');
     if(!panel)return;
-    const active=liqActive(),saved=liqCurrentReturnDisplay();
+    const active=liqActive(),local=liqCurrentReturnDisplay();
     const shared=liqSharedReturnDisplay(active);
-    const same=!!(saved&&saved.identity&&active&&
-        saved.identity.key===active.clientKey);
-    const display=saved||shared;
+    const localKey=local&&local.previewIdentity&&local.previewIdentity.key;
+    const same=!!(active&&localKey===active.clientKey);
+    const different=!!(active&&localKey&&localKey!==active.clientKey);
+    // Prefer the common saved client on every tab. The one exception is
+    // a different, unsaved Return Address being entered in THIS tab: show
+    // that draft with an explicit warning, without changing shared storage.
+    const display=(different&&local&&!local.saved)?local:
+        (shared||local);
     const status=!display?'RETURN ADDRESS':
-        !display.saved?'DRAFT RETURN ADDRESS · NOT SAVED':
-        same?'SAVED RETURN ADDRESS · ACTIVE SESSION':
-        saved?'SAVED RETURN ADDRESS · DIFFERENT CLIENT':'ACTIVE CLIENT · SHARED';
+        different&&local&&!local.saved?
+            'DRAFT RETURN ADDRESS · DIFFERENT CLIENT · NOT SHARED':
+        shared&&same&&local.saved?'SAVED RETURN ADDRESS · ACTIVE SESSION':
+        shared&&same?'ACTIVE CLIENT · PREVIEW MATCHED ACROSS TABS':
+        shared?'ACTIVE CLIENT · SHARED ACROSS TABS':
+        local&&!local.saved?'DRAFT RETURN ADDRESS · NOT SAVED':
+        'SAVED RETURN ADDRESS';
     const localFiles=liqIsNewJob()?spPdfNamesFromPage().filter(
         name=>/\.pdf$/i.test(String(name))):[];
     const currentId=liqJobId();
@@ -2001,11 +2018,13 @@ function liqJobName(){
 function liqKey(value){
     return String(value||'').trim().replace(/\s+/g,' ').toUpperCase();
 }
-function liqReturnIdentity(){
+function liqReturnIdentity(requireSaved){
     const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
-    // Only the saved return address is authoritative, not pasted text,
-    // a draft form, a sample address, or an old job's cached PDF name.
-    if(!form || !spReturnSavedReady())return null;
+    // The strict default remains authoritative for processing and switching.
+    // Read-only previews may match a filled address against an ALREADY active
+    // saved client, even when this tab lacks its own per-tab save receipt.
+    if(!form || spReturnIsSampleForm(form) ||
+       (requireSaved!==false && !spReturnSavedReady()))return null;
     const read=function(key){
         const field=spReturnFormField(form,key);
         return String(field&&field.value||'');
@@ -2426,10 +2445,14 @@ liqConnectControls();
 window.addEventListener('sp:verifiedReturnAddressSaved',liqVerifiedReturnSaved);
 window.addEventListener('storage',function(event){
     if(event.key===LIQ_ACTIVE_KEY||
-       (event.key&&(event.key.startsWith(LIQ_JOB_PREFIX)||
-                    event.key.startsWith(LIQ_DRAFT_PREFIX)))){
+       (event.key&&event.key.startsWith(LIQ_JOB_PREFIX))){
         liqLastLiveSignature='';
         liqRender();
+    }else if(event.key&&event.key.startsWith(LIQ_DRAFT_PREFIX)){
+        // Incoming uploads change the live list only, not the completed
+        // totals. Avoid collapsing expanded job groups on each PDF upload.
+        liqLastLiveSignature='';
+        liqRenderLive();
     }
 });
 document.addEventListener('input',function(event){
