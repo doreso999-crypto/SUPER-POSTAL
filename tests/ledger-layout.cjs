@@ -69,8 +69,17 @@ assert.equal(otherTotal.children[2].disabled,true,'unverified bureau cannot copy
 const panelSource=src.slice(src.indexOf('// FLOATING SIDE PANEL'),src.indexOf('// TEMPORARY, DEVICE-LOCAL CLIENT TOTALS'));
 assert.match(panelSource,/width:'320px'/,'original width restored');
 assert.match(panelSource,/minHeight:'240px'/,'original minimum height restored');
+assert.match(panelSource,/top:'170px'/,'panel starts 50px lower');
+assert.doesNotMatch(panelSource,/top:'120px'/,'old position removed');
+assert.match(panelSource,/border:'2px solid #202a36'/,'dark outer frame');
 assert.doesNotMatch(panelSource,/EMPTY_HEIGHT_SCALE|spEmptyTotalsSize|data-empty|mascot|awts\\.png/i,'no enlargement or mascot code remains');
 assert.doesNotMatch(src,/awts\\.png|postalMascot|miniMascot|applyMascotPosition|MASCOT_SETTINGS/i,'script contains no mascot asset references');
+const innerCSS=src.slice(src.indexOf("style.textContent=`",src.indexOf("    function render(r){")),src.indexOf("document.head.append(style);",src.indexOf("    function render(r){")));
+assert.match(innerCSS,/border-radius:0!important/,'no rounded corners inside ledger');
+assert.ok(innerCSS.includes('.sp-ledger-title{background:#202a36;color:#f5c34f'),'contrasting dark header');
+assert.ok(innerCSS.includes('.sp-ledger-totalrow button{background:#202a36'),'strong Copy contrast');
+assert.ok(innerCSS.includes('button:disabled{opacity:'),'disabled styles retained');
+assert.ok(innerCSS.includes('button:focus-visible'),'keyboard focus styles retained');
 jobs=[];
 render({id:'101',name:'EX Dispute Letter',session:'client'});
 const emptyPanel=document.querySelector('#spLedgerPanel');
