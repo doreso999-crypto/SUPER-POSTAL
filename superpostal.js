@@ -337,8 +337,13 @@ function spWatchFilledReturnFields(){
         ['input','change'].forEach(function(type){
             modal.addEventListener(type,function(event){
                 if(event.target.closest('#envelopeReturn-address, #returnAddressParser')){
-                    if(event.isTrusted&&event.target.closest('#envelopeReturn-address')){
-                        event.target.dataset.spReturnUserProvided='true';
+                    if(event.target.closest('#envelopeReturn-address')){
+                        if(event.isTrusted){
+                            event.target.dataset.spReturnUserProvided='true';
+                        }
+                        const opened=modal.classList.contains('show')||
+                            modal.classList.contains('in')||modal.style.display==='block';
+                        if(event.isTrusted||opened)spReturnSaveState.dirty=true;
                     }
                     spRefreshFilledReturnFields();
                     spQueueRecipientOverview();
@@ -804,7 +809,7 @@ function spReturnAddressLines(){
 
 // Job Details must distinguish a draft Return Address from a saved one.
 // Nothing is marked saved merely because a field was filled or Parse was used.
-const spReturnSaveState={pending:null,memory:null};
+const spReturnSaveState={pending:null,memory:null,dirty:false};
 function spReturnSaveKey(){
     const key=spPdfMemoryKey();
     return key?key.replace('sp-pdf-names-for-job-v1-','sp-return-save-v1-'):'';
@@ -848,16 +853,34 @@ function spReturnMarkSaved(form){
     if(!spReturnAddressComplete(form))return;
     const key=spReturnSaveKey(),signature=spReturnSignature(form);
     spReturnSaveState.memory={key:key,signature:signature};
+    spReturnSaveState.dirty=false;
     if(key){
         try{window.sessionStorage.setItem(key,JSON.stringify({signature:signature,savedAt:Date.now()}));}
         catch(_e){}
     }
     spQueueRecipientOverview();
 }
+// On an already-saved Postalocity job, the native address fields can be
+// hydrated asynchronously. They are the best available evidence on reload,
+// because a fetched HTML response may omit all JS-populated address fields,
+// and the script's Save Changes signature exists only in sessionStorage.
+// Never accept a draft currently being edited or a canceled/failed edit.
+function spReturnNativePrefillReady(form){
+    if(!form||spReturnSaveState.pending||spReturnSaveState.dirty||!spReturnSaveKey())
+        return false;
+    const modal=form.closest&&form.closest('#settingsReturnAddress-Modal');
+    if(!modal||modal.classList.contains('show')||modal.classList.contains('in')||
+       modal.style.display==='block')return false;
+    // A complete, non-sample form loaded by Postalocity while its modal is
+    // closed is treated as a native saved address; pasted text never qualifies.
+    return spReturnAddressComplete(form);
+}
 function spReturnSavedReady(){
     const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
-    return spReturnAddressComplete(form)&&!!spReturnSavedSignature()&&
-        spReturnSavedSignature()===spReturnSignature(form)&&!spReturnSaveState.pending;
+    if(!spReturnAddressComplete(form)||spReturnSaveState.pending)return false;
+    const signature=spReturnSavedSignature();
+    return (!!signature&&signature===spReturnSignature(form))||
+        spReturnNativePrefillReady(form);
 }
 function spReturnSaveHasVisibleError(modal){
     const invalid=modal.querySelectorAll('[aria-invalid="true"], .alert-danger, .has-error, .invalid-feedback, #spParserStatus[data-type="error"]');
@@ -875,7 +898,7 @@ function spWatchReturnSaveAction(){
         const label=String(target.tagName==='INPUT'?target.value:
             (target.textContent||target.getAttribute('aria-label')||''))
             .replace(/\s+/g,' ').trim().toLowerCase();
-        if(label==='save changes'||label==='save change'){
+        if(/^save(?:\s+(?:changes?|settings|address))?$/.test(label)){
             const form=modal.querySelector('#envelopeReturn-address');
             spReturnSaveState.pending=spReturnAddressComplete(form)?
                 {signature:spReturnSignature(form),started:Date.now()}:null;
@@ -890,22 +913,34 @@ function spWatchReturnSaveAction(){
     modal.addEventListener('keydown',function(event){
         if(event.key==='Escape'){spReturnSaveState.pending=null;spQueueRecipientOverview();}
     },true);
+    function finalizeSave(){
+        const pending=spReturnSaveState.pending;
+        spReturnSaveState.pending=null;
+        const form=modal.querySelector('#envelopeReturn-address');
+        if(pending && Date.now()-pending.started<45000 &&
+           spReturnAddressComplete(form) &&
+           spReturnSignature(form)===pending.signature &&
+           !spReturnSaveHasVisibleError(modal)){
+            // Confirmation requires the native Save action AND a completed
+            // modal close without visible errors. Merely editing is not enough.
+            spReturnMarkSaved(form);
+        }
+        spQueueRecipientOverview();
+    }
     const jq=window.jQuery||window.$;
-    if(jq&&jq.fn){
-        jq(modal).on('hidden.bs.modal.spReturnSave',function(){
-            const pending=spReturnSaveState.pending;
-            spReturnSaveState.pending=null;
-            const form=modal.querySelector('#envelopeReturn-address');
-            if(pending && Date.now()-pending.started<45000 &&
-               spReturnAddressComplete(form) &&
-               spReturnSignature(form)===pending.signature &&
-               !spReturnSaveHasVisibleError(modal)){
-                // Confirmation requires the native Save Changes action AND
-                // the native modal completing its close without visible errors.
-                spReturnMarkSaved(form);
-            }
-            spQueueRecipientOverview();
+    if(jq&&jq.fn)jq(modal).on('hidden.bs.modal.spReturnSave',finalizeSave);
+    // Some Postalocity builds hide the modal without firing Bootstrap's
+    // hidden event. Observe the same confirmed close as a fallback.
+    if(typeof MutationObserver!=='undefined'){
+        let wasOpen=modal.classList.contains('show')||modal.classList.contains('in')||
+            modal.style.display==='block';
+        const observer=new MutationObserver(function(){
+            const opened=modal.classList.contains('show')||modal.classList.contains('in')||
+                modal.style.display==='block';
+            if(wasOpen&&!opened&&spReturnSaveState.pending)finalizeSave();
+            wasOpen=opened;
         });
+        observer.observe(modal,{attributes:true,attributeFilter:['class','style','aria-hidden']});
     }
 }
 
@@ -2144,7 +2179,7 @@ document.body.appendChild(box);
                 throw new Error('Saved settings require opening this job.');
             const doc=new DOMParser().parseFromString(await response.text(),'text/html');
             const address=savedAddressFrom(doc);
-            if(!address)throw new Error('Open this job’s saved settings once to link its address. No need to re-enter it.');
+            if(!address)throw new Error('Saved address was not included in the page response. If it does not load automatically, open Return Address settings to check the saved details.');
             const name=doc.querySelector('#overview-jobName');
             recovered.set(jobId,{address:address,name:name?name.value:''});
         }catch(e){recoveryMessage=e.message;}
