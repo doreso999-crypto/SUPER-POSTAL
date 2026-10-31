@@ -1838,10 +1838,12 @@ document.body.appendChild(box);
         // pagehide fires after the browser confirms a navigation or tab close.
         // Remove ONLY this page's counting lease, never the Postalocity job.
         // Reloads immediately renew the lease on the next document.
-        capture();
-        leaving=true;
-        remove('live:'+PAGE_ID);
-        lastView='';
+        try{capture();}catch(_error){/* A failed capture must not keep a closed job counted. */}
+        finally{
+            leaving=true;
+            remove('live:'+PAGE_ID);
+            lastView='';
+        }
     }
     function clean(){
         const now=Date.now();
