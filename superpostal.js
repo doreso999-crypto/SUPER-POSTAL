@@ -1630,6 +1630,7 @@ const LIQ_LEGACY_DRAFT_PREFIX=LIQ_LEGACY_PREFIX+'draft:';
 const LIQ_SESSION_PREFIX=LIQ_PREFIX+'session:';
 const LIQ_TAB_BIND_PREFIX=LIQ_PREFIX+'tab-job-client:';
 const LIQ_MIGRATED_PREFIX=LIQ_PREFIX+'migrated:';
+const LIQ_RESET_PREFIX=LIQ_PREFIX+'reset:';
 const LIQ_ACTIVE_KEY=LIQ_SESSION_PREFIX;
 const LIQ_JOB_PREFIX=LIQ_PREFIX+'job:';
 const LIQ_OLD_TAB_KEY='sp-return-identity-liquidation-v4';
@@ -2013,6 +2014,11 @@ function liqStartSession(identity,explicit){
     }
     if(!explicit&&!spReturnSavedReady())return null;
     const key=liqSessionStorageKey(identity.key);
+    try{
+        // Reset is intentionally persistent until a new verified Save.
+        if(!explicit&&window.localStorage.getItem(LIQ_RESET_PREFIX+identity.key))
+            return null;
+    }catch(_error){return null;}
     const newSession={id:liqNewSessionId(),clientKey:identity.key,
         clientName:identity.name,createdAt:Date.now()};
     try{
@@ -2020,6 +2026,7 @@ function liqStartSession(identity,explicit){
         const found=liqGetClientSession(identity.key);
         if(found){liqBindTab(found);return found;}
         window.localStorage.setItem(key,JSON.stringify(newSession));
+        if(explicit)window.localStorage.removeItem(LIQ_RESET_PREFIX+identity.key);
         const saved=liqGetClientSession(identity.key);
         if(!saved)return null;
         liqBindTab(saved);
@@ -2037,6 +2044,8 @@ function liqResetSession(){
     const current=liqActive();
     if(!current)return;
     try{
+        // Mark before removal to stop old tabs from recreating this client.
+        window.localStorage.setItem(LIQ_RESET_PREFIX+current.clientKey,String(Date.now()));
         window.localStorage.removeItem(liqSessionStorageKey(current.clientKey));
         liqPurgeSession(current);
         const id=liqJobId();
