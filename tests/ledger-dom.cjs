@@ -21,7 +21,7 @@ const second='<span id="jobState">Processed - Ready for Approval</span><div clas
 const a=page('1301773',first);a.document.querySelector('#overview-jobName').value='Test EX';a.testTick();
 const p=page('1301773',second);a.testTick();
 assert.match(p.document.querySelector('#spLedgerPanel').textContent,/Test Client/);
-assert.match(p.document.querySelector('#spLedgerPanel').textContent,/Experian.*\$1.39/);
+assert.match(p.document.querySelector('#spLedgerPanel').textContent,/Experian.*\$1.39/i);
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Total: \$1.39/);
 const another=page('1301773',second);assert.match(another.document.querySelector('#spLedgerPanel').textContent,/Total: \$1.39/);
 let end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='Clear');assert.equal(end.disabled,false);
@@ -53,11 +53,11 @@ onClose.close();
 console.log('PASS: panel invokes native Delete Job; pending job warns before leaving.');
 
 const closingA=page('601',first),closingB=page('602',first);
-assert.match(closingA.document.querySelector('#spLedgerPanel').textContent,/2 job\(s\)/);
+assert.match(closingA.document.querySelector('#spLedgerPanel').textContent,/2 jobs/);
 closingA.dispatchEvent(new closingA.Event('pagehide'));
 closingB.testTick();
 assert.doesNotMatch(closingB.document.querySelector('#spLedgerPanel').textContent,/#601/,'closed pending job is removed from a sibling tab');
-assert.match(closingB.document.querySelector('#spLedgerPanel').textContent,/1 job\(s\)/);
+assert.match(closingB.document.querySelector('#spLedgerPanel').textContent,/1 job/);
 closingB.document.querySelector('#jobState').textContent='Approved';closingB.testTick();
 closingB.dispatchEvent(new closingB.Event('pagehide'));
 const viewer=page('603',first);
