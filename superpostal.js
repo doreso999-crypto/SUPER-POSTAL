@@ -1933,6 +1933,27 @@ document.body.appendChild(box);
                 (spStateCode(a.state)||norm(a.state))===b.state&&String(a.zip).slice(0,5)===b.zip.slice(0,5);
         })||'';
     }
+    function priceSnapshot(){
+        // A monetary value is accepted only from a designated job-total field.
+        // Never guess from a subtotal, tax row, PDF name or arbitrary page text.
+        const selectors=['.totalPriceRow .totalPrice','.totalPriceRow [data-total-price]',
+            '.totalPriceRow [class*="totalPrice"]','[data-testid="job-total"]','#jobTotal'];
+        let found=false;
+        for(const selector of selectors){
+            const element=document.querySelector(selector);
+            if(!element)continue;
+            found=true;
+            const raw=String(element.textContent||element.value||'').trim().replace(/\u00a0/g,' ');
+            const match=raw.match(/^(?:total(?:\s+price)?\s*:?\s*)?(?:USD\s*)?\$?\s*((?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.(\d{2}))?\s*$/i);
+            if(match){
+                const dollars=Number(match[1].replace(/,/g,''));
+                const cents=Number(match[2]||'00');
+                const result=dollars*100+cents;
+                if(Number.isSafeInteger(result)&&result>=0)return {found:true,valid:true,cents:result,raw};
+            }
+        }
+        return {found,valid:false,cents:null};
+    }
     function countable(r){
         if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!norm(r.name))return false;
         const session=read('session:'+r.session);
@@ -2065,12 +2086,13 @@ document.body.appendChild(box);
         const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
         const state=document.querySelector('#jobState');if(!isApproved(r)&&state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
         if(approvedState(r.status))r.approved=true;
-        const cost=document.querySelector('.totalPriceRow .totalPrice');
-        if(cost&&/processed|approved|mailed/i.test(r.status||'')){
-            const value=cost.textContent.trim().replace(/[$,\s]/g,'');
-            if(value!==prior.cost&&/^\d+(\.\d{1,2})?$/.test(value))r.cents=Math.round(Number(value)*100);
+        const price=priceSnapshot();
+        const onProcessedPage=state&&/processed|approved|mailed/i.test(state.textContent||'');
+        if(onProcessedPage){
+            if(price.valid){r.cents=price.cents;r.priceNeedsReview=false;}
+            else r.priceNeedsReview=true; // An unknown price is NOT part of the displayed total.
         }
-        observed.set(jobId,{cost:cost?cost.textContent.trim().replace(/[$,\s]/g,''):undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
+        observed.set(jobId,{cost:price.valid?price.cents:undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
         if(before!==JSON.stringify(r))write('job:'+jobId,r);
         if(!isApproved(r))markActive(jobId);
         if(Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
@@ -2210,11 +2232,11 @@ document.body.appendChild(box);
             ?'This job is unassigned and excluded from totals. Assign a bureau or recipient to count it.'
             :'This job is excluded until it has both a saved return address and a job name.'));
         const groups=new Map();let total=0,pending=0;
-        jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)){b.sum+=j.cents;total+=j.cents;}else pending++;});
+        jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)&&!j.priceNeedsReview){b.sum+=j.cents;total+=j.cents;}else pending++;});
         [...groups.values()].sort((a,b)=>a.label.localeCompare(b.label)).forEach(b=>{
             const details=el('details');details.append(el('summary',b.label+' · '+b.jobs.length+' job(s) · '+money(b.sum)));
             b.jobs.forEach(({j,g})=>{
-                details.append(el('small','#'+j.id+' — '+(j.name||'Unnamed job')+' — '+(Number.isInteger(j.cents)?money(j.cents):'Awaiting price')),el('small',j.status||''));
+                details.append(el('small','#'+j.id+' — '+(j.name||'Unnamed job')+' — '+(j.priceNeedsReview?'Price not verified':Number.isInteger(j.cents)?money(j.cents):'Awaiting price')),el('small',j.status||''));
                 (j.recipients||[]).forEach(a=>details.append(el('small',[a.name,a.address1,a.address2,a.city,a.state,a.zip].filter(Boolean).join(', '))));
                 if(g.warning)details.append(el('small','⚠ Recipient/job-name mismatch or multiple destinations. Review grouping.'));
                 const select=el('select');select.setAttribute('aria-label','Group job '+j.id);
@@ -2239,8 +2261,9 @@ document.body.appendChild(box);
             });
             panel.append(details);
         }
-        panel.append(el('h4','Total: '+money(total)),el('small',pending?pending+' job(s) awaiting price.':'Processed prices; approval status shown per job.'));
-        const copy=el('button','Copy summary');copy.onclick=async()=>{try{await navigator.clipboard.writeText(session.address.name+'\n'+[...groups.values()].map(b=>b.label+': '+money(b.sum)).join('\n')+'\nTotal: '+money(total));copy.textContent='Copied';}catch(e){copy.textContent='Copy unavailable';}};
+        panel.append(el('h4',(pending?'Verified total (incomplete): ':'Total: ')+money(total)),
+            el('small',pending?pending+' job(s) have no verified price. Their amounts are excluded until the price is readable.':'All counted jobs have verified prices.'));
+        const copy=el('button','Copy summary');copy.onclick=async()=>{try{await navigator.clipboard.writeText(session.address.name+'\n'+[...groups.values()].map(b=>b.label+': '+money(b.sum)).join('\n')+'\n'+(pending?'Verified total (incomplete): ':'Total: ')+money(total)+(pending?'\n'+pending+' job(s) without verified prices.':''));copy.textContent='Copied';}catch(e){copy.textContent='Copy unavailable';}};
         const end=el('button','Clear');
         end.title='Clear this client’s tracked totals in all tabs (Postalocity jobs are not deleted).';
         end.onclick=()=>{
