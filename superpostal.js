@@ -2499,7 +2499,40 @@ document.body.appendChild(box);
                 row.append(el('span',bucket.label),el('strong',bucket.pending?'Pending':money(bucket.sum)));
                 const copy=el('button','Copy');copy.type='button';copy.title=bucket.pending?'Wait for all prices before copying':'Copy '+bucket.label+' total';
                 copy.disabled=bucket.pending>0;
-                copy.onclick=async()=>{try{await navigator.clipboard.writeText(money(bucket.sum));copy.textContent='Copied';}catch(_error){copy.textContent='Copy unavailable';}};
+                // Keep Copy reusable: briefly acknowledge success, then
+                // restore the original label. Read current ledger totals on
+                // every click so an older panel cannot copy a stale amount.
+                let copyFeedbackTimer=null,copyAttempt=0;
+                copy.onclick=async()=>{
+                    const attempt=++copyAttempt;
+                    if(copyFeedbackTimer!==null){clearTimeout(copyFeedbackTimer);copyFeedbackTimer=null;}
+                    const fresh=bureauSummary(sessionJobs(r.session).filter(countable)).find(x=>x.key===bucket.key);
+                    if(!fresh||fresh.pending){
+                        copy.textContent='Copy';
+                        copy.title='Wait for all prices before copying';
+                        copy.disabled=true;
+                        lastView='';tick();
+                        return;
+                    }
+                    try{
+                        await navigator.clipboard.writeText(money(fresh.sum));
+                        if(attempt!==copyAttempt)return;
+                        copy.textContent='Copied';
+                        copy.title='Copied — click to copy again';
+                    }catch(_error){
+                        if(attempt!==copyAttempt)return;
+                        copy.textContent='Retry';
+                        copy.title='Copy failed — click to retry';
+                    }
+                    // No permanent Copied/Retry state and never disable after
+                    // a successful copy. Repeated clicks reset the feedback.
+                    copyFeedbackTimer=setTimeout(()=>{
+                        if(attempt!==copyAttempt)return;
+                        copy.textContent='Copy';
+                        copy.title='Copy '+bucket.label+' total';
+                        copyFeedbackTimer=null;
+                    },1100);
+                };
                 row.append(copy);totals.append(row);
             });panel.append(totals);
             const overall=el('div',(missing?'Subtotal: ':'Total: ')+money(grand));overall.className='sp-ledger-grand';panel.append(overall);
