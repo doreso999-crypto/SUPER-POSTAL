@@ -2359,7 +2359,7 @@ document.body.appendChild(box);
                 row.append(copy);totals.append(row);
             });panel.append(totals);
             const overall=el('div',(missing?'Subtotal: ':'Total: ')+money(grand));overall.className='sp-ledger-grand';panel.append(overall);
-            if(missing){const note=el('div',missing+' awaiting price');note.className='sp-ledger-pending';panel.append(note);}
+            // Pending amounts are already visible in their rows; no extra notice.
         }
         const footer=el('div');footer.className='sp-ledger-footer';
         const clear=el('button','Clear');clear.title='Clear this client’s tracked totals in all tabs. Postalocity jobs are not deleted.';
