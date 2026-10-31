@@ -1511,36 +1511,38 @@ Object.assign(box.style,{
 
 box.innerHTML = `
 <div id="calculator" style="width:100%;position:relative;z-index:10;font-family:Arial,sans-serif;">
-    <div style="font-size:20px;font-weight:800;text-align:center;margin-bottom:12px;letter-spacing:1px;">LIQUIDATION</div>
+    <div style="font-size:20px;font-weight:800;text-align:center;margin-bottom:10px;letter-spacing:1px;">LIQUIDATION</div>
     <div style="border-radius:9px;background:#222;color:#fff;padding:11px 12px;margin-bottom:11px;">
-        <div style="font-size:11px;font-weight:700;opacity:.8;letter-spacing:.5px;">TOTAL PROCESSED COST</div>
+        <div style="font-size:11px;font-weight:700;opacity:.82;letter-spacing:.5px;">TOTAL PROCESSED COST</div>
         <div id="liqGrandTotal" style="font-size:28px;font-weight:800;text-align:right;">$0.00</div>
-        <div id="liqJobCount" style="font-size:11px;text-align:right;opacity:.78;">0 jobs tracked</div>
+        <div id="liqJobCount" style="font-size:11px;text-align:right;opacity:.78;">0 processed · 0 pending</div>
     </div>
-    <div id="liqGroups" style="margin-bottom:12px;"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:7px;">
-        <strong style="font-size:12px;">Recorded jobs</strong>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">
+        <strong style="font-size:12px;">Client containers</strong>
         <button id="liqClearAll" type="button" style="font-size:11px;padding:4px 8px;border:1px solid #7e5b18;border-radius:5px;background:transparent;color:#261900;cursor:pointer;">Clear all</button>
     </div>
-    <div id="liqJobRows" style="max-height:190px;overflow:auto;border-top:1px solid rgba(0,0,0,.22);"></div>
-    <div id="liqHint" style="font-size:10px;line-height:1.45;color:#49340c;margin-top:9px;">Totals are saved in this browser as you visit processed jobs.</div>
+    <div id="liqClientGroups" style="max-height:355px;overflow:auto;"></div>
+    <div id="liqHint" style="font-size:10px;line-height:1.5;color:#49340c;margin-top:9px;">
+        Records are kept in this browser. Price is added after processing finishes, not when you click Process.
+    </div>
 </div>
 `;
 
 ///////////////////////////////
-// LIQUIDATION — COLLECT PROCESSED JOB PRICES ONCE PER JOB ID
+// CLIENT LIQUIDATION — STAGE JOB, THEN ATTACH ACTUAL PROCESSED PRICE
 ///////////////////////////////
-const LIQ_STORE_KEY='sp-processed-liquidation-v1';
-const LIQ_LABELS={EQU:'Equifax',EX:'Experian',TU:'TransUnion',OTHER:'Unassigned'};
-let liqMemory={jobs:{},hints:{},excluded:{}};
+// Local, per-browser working container. Never add the hidden new-job estimate.
+const LIQ_STORE_KEY='sp-client-liquidation-v2';
+const LIQ_TARGETS={EQU:'Equifax',EX:'Experian',TU:'TransUnion'};
+let liqMemory={jobs:{},excluded:{}};
 let liqPauseCapture=false;
 function liqRead(){
     try{
         const raw=localStorage.getItem(LIQ_STORE_KEY);
         if(!raw)return liqMemory;
         const data=JSON.parse(raw);
-        if(data&&typeof data==='object'&&data.jobs&&typeof data.jobs==='object'){
-            liqMemory={jobs:data.jobs,hints:data.hints||{},excluded:data.excluded||{}};
+        if(data && data.jobs && typeof data.jobs==='object' && !Array.isArray(data.jobs)){
+            liqMemory={jobs:data.jobs,excluded:data.excluded||{}};
         }
     }catch(_error){}
     return liqMemory;
@@ -1554,232 +1556,338 @@ function liqMoney(cents){
 }
 function liqParsePrice(value){
     const text=String(value||'').trim();
-    const match=text.match(/^\$?\s*((?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.(\d{1,2}))?\s*$/);
-    if(!match)return null;
-    const dollars=Number(match[1].replace(/,/g,''));
-    const cents=dollars*100+Number((match[2]||'').padEnd(2,'0'));
-    return Number.isSafeInteger(cents)&&cents>=0?cents:null;
+    const m=text.match(/^\$?\s*((?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.(\d{1,2}))?\s*$/);
+    if(!m)return null;
+    const amount=Number(m[1].replace(/,/g,''))*100+Number((m[2]||'').padEnd(2,'0'));
+    return Number.isSafeInteger(amount)&&amount>=0?amount:null;
 }
 function liqJobId(){
-    const heading=document.querySelector('#jobNumberTop');
-    const match=heading&&heading.textContent.match(/\bJob\s*#\s*(\d+)\b/i);
+    const label=document.querySelector('#jobNumberTop');
+    const match=label&&label.textContent.match(/\bJob\s*#\s*(\d+)\b/i);
     if(match)return match[1];
     try{
         if(typeof jobId!=='undefined' && /^\d+$/.test(String(jobId)))return String(jobId);
         if(window.jobId!=null && /^\d+$/.test(String(window.jobId)))return String(window.jobId);
-        const q=new URLSearchParams(window.location.search);
-        const id=q.get('id')||q.get('jobId');
-        if(id&&/^\d+$/.test(id))return id;
+        const search=new URLSearchParams(window.location.search);
+        const id=search.get('id')||search.get('jobId');
+        if(id && /^\d+$/.test(id))return id;
     }catch(_error){}
     return '';
 }
 function liqJobName(){
-    const header=document.querySelector('#jobName');
+    const title=document.querySelector('#jobName');
     const input=document.querySelector('#overview-jobName');
-    return String((header&&header.textContent.trim())||(input&&input.value)||'').trim();
+    return String((title&&title.textContent.trim())||(input&&input.value)||'').trim();
 }
-function liqRecipientBureau(){
-    const cards=Array.from(document.querySelectorAll('#contactListRow .docCardAddress'));
-    // null means the recipient list has not loaded; do not guess from partial data.
-    if(!cards.length)return null;
-    const countNode=document.querySelector('#step3 .contactListSize');
-    const total=countNode?Number.parseInt(countNode.textContent,10):NaN;
-    if(Number.isFinite(total)&&total>0&&cards.length!==total)return null;
-    const codes=cards.map(function(card){
-        return spDetectBureauForRecipient(card.textContent);
-    });
-    // A mixed/unknown address list cannot be assigned to a single bureau.
-    if(codes.some(function(code){return !code;}))return 'OTHER';
-    return new Set(codes).size===1?codes[0]:'OTHER';
+function liqKey(value){
+    return String(value||'').trim().replace(/\s+/g,' ').toUpperCase();
 }
-function liqProcessPrice(){
+function liqTarget(raw){
+    const key=liqKey(raw);
+    if(['EQU','EQ','EQUIFAX'].includes(key))return {key:'EQU',label:'Equifax'};
+    if(['EX','EXP','EXPERIAN'].includes(key))return {key:'EX',label:'Experian'};
+    if(['TU','TRANSUNION','TRANS UNION'].includes(key))return {key:'TU',label:'TransUnion'};
+    // Other destinations are creditors; do not silently count them as bureaus.
+    if(key && key.length<=48 && /^[A-Z0-9][A-Z0-9 .&/']*$/.test(key) &&
+       /[A-Z]/.test(key))return {key:'CR:'+key,label:key};
+    return {key:'OTHER',label:'Unassigned'};
+}
+const LIQ_TYPES=new Set([
+    'LP','LATE','BK','BANKRUPTCY','CO','CHARGEOFF','CHARGE OFF','COL','COLL',
+    'COLLECTION','INQ','INQUIRY','INQUIRIES','REPO','FORECLOSURE',
+    'DELETE','DELETED','UPDATE','UPDATED','FRAUD','IDT','PA','PERSONAL INFO',
+    'ROUND1','ROUND2','RD1','RD2','RD3','RD4','RD5','RD6','RD7','RD8','RD9'
+]);
+function liqParseFileLabel(raw){
+    const original=String(raw||'').trim().split(/[\\/]/).pop()
+        .replace(/\.pdf$/i,'').replace(/[–—]/g,'-').trim();
+    const parts=original.split(/\s*-\s*/).map(x=>x.trim()).filter(Boolean);
+    if(parts.length<2)return {client:'Unsorted',target:'OTHER',targetLabel:'Unassigned',label:original};
+    let hadType=false;
+    if(parts.length>=3 && LIQ_TYPES.has(liqKey(parts[parts.length-1]))){
+        parts.pop();hadType=true;
+    }
+    const destRaw=parts.pop();
+    const client=parts.join('-').replace(/\s+/g,' ').trim();
+    const dest=liqTarget(destRaw);
+    // "Mary-Anne" is probably a hyphenated name, not creditor "Anne".
+    if(!hadType && dest.key.startsWith('CR:') &&
+       destRaw!==destRaw.toUpperCase() && !/\s/.test(destRaw)){
+        return {client:'Unsorted',target:'OTHER',targetLabel:'Unassigned',label:original};
+    }
+    if(!client||dest.key==='OTHER')return {
+        client:'Unsorted',target:'OTHER',targetLabel:'Unassigned',label:original
+    };
+    return {client:client,target:dest.key,targetLabel:dest.label,label:original};
+}
+function liqFromFiles(names,jobName){
+    const files=names.filter(name=>/\.pdf$/i.test(String(name))).map(name=>String(name).trim());
+    if(!files.length){
+        const parsed=liqParseFileLabel(jobName);
+        return {...parsed,files:[],source:'job name'};
+    }
+    const parsed=files.map(liqParseFileLabel);
+    const first=parsed[0];
+    const consistent=parsed.every(item=>item.client!=='Unsorted' &&
+        liqKey(item.client)===liqKey(first.client) && item.target===first.target);
+    if(consistent)return {...first,files:files,source:'PDF filename'};
+    // A job can have multiple PDF files but only one total. Do not allocate
+    // its full cost to several clients or creditors and inflate their totals.
+    return {client:'Unsorted',target:'OTHER',targetLabel:'Unassigned',
+        label:jobName||'Multiple/ambiguous PDF names',files:files,
+        source:'mixed/ambiguous filenames'};
+}
+function liqActualPrice(){
     const state=document.querySelector('#jobState');
     const approval=document.querySelector('#approveJobContent');
-    // A NEW job may contain a hidden sample estimate: never record it.
-    if(!state||!approval||!/^(processed|approved|mailed)\b/i.test(state.textContent.trim()))return null;
+    if(!state||!approval||!/^(processed|approved|mailed)\b/i.test(state.textContent.trim()))
+        return null;
     const total=approval.querySelector('.totalPriceRow .totalPrice');
     return total?liqParsePrice(total.textContent):null;
 }
-function liqCapturePage(){
+function liqStageJob(){
     if(liqPauseCapture)return;
     const id=liqJobId();
     if(!id)return;
     const data=liqRead();
     if(data.excluded[id])return;
-    const name=liqJobName();
-    let changed=false;
-    const actual=liqRecipientBureau();
-    if(actual!==null&&(!data.hints[id]||data.hints[id].bureau!==actual)){
-        data.hints[id]={bureau:actual,source:'recipient address'};
-        changed=true;
+    const jobName=liqJobName();
+    const names=spPdfNamesFromPage();
+    const parsed=liqFromFiles(names,jobName);
+    const prev=data.jobs[id];
+    // Processing has been requested, but the final price does not yet exist.
+    const record={
+        id:id,jobName:jobName||'Job #'+id,files:parsed.files,client:parsed.client,
+        target:parsed.target,targetLabel:parsed.targetLabel,
+        source:parsed.source,priceCents:null,status:'processing',
+        manual:false,updatedAt:Date.now()
+    };
+    if(prev&&prev.manual){
+        record.client=prev.client;record.target=prev.target;
+        record.targetLabel=prev.targetLabel;record.manual=true;
     }
-    const cents=liqProcessPrice();
-    if(cents!==null){
-        const previous=data.jobs[id];
-        const bureau=(previous&&previous.manual&&previous.bureau)||
-            (data.hints[id]&&data.hints[id].bureau)||
-            spDetectBureauForRecipient(name)||'OTHER';
-        const source=(previous&&previous.manual&&previous.bureau)?'manual':
-            (data.hints[id]&&data.hints[id].bureau)?'recipient address':
-            bureau==='OTHER'?'unassigned':'job name';
-        const record={id:id,name:name||'Job #'+id,bureau:bureau,
-            priceCents:cents,source:source,manual:!!(previous&&previous.manual)};
-        if(!previous||previous.name!==record.name||previous.bureau!==record.bureau||
-           previous.priceCents!==cents||previous.source!==source||
-           previous.manual!==record.manual){
-            data.jobs[id]=record;
-            changed=true;
-        }
-    }
-    if(changed){liqSave(data);liqRender();}
+    data.jobs[id]=record;
+    liqSave(data);
+    liqRender();
 }
-function liqElement(tag,text,styles){
+function liqCaptureProcessed(){
+    if(liqPauseCapture)return;
+    const id=liqJobId(),cents=liqActualPrice();
+    if(!id||cents===null)return;
+    const data=liqRead();
+    if(data.excluded[id])return;
+    const previous=data.jobs[id];
+    const jobName=liqJobName();
+    // If the user opens a processed job without this tab's earlier click,
+    // fall back to its job name. Never invent an original PDF filename.
+    const parsed=previous?null:liqFromFiles([],jobName);
+    const record=previous?{...previous}:{
+        id:id,jobName:jobName||'Job #'+id,files:[],
+        client:parsed.client,target:parsed.target,targetLabel:parsed.targetLabel,
+        source:'job name (filename unavailable)',manual:false
+    };
+    if(jobName && record.jobName!==jobName)record.jobName=jobName;
+    if(record.priceCents===cents && record.status==='processed')return;
+    record.priceCents=cents;record.status='processed';
+    record.updatedAt=Date.now();
+    data.jobs[id]=record;
+    liqSave(data);
+    liqRender();
+}
+function liqElement(tag,text,style){
     const el=document.createElement(tag);
-    if(text!==null && text!==undefined)el.textContent=String(text);
-    if(styles)Object.assign(el.style,styles);
+    if(text!==undefined&&text!==null)el.textContent=String(text);
+    if(style)Object.assign(el.style,style);
     return el;
+}
+function liqGroupData(data){
+    const clients=new Map();
+    const jobs=Object.values(data.jobs).filter(job=>job &&
+        /^\d+$/.test(String(job.id)) && typeof job.client==='string');
+    jobs.forEach(job=>{
+        const key=liqKey(job.client||'Unsorted');
+        if(!clients.has(key))clients.set(key,{
+            client:job.client||'Unsorted',key:key,total:0,processed:0,pending:0,targets:new Map()
+        });
+        const client=clients.get(key);
+        const target=job.target||'OTHER';
+        if(!client.targets.has(target))client.targets.set(target,{
+            key:target,label:job.targetLabel||'Unassigned',
+            total:0,processed:0,pending:0,jobs:[]
+        });
+        const group=client.targets.get(target);
+        group.jobs.push(job);
+        if(Number.isSafeInteger(job.priceCents)&&job.priceCents>=0){
+            client.total+=job.priceCents;client.processed++;
+            group.total+=job.priceCents;group.processed++;
+        }else{client.pending++;group.pending++;}
+    });
+    return Array.from(clients.values()).sort((a,b)=>a.client.localeCompare(b.client));
 }
 function liqRender(){
     const panel=box.querySelector('#calculator');
     if(!panel)return;
     const data=liqRead();
-    const entries=Object.values(data.jobs).filter(function(job){
-        return job&&/^\d+$/.test(String(job.id))&&
-            Number.isSafeInteger(job.priceCents)&&job.priceCents>=0;
-    }).sort(function(a,b){return Number(b.id)-Number(a.id);});
-    const sums={EQU:0,EX:0,TU:0,OTHER:0};
-    const counts={EQU:0,EX:0,TU:0,OTHER:0};
-    entries.forEach(function(job){
-        const code=Object.prototype.hasOwnProperty.call(sums,job.bureau)?job.bureau:'OTHER';
-        sums[code]+=job.priceCents;
-        counts[code]++;
-    });
-    const grand=Object.values(sums).reduce(function(sum,n){return sum+n;},0);
-    const totalEl=panel.querySelector('#liqGrandTotal');
-    const countEl=panel.querySelector('#liqJobCount');
-    const groupsEl=panel.querySelector('#liqGroups');
-    const rowsEl=panel.querySelector('#liqJobRows');
-    if(!totalEl||!countEl||!groupsEl||!rowsEl)return;
-    totalEl.textContent=liqMoney(grand);
-    countEl.textContent=entries.length+' '+(entries.length===1?'job':'jobs')+' tracked';
-    groupsEl.replaceChildren();
-    ['EQU','EX','TU','OTHER'].forEach(function(code){
-        if(code==='OTHER' && counts.OTHER===0)return;
-        const row=liqElement('div',null,{
-            display:'flex',alignItems:'center',justifyContent:'space-between',
-            gap:'7px',padding:'7px 8px',marginBottom:'4px',borderRadius:'6px',
-            background:code==='OTHER'?'#fff2d7':'rgba(255,255,255,.6)',fontSize:'12px'
-        });
-        const label=liqElement('span',LIQ_LABELS[code]+' · '+counts[code],{fontWeight:'700'});
-        const money=liqElement('strong',liqMoney(sums[code]),{fontSize:'13px',whiteSpace:'nowrap'});
-        row.append(label,money);
-        groupsEl.appendChild(row);
-    });
-    rowsEl.replaceChildren();
-    if(!entries.length){
-        rowsEl.appendChild(liqElement('p','No processed jobs recorded yet.',{
-            margin:'10px 0',fontSize:'11px',lineHeight:'1.5'
+    const clients=liqGroupData(data);
+    const grand=clients.reduce((sum,cl)=>sum+cl.total,0);
+    const processed=clients.reduce((sum,cl)=>sum+cl.processed,0);
+    const pending=clients.reduce((sum,cl)=>sum+cl.pending,0);
+    const total=panel.querySelector('#liqGrandTotal');
+    const count=panel.querySelector('#liqJobCount');
+    const list=panel.querySelector('#liqClientGroups');
+    if(!total||!count||!list)return;
+    total.textContent=liqMoney(grand);
+    count.textContent=processed+' processed · '+pending+' pending';
+    list.replaceChildren();
+    if(!clients.length){
+        list.appendChild(liqElement('p','No client jobs yet. Process a job to begin.',{
+            fontSize:'11px',padding:'8px 0',margin:'0'
         }));
         return;
     }
-    entries.forEach(function(job){
-        const row=liqElement('div',null,{borderBottom:'1px solid rgba(0,0,0,.18)',
-            padding:'9px 2px',fontSize:'11px'});
-        const heading=liqElement('div',null,{display:'flex',gap:'5px',
-            alignItems:'flex-start',justifyContent:'space-between'});
-        const label=liqElement('span','#'+job.id+' · '+job.name,{
-            minWidth:'0',flex:'1',overflowWrap:'anywhere',lineHeight:'1.4'
+    clients.forEach(cl=>{
+        const card=liqElement('section',null,{
+            border:'1px solid #b58723',borderRadius:'8px',
+            background:'rgba(255,255,255,.68)',marginBottom:'9px',
+            overflow:'hidden'
         });
-        const price=liqElement('strong',liqMoney(job.priceCents),{whiteSpace:'nowrap'});
-        heading.append(label,price);
-        const actions=liqElement('div',null,{
-            display:'flex',alignItems:'center',gap:'5px',marginTop:'5px'
+        const header=liqElement('div',null,{
+            display:'flex',justifyContent:'space-between',alignItems:'center',
+            gap:'5px',padding:'9px 10px',background:'rgba(255,255,255,.55)'
         });
-        const select=liqElement('select',null,{
-            minWidth:'0',flex:'1',fontSize:'11px',padding:'4px 3px',
-            borderRadius:'5px',border:'1px solid #aa852c',background:'#fff',
-            color:'#222'
+        const title=liqElement('strong',cl.client,{fontSize:'13px',overflowWrap:'anywhere'});
+        const amount=liqElement('strong',liqMoney(cl.total),{fontSize:'13px',whiteSpace:'nowrap'});
+        header.append(title,amount);
+        card.appendChild(header);
+        const groups=Array.from(cl.targets.values()).sort((a,b)=>{
+            const ord=['EQU','EX','TU'];const ia=ord.indexOf(a.key),ib=ord.indexOf(b.key);
+            if(ia!==-1||ib!==-1)return (ia===-1?99:ia)-(ib===-1?99:ib);
+            return a.label.localeCompare(b.label);
         });
-        select.dataset.liqJob=idSafe(job.id);
-        select.setAttribute('aria-label','Bureau for job '+job.id);
-        [['AUTO','Auto: '+(LIQ_LABELS[job.bureau]||'Unassigned')],
-         ['EQU','Equifax'],['EX','Experian'],['TU','TransUnion'],
-         ['OTHER','Unassigned']].forEach(function(option){
-            const el=liqElement('option',option[1]);
-            el.value=option[0];
-            select.appendChild(el);
+        groups.forEach(g=>{
+            const details=liqElement('details',null,{
+                padding:'0 10px',borderTop:'1px solid rgba(0,0,0,.12)'
+            });
+            const summary=liqElement('summary',null,{
+                cursor:'pointer',padding:'8px 0',fontSize:'12px',fontWeight:'700'
+            });
+            const subtitle=liqElement('span',g.label+' · '+g.jobs.length,{
+                overflowWrap:'anywhere'
+            });
+            const sum=liqElement('span',liqMoney(g.total),{
+                float:'right',whiteSpace:'nowrap'
+            });
+            summary.append(subtitle,sum);
+            details.appendChild(summary);
+            g.jobs.sort((a,b)=>Number(b.id)-Number(a.id)).forEach(job=>{
+                const row=liqElement('div',null,{
+                    padding:'7px 0 9px',borderTop:'1px dashed rgba(0,0,0,.16)',
+                    fontSize:'11px',lineHeight:'1.5'
+                });
+                const top=liqElement('div',null,{
+                    display:'flex',justifyContent:'space-between',gap:'5px'
+                });
+                top.append(liqElement('strong','Job #'+job.id),liqElement('strong',
+                    Number.isSafeInteger(job.priceCents)?liqMoney(job.priceCents):'Pending price'));
+                row.appendChild(top);
+                const original=(Array.isArray(job.files)&&job.files.length)?
+                    job.files.join(', '):'PDF name not captured';
+                row.appendChild(liqElement('div',original,{
+                    overflowWrap:'anywhere',color:'#49320b'
+                }));
+                if(job.jobName&&job.jobName!==original)row.appendChild(
+                    liqElement('div','Job name: '+job.jobName,{
+                        overflowWrap:'anywhere',opacity:'.76'
+                    })
+                );
+                if(job.source==='mixed/ambiguous filenames')row.appendChild(
+                    liqElement('div','Multiple or unclear destinations — not allocated',{
+                        color:'#9c3123',fontWeight:'700'
+                    })
+                );
+                const actions=liqElement('div',null,{
+                    display:'flex',justifyContent:'flex-end',gap:'7px',marginTop:'4px'
+                });
+                const edit=liqElement('button','Edit sorting',{
+                    fontSize:'10px',border:'1px solid #ae8c39',borderRadius:'5px',
+                    background:'#fff',padding:'3px 6px',cursor:'pointer'
+                });
+                edit.type='button';edit.dataset.liqEdit=job.id;
+                const remove=liqElement('button','Remove',{
+                    fontSize:'10px',border:'1px solid #d4aa75',borderRadius:'5px',
+                    background:'#fff7ec',padding:'3px 6px',cursor:'pointer'
+                });
+                remove.type='button';remove.dataset.liqRemove=job.id;
+                actions.append(edit,remove);
+                row.appendChild(actions);
+                details.appendChild(row);
+            });
+            card.appendChild(details);
         });
-        select.value=job.manual?job.bureau:'AUTO';
-        const remove=liqElement('button','×',{width:'25px',height:'25px',
-            border:'1px solid #ad8244',background:'#fff7ec',borderRadius:'5px',
-            fontWeight:'700',fontSize:'16px',cursor:'pointer',flexShrink:'0'});
-        remove.type='button';
-        remove.dataset.liqRemove=idSafe(job.id);
-        remove.setAttribute('aria-label','Remove job '+job.id+' from liquidation');
-        actions.append(select,remove);
-        row.append(heading,actions);
-        rowsEl.appendChild(row);
+        list.appendChild(card);
     });
 }
-function idSafe(id){return String(id);}
 function liqConnectControls(){
     const panel=box.querySelector('#calculator');
     if(!panel||panel.dataset.liqControls==='true')return;
     panel.dataset.liqControls='true';
-    // Don't start dragging the preserved floating panel while opening a select.
-    panel.addEventListener('mousedown',function(event){
-        if(event.target.closest('select'))event.stopPropagation();
-    });
-    panel.addEventListener('change',function(event){
-        const selector=event.target.closest('select[data-liq-job]');
-        if(!selector)return;
-        const id=selector.dataset.liqJob;
-        const data=liqRead();
-        const record=data.jobs[id];
-        if(!record)return;
-        const choice=selector.value;
-        if(choice==='AUTO'){
-            record.manual=false;
-            record.bureau=(data.hints[id]&&data.hints[id].bureau)||
-                spDetectBureauForRecipient(record.name)||'OTHER';
-            record.source=(data.hints[id]&&data.hints[id].bureau)?
-                'recipient address':record.bureau==='OTHER'?'unassigned':'job name';
-        }else if(Object.prototype.hasOwnProperty.call(LIQ_LABELS,choice)){
-            record.manual=true;
-            record.bureau=choice;
-            record.source='manual';
-        }else return;
-        liqSave(data);
-        liqRender();
+    // Keep the exact existing floating-panel drag behavior; prevent text
+    // selection/expansion in the inner content from starting a panel drag.
+    panel.addEventListener('mousedown',event=>{
+        if(event.target.closest('button,summary,details,input,select'))
+            event.stopPropagation();
     });
     panel.addEventListener('click',function(event){
+        const edit=event.target.closest('button[data-liq-edit]');
         const remove=event.target.closest('button[data-liq-remove]');
+        if(edit){
+            const data=liqRead(),record=data.jobs[edit.dataset.liqEdit];
+            if(!record)return;
+            const name=window.prompt('Client name for Job #'+record.id,record.client);
+            if(name===null)return;
+            const label=window.prompt('Bureau or creditor for '+name,
+                record.target==='OTHER'?'':record.targetLabel);
+            if(label===null)return;
+            const target=liqTarget(label);
+            record.client=name.trim()||'Unsorted';
+            record.target=target.key;
+            record.targetLabel=target.label;
+            record.manual=true;
+            liqSave(data);liqRender();return;
+        }
         if(remove){
-            const id=remove.dataset.liqRemove;
-            const data=liqRead();
+            const id=remove.dataset.liqRemove,data=liqRead();
             delete data.jobs[id];
-            data.excluded[id]=true; // Do not re-add a removed job on refresh.
-            liqSave(data);
-            liqRender();
-            return;
+            data.excluded[id]=true;
+            liqSave(data);liqRender();return;
         }
         if(event.target.closest('#liqClearAll')){
-            if(!window.confirm('Clear all recorded liquidation jobs and totals?'))return;
-            liqPauseCapture=true; // Avoid instantly re-adding this page's job.
-            liqSave({jobs:{},hints:{},excluded:{}});
+            if(!window.confirm('Clear this browser’s client liquidation records?'))return;
+            liqPauseCapture=true;
+            liqSave({jobs:{},excluded:{}});
             liqRender();
         }
     });
     liqRender();
 }
+function liqWatchProcessClick(){
+    // The existing missing-details blocker runs first in capture phase and
+    // stops propagation. A blocked click therefore never stages a job.
+    if(document.documentElement.dataset.liqStageInstalled==='true')return;
+    document.documentElement.dataset.liqStageInstalled='true';
+    document.addEventListener('click',function(event){
+        const node=event.target.closest&&event.target.closest('#processBtn');
+        if(node&&node.matches('button')&&document.querySelector('#newJobContent'))
+            liqStageJob();
+    },true);
+}
 liqConnectControls();
+liqWatchProcessClick();
 window.addEventListener('storage',function(event){
     if(event.key===LIQ_STORE_KEY)liqRender();
 });
-liqCapturePage();
-// Postalocity fills job information asynchronously; revisit without fetching
-// other jobs, modifying server state, or counting the same job twice.
-setInterval(liqCapturePage,2500);
+liqCaptureProcessed();
+setInterval(liqCaptureProcessed,2500);
 
 ///////////////////////////////
 // MASCOT SETTINGS
@@ -2039,6 +2147,8 @@ function restoreBox(){
 }
 
 function reconnectLiquidation(){
+    const panel=box.querySelector('#calculator');
+    if(panel)panel.removeAttribute('data-liq-controls');
     liqConnectControls();
 }
 
