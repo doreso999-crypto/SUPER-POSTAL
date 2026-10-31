@@ -243,11 +243,36 @@ function spClearEveryReturnAddressField(){
     if(paste)paste.focus();
 }
 
+function spRefreshFilledReturnFields(){
+    const modal=document.querySelector('#settingsReturnAddress-Modal');
+    if(!modal)return;
+    modal.querySelectorAll('#envelopeReturn-address input, #envelopeReturn-address textarea, #returnAddressPaste').forEach(function(field){
+        const hasValue=String(field.value||'').trim().length>0;
+        field.classList.toggle('sp-return-populated',hasValue);
+    });
+}
+function spWatchFilledReturnFields(){
+    const modal=document.querySelector('#settingsReturnAddress-Modal');
+    if(!modal)return;
+    if(modal.dataset.spFilledWatcher!=='true'){
+        ['input','change'].forEach(function(type){
+            modal.addEventListener(type,function(event){
+                if(event.target.closest('#envelopeReturn-address, #returnAddressParser'))
+                    spRefreshFilledReturnFields();
+            });
+        });
+        const jq=window.jQuery||window.$;
+        if(jq&&jq.fn)jq(modal).on('shown.bs.modal.spFilled',spRefreshFilledReturnFields);
+        modal.dataset.spFilledWatcher='true';
+    }
+    spRefreshFilledReturnFields();
+}
+
 function addParser(){
     const form=document.querySelector('#envelopeReturn-address');
     if(!form)return;
     const existing=document.querySelector('#returnAddressParser');
-    if(existing){spSizeReturnAddressDialog(form,existing);spKeepCalculatorVisibleForReturnModal(form.closest('#settingsReturnAddress-Modal'));return;}
+    if(existing){spSizeReturnAddressDialog(form,existing);spKeepCalculatorVisibleForReturnModal(form.closest('#settingsReturnAddress-Modal'));spWatchFilledReturnFields();return;}
     if(!document.querySelector('#spParserStyle')){
         const style=document.createElement('style');
         style.id='spParserStyle';
@@ -268,6 +293,8 @@ function addParser(){
           '#returnAddressParser #parseReturnBtn{background:#215fbc;border-color:#215fbc;color:#fff}',
           '#returnAddressParser #parseReturnBtn:hover{background:#184b98}',
           '#returnAddressParser #spClearAllReturnBtn{border-color:#ebc5c5;color:#9a3030}',
+          '#settingsReturnAddress-Modal #envelopeReturn-address input.sp-return-populated, #settingsReturnAddress-Modal #envelopeReturn-address textarea.sp-return-populated, #settingsReturnAddress-Modal #returnAddressPaste.sp-return-populated{background:#e4f7e9!important;border:1px solid #268f50!important;color:#154b2e!important;box-shadow:inset 0 0 0 1px rgba(38,143,80,.12)}',
+          '#settingsReturnAddress-Modal #envelopeReturn-address input.sp-return-populated:focus, #settingsReturnAddress-Modal #returnAddressPaste.sp-return-populated:focus{outline:2px solid rgba(38,143,80,.35)!important;outline-offset:1px}',
           '#returnAddressParser #spParserStatus{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid #b6dec7;background:#eaf8ef;color:#205b38;font-size:12px;line-height:1.5}',
           '#returnAddressParser #spParserStatus[data-type="error"]{border-color:#edb5b5;background:#fff0f0;color:#852929}',
           '#returnAddressParser #spParserStatus[data-type="warning"]{border-color:#e8d098;background:#fff7e6;color:#75501b}',
@@ -304,7 +331,6 @@ function addParser(){
       '<label for="returnAddressPaste">Client address</label>',
       '<textarea id="returnAddressPaste" rows="4" placeholder="Jane Doe&#10;123 Main Street, Apt 4&#10;Orlando, Florida 32801" spellcheck="false"></textarea>',
       '<div class="sp-actions"><button type="button" id="parseReturnBtn">Parse &amp; fill</button>',
-      '<button type="button" id="spClearPasteBtn">Clear paste</button>',
       '<button type="button" id="spClearAllReturnBtn">Clear all fields</button></div>',
       '<div id="spParserStatus" role="status" aria-live="polite" hidden></div>',
       '<div id="spParserPreview" aria-label="Parsed address preview" hidden></div>',
@@ -313,13 +339,10 @@ function addParser(){
     form.parentNode.insertBefore(box,form);
     spSizeReturnAddressDialog(form,box);
     spKeepCalculatorVisibleForReturnModal(form.closest('#settingsReturnAddress-Modal'));
+    spWatchFilledReturnFields();
     const paste=box.querySelector('#returnAddressPaste');
     box.querySelector('#parseReturnBtn').addEventListener('click',parseAddress);
     box.querySelector('#spClearAllReturnBtn').addEventListener('click',spClearEveryReturnAddressField);
-    box.querySelector('#spClearPasteBtn').addEventListener('click',function(){
-        paste.value='';box.querySelector('#spParserStatus').hidden=true;
-        box.querySelector('#spParserPreview').hidden=true;paste.focus();
-    });
     paste.addEventListener('input',function(){
         box.querySelector('#spParserStatus').hidden=true;
         box.querySelector('#spParserPreview').hidden=true;
