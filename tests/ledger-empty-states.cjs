@@ -97,6 +97,7 @@ const linkButton=linkAvailable.items.find(x=>x.tag==='button'&&x.textContent==='
 assert.ok(selector,'missing-address state shows an existing saved-client selector');
 assert.equal(selector.children.length,2,'placeholder plus one tracked client are offered');
 assert.equal(selector.children[1].value,'tracked-1');
+assert.equal(selector.value,'tracked-1','a sole tracked client is preselected for quicker explicit recovery');
 assert.ok(linkButton,'recovery offers an explicit local link action');
 assert.match(linkAvailable.text,/does not modify Postalocity/,'no native address changes are implied');
 selector.value='tracked-1';linkButton.onclick();
