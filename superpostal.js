@@ -1590,7 +1590,7 @@ function liqTarget(raw){
     // Other destinations are creditors; do not silently count them as bureaus.
     if(key && key.length<=48 && /^[A-Z0-9][A-Z0-9 .&/']*$/.test(key) &&
        /[A-Z]/.test(key))return {key:'CR:'+key,label:key};
-    return {key:'OTHER',label:'Unassigned'};
+    return null;
 }
 const LIQ_TYPES=new Set([
     'LP','LATE','BK','BANKRUPTCY','CO','CHARGEOFF','CHARGE OFF','COL','COLL',
@@ -1602,7 +1602,7 @@ function liqParseFileLabel(raw){
     const original=String(raw||'').trim().split(/[\\/]/).pop()
         .replace(/\.pdf$/i,'').replace(/[–—]/g,'-').trim();
     const parts=original.split(/\s*-\s*/).map(x=>x.trim()).filter(Boolean);
-    if(parts.length<2)return {client:'Unsorted',target:'OTHER',targetLabel:'Unassigned',label:original};
+    if(parts.length<2)return null;
     let hadType=false;
     if(parts.length>=3 && LIQ_TYPES.has(liqKey(parts[parts.length-1]))){
         parts.pop();hadType=true;
@@ -1613,11 +1613,9 @@ function liqParseFileLabel(raw){
     // "Mary-Anne" is probably a hyphenated name, not creditor "Anne".
     if(!hadType && dest.key.startsWith('CR:') &&
        destRaw!==destRaw.toUpperCase() && !/\s/.test(destRaw)){
-        return {client:'Unsorted',target:'OTHER',targetLabel:'Unassigned',label:original};
+        return null;
     }
-    if(!client||dest.key==='OTHER')return {
-        client:'Unsorted',target:'OTHER',targetLabel:'Unassigned',label:original
-    };
+    if(!client||!dest)return null;
     return {client:client,target:dest.key,targetLabel:dest.label,label:original};
 }
 function liqFromFiles(names,jobName){
@@ -1628,14 +1626,12 @@ function liqFromFiles(names,jobName){
     }
     const parsed=files.map(liqParseFileLabel);
     const first=parsed[0];
-    const consistent=parsed.every(item=>item.client!=='Unsorted' &&
+    const consistent=!!first && parsed.every(item=>item &&
         liqKey(item.client)===liqKey(first.client) && item.target===first.target);
     if(consistent)return {...first,files:files,source:'PDF filename'};
-    // A job can have multiple PDF files but only one total. Do not allocate
-    // its full cost to several clients or creditors and inflate their totals.
-    return {client:'Unsorted',target:'OTHER',targetLabel:'Unassigned',
-        label:jobName||'Multiple/ambiguous PDF names',files:files,
-        source:'mixed/ambiguous filenames'};
+    // One processed job has one total; never invent a client/destination
+    // or apply the same cost to multiple names when filenames conflict.
+    return null;
 }
 function liqActualPrice(){
     const state=document.querySelector('#jobState');
@@ -1656,11 +1652,16 @@ function liqStageJob(){
     const names=spPdfNamesFromPage();
     const parsed=liqFromFiles(names,jobName);
     const prev=data.jobs[id];
+    // Skip unclear names: no placeholder groups or estimated price records.
+    if(!parsed && !(prev && prev.manual &&
+        liqValidAssignment(prev.client,prev.target)))return;
+    const details=parsed||{files:prev.files||[],client:prev.client,
+        target:prev.target,targetLabel:prev.targetLabel,source:prev.source};
     // Processing has been requested, but the final price does not yet exist.
     const record={
-        id:id,jobName:jobName||'Job #'+id,files:parsed.files,client:parsed.client,
-        target:parsed.target,targetLabel:parsed.targetLabel,
-        source:parsed.source,priceCents:null,status:'processing',
+        id:id,jobName:jobName||'Job #'+id,files:details.files,client:details.client,
+        target:details.target,targetLabel:details.targetLabel,
+        source:details.source,priceCents:null,status:'processing',
         manual:false,updatedAt:Date.now()
     };
     if(prev&&prev.manual){
@@ -1682,6 +1683,9 @@ function liqCaptureProcessed(){
     // If the user opens a processed job without this tab's earlier click,
     // fall back to its job name. Never invent an original PDF filename.
     const parsed=previous?null:liqFromFiles([],jobName);
+    // Never create a fabricated client or destination for an unclear job.
+    if(!previous && !parsed)return;
+    if(previous && !liqValidAssignment(previous.client,previous.target))return;
     const record=previous?{...previous}:{
         id:id,jobName:jobName||'Job #'+id,files:[],
         client:parsed.client,target:parsed.target,targetLabel:parsed.targetLabel,
@@ -1695,6 +1699,13 @@ function liqCaptureProcessed(){
     liqSave(data);
     liqRender();
 }
+function liqValidAssignment(client,target){
+    const name=liqKey(client);
+    const dest=String(target||'');
+    return !!name && name!=='UNSORTED' && name!=='UNASSIGNED' &&
+        (dest==='EX'||dest==='EQU'||dest==='TU'||
+         (dest.startsWith('CR:') && !!liqTarget(dest.slice(3))));
+}
 function liqElement(tag,text,style){
     const el=document.createElement(tag);
     if(text!==undefined&&text!==null)el.textContent=String(text);
@@ -1704,16 +1715,17 @@ function liqElement(tag,text,style){
 function liqGroupData(data){
     const clients=new Map();
     const jobs=Object.values(data.jobs).filter(job=>job &&
-        /^\d+$/.test(String(job.id)) && typeof job.client==='string');
+        /^\d+$/.test(String(job.id)) &&
+        liqValidAssignment(job.client,job.target));
     jobs.forEach(job=>{
-        const key=liqKey(job.client||'Unsorted');
+        const key=liqKey(job.client);
         if(!clients.has(key))clients.set(key,{
-            client:job.client||'Unsorted',key:key,total:0,processed:0,pending:0,targets:new Map()
+            client:job.client,key:key,total:0,processed:0,pending:0,targets:new Map()
         });
         const client=clients.get(key);
-        const target=job.target||'OTHER';
+        const target=job.target;
         if(!client.targets.has(target))client.targets.set(target,{
-            key:target,label:job.targetLabel||'Unassigned',
+            key:target,label:job.targetLabel||target.replace(/^CR:/,''),
             total:0,processed:0,pending:0,jobs:[]
         });
         const group=client.targets.get(target);
@@ -1801,11 +1813,6 @@ function liqRender(){
                         overflowWrap:'anywhere',opacity:'.76'
                     })
                 );
-                if(job.source==='mixed/ambiguous filenames')row.appendChild(
-                    liqElement('div','Multiple or unclear destinations — not allocated',{
-                        color:'#9c3123',fontWeight:'700'
-                    })
-                );
                 const actions=liqElement('div',null,{
                     display:'flex',justifyContent:'flex-end',gap:'7px',marginTop:'4px'
                 });
@@ -1847,10 +1854,14 @@ function liqConnectControls(){
             const name=window.prompt('Client name for Job #'+record.id,record.client);
             if(name===null)return;
             const label=window.prompt('Bureau or creditor for '+name,
-                record.target==='OTHER'?'':record.targetLabel);
+                record.targetLabel);
             if(label===null)return;
             const target=liqTarget(label);
-            record.client=name.trim()||'Unsorted';
+            if(!name.trim()||!target){
+                window.alert('Please enter a client name and a valid bureau or creditor.');
+                return;
+            }
+            record.client=name.trim();
             record.target=target.key;
             record.targetLabel=target.label;
             record.manual=true;
