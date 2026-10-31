@@ -30,7 +30,7 @@ p.document.querySelector('#jobState').textContent='Approved';p.testTick();a.test
 end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='Clear');assert.equal(end.disabled,false);end.click();a.testTick();
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Session ended/);
 const start=[...a.document.querySelectorAll('button')].find(e=>e.textContent==='Start new session');start.click();a.testTick();
-assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Total: \$0.00/);
+assert.equal(a.document.querySelectorAll('#spLedgerPanel .sp-ledger-group').length,0,'empty session hides all bureau sections');
 a.close();p.close();another.close();console.log('PASS: before/after HTML fixtures, actual address parser, rendered bureau total, duplicate page, confirmed Clear and end/restart controls.');
 
 const orphan=page('200',second,first);
@@ -45,7 +45,7 @@ setTimeout(()=>{
 const onClose=page('404','<span id="settingsReturnAddressSource-Link">FROM JOB SETTINGS:<br>Closing Client<br>123 Main St<br>Denver CO 80201</span><input id="overview-jobName" value="Closing EX"><span id="jobState">New</span><button onclick="deleteJob()">Delete Job</button>');
 const native=onClose.document.querySelector('[onclick="deleteJob()"]');
 let nativeClicks=0;native.addEventListener('click',()=>nativeClicks++);
-const panelDelete=[...onClose.document.querySelectorAll('#spLedgerPanel button')].find(e=>e.textContent==='Delete job in Postalocity');
+const panelDelete=[...onClose.document.querySelectorAll('#spLedgerPanel button')].find(e=>e.textContent==='Delete job');
 assert.ok(panelDelete);panelDelete.click();assert.equal(nativeClicks,1,'Panel uses Postalocity native delete control');
 const leaving=new onClose.Event('beforeunload',{cancelable:true});onClose.dispatchEvent(leaving);
 assert.equal(leaving.defaultPrevented,true,'Unapproved tab close produces a browser confirmation');
@@ -53,14 +53,14 @@ onClose.close();
 console.log('PASS: panel invokes native Delete Job; pending job warns before leaving.');
 
 const closingA=page('601',first),closingB=page('602',first);
-assert.match(closingA.document.querySelector('#spLedgerPanel').textContent,/2 jobs/);
+assert.equal(closingA.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'2');
 closingA.dispatchEvent(new closingA.Event('pagehide'));
 closingB.testTick();
-assert.doesNotMatch(closingB.document.querySelector('#spLedgerPanel').textContent,/#601/,'closed pending job is removed from a sibling tab');
-assert.match(closingB.document.querySelector('#spLedgerPanel').textContent,/1 job/);
+assert.equal(closingB.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'1','closed pending job is removed from a sibling tab');
+assert.equal(closingB.document.querySelectorAll('#spLedgerPanel .sp-ledger-letter').length,1);
 closingB.document.querySelector('#jobState').textContent='Approved';closingB.testTick();
 closingB.dispatchEvent(new closingB.Event('pagehide'));
 const viewer=page('603',first);
-assert.match(viewer.document.querySelector('#spLedgerPanel').textContent,/#602/,'approved closed-tab job stays in panel');
+assert.equal(viewer.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'1','approved closed-tab job stays in panel');
 closingA.close();closingB.close();viewer.close();
 console.log('PASS: cross-tab job close drops a pending record but retains an approved record.');
