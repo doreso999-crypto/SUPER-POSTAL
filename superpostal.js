@@ -233,7 +233,7 @@ function addParser(){
           '#settingsReturnAddress-Modal.sp-address-layout #envelopeReturn-address .settings-addressBlock-combo{width:100%;max-width:100%;min-width:0}',
           '#settingsReturnAddress-Modal.sp-address-layout #envelopeReturn-address input{max-width:100%;box-sizing:border-box}',
           '#settingsReturnAddress-Modal.sp-address-layout #returnAddressParser textarea{min-height:112px}',
-          '@media(max-width:720px){#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll{grid-template-columns:minmax(0,1fr)}#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#returnAddressParser,#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#envelopeReturn-address{grid-column:1}}',
+          '@media(max-width:720px){#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll{grid-template-columns:minmax(0,1fr)}#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#returnAddressParser,#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#envelopeReturn-address{grid-column:1}#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>label.col-form-label,#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#settingsReturnAddressSource-Value{grid-column:1!important}}',
           '@media(max-width:460px){#returnAddressParser #spParserPreview{grid-template-columns:1fr}#returnAddressParser button{flex:1}}'
         ].join('\n');
         document.head.appendChild(style);
