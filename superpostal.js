@@ -986,6 +986,9 @@ function spProcessJobWarning(missing,control){
     try{box.focus({preventScroll:true});}catch(_e){box.focus();}
     if(box.scrollIntoView)box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
+// This bridge lives in the outer userscript scope. The LIQUIDATION module
+// below has its own nested scope and registers its tracking function here.
+let spLiquidationStageJob=null;
 function spBlockIncompleteProcess(event,control){
     let result;
     try{result=spJobDetailsReadiness();}
@@ -998,10 +1001,18 @@ function spBlockIncompleteProcess(event,control){
         try{
             // A Postalocity job must not proceed unless its liquidation
             // record has also been written and read back successfully.
-            const tracking=liqStageJob();
-            if(!tracking.ready)result={ready:false,missing:[tracking.reason]};
+            const tracking=typeof spLiquidationStageJob==='function'?
+                spLiquidationStageJob():
+                {ready:false,reason:'LIQUIDATION has not initialized. Reload Postalocity before processing.'};
+            if(!tracking||tracking.ready!==true){
+                result={ready:false,missing:[tracking&&tracking.reason||
+                    'LIQUIDATION could not verify this job. Reload Postalocity.']};
+            }
         }catch(_error){
-            result={ready:false,missing:['Unable to save this job to LIQUIDATION. Check shared browser storage.']};
+            console.error('[SUPER-POSTAL] LIQUIDATION staging error:',_error);
+            result={ready:false,missing:[
+                'LIQUIDATION encountered a script error. Reload Postalocity; if it continues, check the browser console.'
+            ]};
         }
     }
     if(result.ready){
@@ -2198,9 +2209,16 @@ function liqStageJob(){
     }
     if(!liqSaveJob(record,active))
         return fail('Unable to verify the shared liquidation record. Processing was stopped to prevent a missing expense.');
-    liqRemoveDraft(id,active);
-    liqLastNotice='';
-    liqRender();
+    // The verified shared-storage write determines whether processing can
+    // proceed. Preview cleanup/rendering must not block a successfully
+    // recorded job.
+    try{
+        liqRemoveDraft(id,active);
+        liqLastNotice='';
+        liqRender();
+    }catch(_error){
+        console.warn('[SUPER-POSTAL] Tracking saved; preview update failed:',_error);
+    }
     return {ready:true};
 }
 function liqCaptureProcessed(){
@@ -2452,6 +2470,8 @@ function liqRecoverCurrentJob(){
     if(liqSaveJob(job,active)){liqLastNotice='';liqRender();}
     else window.alert('Recovery could not be saved. The active client may have changed.');
 }
+// Register with the outer Process-this-job safety guard.
+spLiquidationStageJob=liqStageJob;
 liqConnectControls();
 window.addEventListener('sp:verifiedReturnAddressSaved',liqVerifiedReturnSaved);
 window.addEventListener('storage',function(event){
