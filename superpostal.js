@@ -1904,9 +1904,55 @@ document.body.appendChild(box);
         })||'';
     }
     function countable(r){
-        if(!r||!/^\d+$/.test(String(r.id||''))||!norm(r.name))return false;
+        if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!norm(r.name))return false;
         const session=read('session:'+r.session);
         return !!session&&!session.ended&&!!complete(session.address);
+    }
+    const approvedState=status=>/^(?:approved|mailed)(?:\b|$)/i.test(String(status||'').trim());
+    const isApproved=r=>!!r&&(r.approved===true||approvedState(r.status));
+    function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted);}
+    function canClear(key){return !sessionJobs(key).some(r=>!isApproved(r));}
+    function markLifecycle(jobId,action){
+        const r=read('job:'+jobId);if(!r)return;
+        const session=read('session:'+r.session);if(!session||session.ended)return;
+        if(action==='approve'){
+            if(r.deleted)return;
+            r.approved=true;r.status='Approved';
+        }else if(action==='delete'){
+            // Keep a tombstone so an already-open stale tab cannot resurrect it.
+            if(isApproved(r))return;
+            r.deleted=true;r.status='Deleted';
+        }
+        write('job:'+jobId,r);lastView='';
+    }
+    function clearSession(key){
+        if(!canClear(key))return false;
+        const session=read('session:'+key);if(!session)return false;
+        session.ended=true;session.seen=Date.now();write('session:'+key,session);
+        keys().filter(k=>k.startsWith('job:')).forEach(k=>{
+            const r=read(k);if(r&&r.session===key){r.cents=null;r.recipients=[];r.name='';write(k,r);}
+        });
+        lastView='';return true;
+    }
+    function hookLifecycle(api){
+        // Observe successful native actions only. Button clicks/confirmation dialogs
+        // and failure callbacks never modify the ledger.
+        ['delete','deleteJob','removeJob','approve','approveJob'].forEach(method=>{
+            const original=api.job[method];
+            if(typeof original!=='function'||original.spLedgerLifecycle)return;
+            function wrapped(handler){
+                if(!handler||typeof handler.handleSuccessResponse!=='function')return original.apply(this,arguments);
+                const request=handler.request||{};
+                const target=String(request.jobId||request.id||(request.job&&request.job.id)||id());
+                const success=handler.handleSuccessResponse;
+                handler.handleSuccessResponse=function(){
+                    markLifecycle(target,/^approve/i.test(method)?'approve':'delete');
+                    return success.apply(this,arguments);
+                };
+                return original.apply(this,arguments);
+            }
+            wrapped.spLedgerLifecycle=true;api.job[method]=wrapped;
+        });
     }
     function group(r){
         if(r.override)return {key:r.override,label:({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[r.override]||r.override};
@@ -1925,6 +1971,14 @@ document.body.appendChild(box);
         const jobId=id();if(!jobId)return null;
         let r=read('job:'+jobId), a=returnAddress();
         if(r&&!read('session:'+r.session)){remove('job:'+jobId);r=null;}
+        if(r&&r.deleted)return r;
+        if(r&&isApproved(r)){
+            const savedSession=read('session:'+r.session);
+            if(savedSession&&savedSession.ended)return null;
+            // An old draft tab cannot erase an approved job's identity or price.
+            if(savedSession&&Date.now()-lastHeartbeat>15000){savedSession.seen=Date.now();write('session:'+r.session,savedSession);lastHeartbeat=Date.now();}
+            return r;
+        }
         if(!a&&!r)return null;
         const prior=observed.get(jobId)||{};
         const currentAddress=a?addressKey(a):'';
@@ -1937,7 +1991,8 @@ document.body.appendChild(box);
         const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
         if(!name&&!r.name&&recovered.has(jobId))r.name=recovered.get(jobId).name;
         const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
-        const state=document.querySelector('#jobState');if(state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
+        const state=document.querySelector('#jobState');if(!isApproved(r)&&state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
+        if(approvedState(r.status))r.approved=true;
         const cost=document.querySelector('.totalPriceRow .totalPrice');
         if(cost&&/processed|approved|mailed/i.test(r.status||'')){
             const value=cost.textContent.trim().replace(/[$,\s]/g,'');
@@ -1952,6 +2007,7 @@ document.body.appendChild(box);
     function hookRecipientSave(){
         let api;try{api=typeof apiAction!=='undefined'?apiAction:window.apiAction;}catch(e){}
         if(!api||!api.job)return;
+        hookLifecycle(api);
         ['deleteInputDocList','buildInputDocList'].forEach(method=>{
             const original=api.job[method];
             if(typeof original!=='function'||original.spLedger)return;
@@ -1999,7 +2055,7 @@ document.body.appendChild(box);
         }
         const session=r&&read('session:'+r.session);
         const jobs=session&&!session.ended?keys().filter(k=>k.startsWith('job:')).map(read).filter(j=>j&&j.session===r.session&&countable(j)):[];
-        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage]);if(view===lastView)return;lastView=view;
+        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage,session&&canClear(r.session)]);if(view===lastView)return;lastView=view;
         panel.replaceChildren(el('strong','CLIENT TOTALS'));
         if(error)panel.append(el('p',error));
         if(!r||!session||session.ended){
@@ -2016,7 +2072,8 @@ document.body.appendChild(box);
             return;
         }
         panel.append(el('h4',session.address.name),el('small',[session.address.address1,session.address.address2,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(', ')));
-        if(!countable(r))panel.append(el('p','This job is excluded until it has both a saved return address and a job name.'));
+        if(r.deleted)panel.append(el('p','This job was deleted. Its cost has been removed.'));
+        else if(!countable(r))panel.append(el('p','This job is excluded until it has both a saved return address and a job name.'));
         const groups=new Map();let total=0,pending=0;
         jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)){b.sum+=j.cents;total+=j.cents;}else pending++;});
         [...groups.values()].sort((a,b)=>a.label.localeCompare(b.label)).forEach(b=>{
@@ -2032,12 +2089,16 @@ document.body.appendChild(box);
         });
         panel.append(el('h4','Total: '+money(total)),el('small',pending?pending+' job(s) awaiting price.':'Processed prices; approval status shown per job.'));
         const copy=el('button','Copy summary');copy.onclick=async()=>{try{await navigator.clipboard.writeText(session.address.name+'\n'+[...groups.values()].map(b=>b.label+': '+money(b.sum)).join('\n')+'\nTotal: '+money(total));copy.textContent='Copied';}catch(e){copy.textContent='Copy unavailable';}};
-        const end=el('button','End session');end.onclick=()=>{const s=read('session:'+r.session);if(s){s.ended=true;s.seen=Date.now();write('session:'+r.session,s);keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===r.session){j.cents=null;j.recipients=[];j.name='';write(k,j);}});lastView='';tick();}};
+        const end=el('button','Clear');end.disabled=!canClear(r.session);
+        end.title=end.disabled?'Approve or delete all pending jobs before clearing.':'Clear this client’s temporary totals in all tabs.';
+        end.onclick=()=>{if(clearSession(r.session))tick();};
+        const awaiting=sessionJobs(r.session).filter(j=>!isApproved(j)).length;
+        panel.append(el('small',awaiting?awaiting+' job(s) still awaiting approval.':'No jobs awaiting approval. You can clear these totals.'));
         panel.append(copy,end,el('small','This browser only · expires after 15 minutes without an active matching tab.'));
     }
     function tick(){try{clean();hookRecipientSave();render(capture());}catch(e){console.warn('SUPER POSTAL totals:',e);}}
     window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
-    document.addEventListener('click',e=>{if(e.target.closest('#processBtn')){const r=capture();if(r){r.cents=null;r.status='Processing';write('job:'+r.id,r);}}},true);
+    document.addEventListener('click',e=>{if(e.target.closest('#processBtn')){const r=capture();if(r&&!r.deleted&&!isApproved(r)){r.cents=null;r.status='Processing';write('job:'+r.id,r);}}},true);
     window.addEventListener('pagehide',()=>capture());
     setInterval(tick,1500);tick();
 })();

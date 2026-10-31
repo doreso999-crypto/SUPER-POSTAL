@@ -23,7 +23,9 @@ assert.match(p.document.querySelector('#spLedgerPanel').textContent,/Test Client
 assert.match(p.document.querySelector('#spLedgerPanel').textContent,/Experian.*\$1.39/);
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Total: \$1.39/);
 const another=page('1301773',second);assert.match(another.document.querySelector('#spLedgerPanel').textContent,/Total: \$1.39/);
-const end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='End session');end.click();a.testTick();
+let end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='Clear');assert.equal(end.disabled,true);
+p.document.querySelector('#jobState').textContent='Approved';p.testTick();a.testTick();
+end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='Clear');assert.equal(end.disabled,false);end.click();a.testTick();
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Session ended/);
 const start=[...a.document.querySelectorAll('button')].find(e=>e.textContent==='Start new session');start.click();a.testTick();
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Total: \$0.00/);

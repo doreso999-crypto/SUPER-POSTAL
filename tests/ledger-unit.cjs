@@ -12,7 +12,7 @@ function tab(id,client='John Doe',store=shared){
  spBureauDisplayName:c=>({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[c]||'Unknown bureau',
  SP_RECIPIENT_BUREAUS:{EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}},
  document:{querySelector:s=>s==='#envelopeReturn-address'?{}:s==='#overview-jobName'?(state.name===null?null:{value:state.name}):s==='#jobState'?{textContent:state.status}:s==='.totalPriceRow .totalPrice'?(state.cost?{textContent:state.cost}:null):null,querySelectorAll:()=>[]}};
- vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave};})();',ctx);return {api:ctx.api,state,ctx};
+ vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle};})();',ctx);return {api:ctx.api,state,ctx};
 }
 const a=tab('101'),b=tab('102'),j=tab('103','Jane Doe');const ar=a.api.capture(),br=b.api.capture(),jr=j.api.capture();
 assert.equal(ar.session,br.session);assert.notEqual(ar.session,jr.session);
@@ -37,3 +37,22 @@ gated.state.name='EX letter';record=gated.api.capture();assert.equal(gated.api.c
 gated.state.name='   ';record=gated.api.capture();assert.equal(gated.api.countable(record),false);
 const invalid=Object.assign({},record,{name:'EX letter',session:'missing'});assert.equal(gated.api.countable(invalid),false);
 console.log('PASS: blank-name jobs and missing-return-address jobs excluded; named linked jobs included; clearing name excludes job.');
+
+const lifeStore=storage();const life=[tab('801','Lifecycle',lifeStore),tab('802','Lifecycle',lifeStore),tab('803','Lifecycle',lifeStore)];
+life.forEach(t=>{t.state.status='Processed - Ready for Approval';t.state.cost='$1.39';t.api.capture();});
+const owner=life[0],key=owner.api.read('job:801').session;
+const total=()=>['801','802','803'].map(id=>owner.api.read('job:'+id)).filter(r=>owner.api.countable(r)).reduce((n,r)=>n+r.cents,0);
+assert.equal(total(),417);assert.equal(owner.api.canClear(key),false);assert.equal(owner.api.clearSession(key),false);
+let successHandler;const native={job:{deleteJob(h){successHandler=h;},approveJob(h){successHandler=h;}}};owner.api.hookLifecycle(native);
+native.job.deleteJob({request:{jobId:'802'},handleSuccessResponse(){}});
+assert.equal(total(),417,'click/request without success must not remove a job');
+successHandler.handleSuccessResponse();assert.equal(total(),278);
+life[1].api.capture();assert.equal(total(),278,'stale deleted tab must not resurrect record');
+native.job.approveJob({request:{jobId:'801'},handleSuccessResponse(){}});assert.equal(owner.api.canClear(key),false);
+successHandler.handleSuccessResponse();assert.equal(total(),278);owner.api.capture();assert.equal(owner.api.read('job:801').approved,true);
+owner.api.markLifecycle('801','delete');assert.equal(total(),278,'approved records must be retained');
+assert.equal(owner.api.canClear(key),false);owner.api.markLifecycle('803','approve');assert.equal(owner.api.canClear(key),true);
+assert.equal(owner.api.clearSession(key),true);assert.equal(total(),0);
+console.log('PASS: three pending prices; confirmed deletion deducts one; failed/unconfirmed deletion preserves totals; stale tab cannot restore deleted job; approvals retained; clear gated on no pending jobs.');
+
+const frozen=tab('901','Approved Client',storage());frozen.state.status='Processed - Ready for Approval';frozen.state.cost='$2.00';frozen.api.capture();frozen.api.markLifecycle('901','approve');frozen.state.name='';frozen.state.address='Changed draft';const locked=frozen.api.capture();assert.equal(locked.name,'John EX');assert.equal(locked.cents,200);assert.equal(frozen.api.countable(locked),true);console.log('PASS: approved identity and price survive stale draft edits.');
