@@ -12,7 +12,7 @@ function tab(id,client='John Doe',store=shared){
  spBureauDisplayName:c=>({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[c]||'Unknown bureau',
  SP_RECIPIENT_BUREAUS:{EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}},
  document:{querySelector:s=>s==='#envelopeReturn-address'?{}:s==='#overview-jobName'?(state.name===null?null:{value:state.name}):s==='#jobState'?{textContent:state.status}:s==='.totalPriceRow .totalPrice'?(state.cost?{textContent:state.cost}:null):null,querySelectorAll:()=>[]}};
- vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle};})();',ctx);return {api:ctx.api,state,ctx};
+ vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage};})();',ctx);return {api:ctx.api,state,ctx};
 }
 const a=tab('101'),b=tab('102'),j=tab('103','Jane Doe');const ar=a.api.capture(),br=b.api.capture(),jr=j.api.capture();
 assert.equal(ar.session,br.session);assert.notEqual(ar.session,jr.session);
@@ -42,17 +42,51 @@ const lifeStore=storage();const life=[tab('801','Lifecycle',lifeStore),tab('802'
 life.forEach(t=>{t.state.status='Processed - Ready for Approval';t.state.cost='$1.39';t.api.capture();});
 const owner=life[0],key=owner.api.read('job:801').session;
 const total=()=>['801','802','803'].map(id=>owner.api.read('job:'+id)).filter(r=>owner.api.countable(r)).reduce((n,r)=>n+r.cents,0);
-assert.equal(total(),417);assert.equal(owner.api.canClear(key),false);assert.equal(owner.api.clearSession(key),false);
+assert.equal(total(),417);assert.equal(owner.api.canClear(key),true,'Clear is available even with pending jobs');
 let successHandler;const native={job:{deleteJob(h){successHandler=h;},approveJob(h){successHandler=h;}}};owner.api.hookLifecycle(native);
 native.job.deleteJob({request:{jobId:'802'},handleSuccessResponse(){}});
 assert.equal(total(),417,'click/request without success must not remove a job');
 successHandler.handleSuccessResponse();assert.equal(total(),278);
 life[1].api.capture();assert.equal(total(),278,'stale deleted tab must not resurrect record');
-native.job.approveJob({request:{jobId:'801'},handleSuccessResponse(){}});assert.equal(owner.api.canClear(key),false);
+native.job.approveJob({request:{jobId:'801'},handleSuccessResponse(){}});assert.equal(owner.api.canClear(key),true);
 successHandler.handleSuccessResponse();assert.equal(total(),278);owner.api.capture();assert.equal(owner.api.read('job:801').approved,true);
 owner.api.markLifecycle('801','delete');assert.equal(total(),278,'approved records must be retained');
-assert.equal(owner.api.canClear(key),false);owner.api.markLifecycle('803','approve');assert.equal(owner.api.canClear(key),true);
+assert.equal(owner.api.canClear(key),true);owner.api.markLifecycle('803','approve');assert.equal(owner.api.canClear(key),true);
 assert.equal(owner.api.clearSession(key),true);assert.equal(total(),0);
-console.log('PASS: three pending prices; confirmed deletion deducts one; failed/unconfirmed deletion preserves totals; stale tab cannot restore deleted job; approvals retained; clear gated on no pending jobs.');
+console.log('PASS: three pending prices; confirmed deletion deducts one; failed/unconfirmed deletion preserves totals; stale tab cannot restore deleted job; approvals retained; clear allowed with pending jobs.');
 
 const frozen=tab('901','Approved Client',storage());frozen.state.status='Processed - Ready for Approval';frozen.state.cost='$2.00';frozen.api.capture();frozen.api.markLifecycle('901','approve');frozen.state.name='';frozen.state.address='Changed draft';const locked=frozen.api.capture();assert.equal(locked.name,'John EX');assert.equal(locked.cents,200);assert.equal(frozen.api.countable(locked),true);console.log('PASS: approved identity and price survive stale draft edits.');
+
+const unassigned=tab('777','Unassigned client',storage());
+unassigned.state.name='General correspondence';
+const unassignedRecord=unassigned.api.capture();
+assert.equal(unassigned.api.countable(unassignedRecord),false,'Unassigned creditor group is never counted');
+unassignedRecord.override='EX';unassigned.api.write('job:777',unassignedRecord);
+assert.equal(unassigned.api.countable(unassigned.api.read('job:777')),true,'Assigning a bureau starts counting it');
+const early=tab('778','Early clear',storage());
+early.state.status='Processed - Ready for Approval';early.state.cost='$3.00';
+const earlyRecord=early.api.capture();
+assert.equal(early.api.canClear(earlyRecord.session),true);
+assert.equal(early.api.clearSession(earlyRecord.session),true,'Clear works without approving pending jobs');
+assert.equal(early.api.countable(earlyRecord),false,'Cleared session cannot be recounted');
+console.log('PASS: unassigned jobs excluded until assigned; pending sessions can be cleared safely.');
+
+const closeStore=storage();
+const closedJobs=[tab('980','Close case',closeStore),tab('981','Close case',closeStore),tab('982','Close case',closeStore)];
+closedJobs.forEach(t=>{t.state.status='Processed - Ready for Approval';t.state.cost='$1.39';t.api.capture();});
+const closeTotal=()=>['980','981','982'].map(id=>closedJobs[0].api.read('job:'+id)).filter(r=>closedJobs[0].api.countable(r)).reduce((n,r)=>n+r.cents,0);
+assert.equal(closeTotal(),417);
+closedJobs[1].api.leavePage();
+assert.equal(closeTotal(),278,'closing one pending job tab immediately deducts its cost');
+assert.ok(closedJobs[0].api.read('job:981'),'leaving a tab must not claim the Postalocity job was deleted');
+closedJobs[2].api.markLifecycle('982','approve');
+closedJobs[2].api.leavePage();
+assert.equal(closeTotal(),278,'approved jobs are retained when their tab closes');
+closedJobs[0].api.leavePage();
+assert.equal(closeTotal(),139,'closed pending jobs are all excluded');
+const reopened=tab('981','Close case',closeStore);reopened.state.status='Processed - Ready for Approval';reopened.state.cost='$1.39';reopened.api.capture();
+assert.equal(closeTotal(),278,'reopening an existing job starts counting it again');
+const duplicate=tab('981','Close case',closeStore);duplicate.state.status='Processed - Ready for Approval';duplicate.api.capture();
+reopened.api.leavePage();assert.equal(closeTotal(),278,'one of two open tabs must not hide the same job');
+duplicate.api.leavePage();assert.equal(closeTotal(),139,'last tab closing removes the unapproved job from totals');
+console.log('PASS: pending tab close deducts price, approved close preserves price, reopening restores job, duplicate tabs are not double counted.');
