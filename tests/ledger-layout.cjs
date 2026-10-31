@@ -57,7 +57,12 @@ assert.equal(flatten(panel).filter(el=>el.className==='sp-ledger-letter').length
 jobs[1].priceNeedsReview=true;
 render(jobs[0]);
 panel=document.querySelector('#spLedgerPanel');
-assert.match(textAll(panel),/Verified subtotal \(incomplete\): \$1\.39/);
+assert.match(textAll(panel),/Subtotal: \$1\.39/);
+assert.doesNotMatch(textAll(panel),/unverified prices|Copy buttons are disabled|Not included in total|Approved totals remain|Closing an unapproved tab|#[0-9]+|New ·/i,'no verbose operational messages');
+assert.equal(flatten(panel).filter(el=>el.className==='sp-ledger-meta').length,0,'no technical metadata/status rows');
+const pending=flatten(panel).find(el=>el.className==='sp-ledger-price'&&el.dataset.pending==='true');
+assert.ok(pending,'missing job price is indicated inline without warnings');
+assert.equal(pending.textContent,'Pending');
 const otherTotal=flatten(panel).find(el=>el.className==='sp-ledger-totalrow'&&el.dataset.bureau==='OTHER');
 assert.equal(otherTotal.children[2].disabled,true,'unverified bureau cannot copy a misleading amount');
-console.log('PASS: only named, classified jobs; no bureau dropdown; hidden unassigned; conditional sections, Copy and incomplete totals.');
+console.log('PASS: minimalist ledger renders job/letter/price only, hides technical metadata, keeps subtotal honest and disables incomplete bureau copy.');
