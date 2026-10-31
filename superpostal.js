@@ -1132,7 +1132,9 @@ function spRefreshRecipientPdfOverview(){
         {ready:pdfReady,label:'Uploaded PDFs'},
         {ready:returnReady,label:'Saved return address'}
     ];
-    const done=states.every(function(item){return item.ready;});
+    const nameField=document.querySelector('#overview-jobName');
+    const nameReady=!!(nameField&&String(nameField.value||'').trim());
+    const done=nameReady&&states.every(function(item){return item.ready;});
     panel.dataset.completion=done?'complete':'incomplete';
     panel.querySelectorAll('.sp-overview-col').forEach(function(section,i){
         section.dataset.completion=states[i]&&states[i].ready?'complete':'incomplete';
@@ -1140,6 +1142,7 @@ function spRefreshRecipientPdfOverview(){
     const header=panel.querySelector('#spOverviewCompletionLabel');
     if(header){
         const missing=states.filter(function(item){return !item.ready;}).map(function(item){return item.label;});
+        if(!nameReady)missing.unshift('Job name');
         const statusText=done?'All job details ready':'Missing: '+missing.join(', ');
         if(header.textContent!==statusText)header.textContent=statusText;
     }
