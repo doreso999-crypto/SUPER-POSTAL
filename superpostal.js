@@ -2267,22 +2267,24 @@ document.body.appendChild(box);
             #spLedgerPanel .sp-ledger-group{border:1px solid #dfe7f1;border-radius:11px;margin:0 0 10px;background:#fff;overflow:hidden}
             #spLedgerPanel .sp-ledger-grouphead{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f5f8fc;padding:10px 11px;font-weight:800}
             #spLedgerPanel .sp-ledger-count{font-size:11px;font-weight:600;color:#71839a}
-            #spLedgerPanel .sp-ledger-letter{padding:10px 11px;border-top:1px solid #eef1f6}
+            #spLedgerPanel .sp-ledger-letter{padding:9px 11px;border-top:1px solid #eef1f6}
             #spLedgerPanel .sp-ledger-letterhead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
             #spLedgerPanel .sp-ledger-lettername{font-weight:700;font-size:12px;overflow-wrap:anywhere;min-width:0}
-            #spLedgerPanel .sp-ledger-price{font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+            #spLedgerPanel .sp-ledger-price{font-weight:750;white-space:nowrap;font-variant-numeric:tabular-nums;color:#263e5a}
+            #spLedgerPanel .sp-ledger-price[data-pending="true"]{font-weight:500;color:#8694a7;font-size:11px}
             #spLedgerPanel .sp-ledger-meta{font-size:10px;color:#7a8ba0;overflow-wrap:anywhere;margin-top:2px}
-            #spLedgerPanel .sp-ledger-files{padding:0 0 0 16px;margin:6px 0 0;color:#526780;font-size:11px;overflow-wrap:anywhere}
-            #spLedgerPanel .sp-ledger-files li{margin:2px 0}
-            #spLedgerPanel .sp-ledger-warning{font-size:11px;color:#97502e;margin-top:6px}
+            #spLedgerPanel .sp-ledger-files{padding:0;margin:4px 0 0;list-style:none;color:#71839a;font-size:11px;overflow-wrap:anywhere}
+            #spLedgerPanel .sp-ledger-files li{margin:1px 0;line-height:1.45}
+            #spLedgerPanel .sp-ledger-warning{font-size:10px;color:#97602a;margin-top:3px}
             #spLedgerPanel .sp-ledger-totals{display:grid;gap:7px}
-            #spLedgerPanel .sp-ledger-totalrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border:1px solid #dde6ef;border-radius:9px;padding:9px 10px;background:#fafcff}
+            #spLedgerPanel .sp-ledger-totalrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border:0;border-bottom:1px solid #edf1f5;border-radius:0;padding:7px 2px;background:transparent}
             #spLedgerPanel .sp-ledger-totalrow strong{font-size:13px;font-variant-numeric:tabular-nums}
             #spLedgerPanel button{font:600 11px Arial,sans-serif;border:1px solid #c6d4e4;border-radius:7px;padding:7px 9px;background:#fff;color:#2f517b;cursor:pointer;max-width:100%}
             #spLedgerPanel button:disabled{opacity:.45;cursor:not-allowed}
             #spLedgerPanel button:focus-visible{outline:2px solid #376cb2;outline-offset:2px}
             #spLedgerPanel .sp-ledger-footer{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
             #spLedgerPanel .sp-ledger-grand{font-size:15px;font-weight:800;margin-top:10px;font-variant-numeric:tabular-nums}
+            #spLedgerPanel .sp-ledger-pending{color:#8794a5;font-size:10px;font-weight:500;margin-top:2px}
             #spLedgerPanel .sp-ledger-status{padding:9px 10px;border-radius:8px;background:#fff7ed;color:#925124;font-size:11px;margin:10px 0}
             #spLedgerPanel .sp-ledger-empty{font-size:12px;color:#71839a;padding:12px 0}
             @media(max-width:380px){#spLedgerPanel .sp-ledger-totalrow{grid-template-columns:minmax(0,1fr) auto}#spLedgerPanel .sp-ledger-totalrow button{grid-column:1/-1}}
@@ -2315,34 +2317,31 @@ document.body.appendChild(box);
             return;
         }
         const client=el('div',session.address.name||'Client');client.className='sp-ledger-client';panel.append(client);
-        const address=el('div',[session.address.address1,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(' · '));
-        address.className='sp-ledger-address';panel.append(address);
-        if(r.deleted){const alert=el('div','This job was deleted. It is excluded from totals.');alert.className='sp-ledger-status';panel.append(alert);}
-        if(groups.length){const sectionLabel=el('div','BUREAU LETTERS');sectionLabel.className='sp-ledger-heading';panel.append(sectionLabel);}
+        // No repeated address/status paragraphs: the client name is enough.
+        // The bureau cards below show only existing, named jobs.
         let grand=0,missing=0;
         groups.forEach(bucket=>{
             grand+=bucket.sum;missing+=bucket.pending;
             const section=el('section');section.className='sp-ledger-group';section.dataset.bureau=bucket.key;
             const heading=el('div');heading.className='sp-ledger-grouphead';
             const name=el('span',bucket.label.toUpperCase());
-            const count=el('span',bucket.jobs.length+' '+(bucket.jobs.length===1?'job':'jobs'));count.className='sp-ledger-count';
+            const count=el('span',String(bucket.jobs.length));count.className='sp-ledger-count';
             heading.append(name,count);section.append(heading);
             bucket.jobs.forEach(({job,group:g})=>{
                 const letter=el('div');letter.className='sp-ledger-letter';
                 const line=el('div');line.className='sp-ledger-letterhead';
                 const name=el('div',job.name);name.className='sp-ledger-lettername';
                 const verified=Number.isInteger(job.cents)&&!job.priceNeedsReview;
-                const price=el('div',verified?money(job.cents):'Pending price');price.className='sp-ledger-price';
+                const price=el('div',verified?money(job.cents):'Pending');price.className='sp-ledger-price';
+                if(!verified){price.dataset.pending='true';price.title='Price available after processing';}
+                name.title='Job #'+job.id;
                 line.append(name,price);letter.append(line);
-                const meta=el('div','#'+job.id+' · '+(job.status||'Awaiting processing')+(verified?' · Job total':' · Not included in total'));meta.className='sp-ledger-meta';letter.append(meta);
                 const letters=Array.isArray(job.letters)?job.letters:[];
                 if(letters.length){
                     const files=el('ul');files.className='sp-ledger-files';
                     letters.forEach(file=>files.append(el('li',file)));letter.append(files);
-                }else{
-                    const none=el('div','Letter filenames not available for this job');none.className='sp-ledger-meta';letter.append(none);
                 }
-                if(g.warning){const warning=el('div','Review recipient information: conflicting or mixed destinations.');warning.className='sp-ledger-warning';letter.append(warning);}
+                if(g.warning){const warning=el('div','Check recipients');warning.className='sp-ledger-warning';warning.title='Recipient and job name differ, or the job has mixed destinations';letter.append(warning);}
                 section.append(letter);
             });
             panel.append(section);
@@ -2353,22 +2352,20 @@ document.body.appendChild(box);
             const totals=el('div');totals.className='sp-ledger-totals';
             groups.forEach(bucket=>{
                 const row=el('div');row.className='sp-ledger-totalrow';row.dataset.bureau=bucket.key;
-                row.append(el('span',bucket.label),el('strong',money(bucket.sum)+(bucket.pending?' *':'')));
-                const copy=el('button','Copy');copy.type='button';copy.title=bucket.pending?'One or more job prices are unverified. Cannot copy incomplete totals.':'Copy '+bucket.label+' total';
+                row.append(el('span',bucket.label),el('strong',bucket.pending?'Pending':money(bucket.sum)));
+                const copy=el('button','Copy');copy.type='button';copy.title=bucket.pending?'Wait for all prices before copying':'Copy '+bucket.label+' total';
                 copy.disabled=bucket.pending>0;
                 copy.onclick=async()=>{try{await navigator.clipboard.writeText(money(bucket.sum));copy.textContent='Copied';}catch(_error){copy.textContent='Copy unavailable';}};
                 row.append(copy);totals.append(row);
             });panel.append(totals);
-            const overall=el('div',(missing?'Verified subtotal (incomplete): ':'Total: ')+money(grand));overall.className='sp-ledger-grand';panel.append(overall);
-            if(missing){const warn=el('div',missing+' job(s) have unverified prices. Bureau totals marked * are incomplete; their Copy buttons are disabled.');warn.className='sp-ledger-status';panel.append(warn);}
+            const overall=el('div',(missing?'Subtotal: ':'Total: ')+money(grand));overall.className='sp-ledger-grand';panel.append(overall);
+            // Pending amounts are already visible in their rows; no extra notice.
         }
         const footer=el('div');footer.className='sp-ledger-footer';
         const clear=el('button','Clear');clear.title='Clear this client’s tracked totals in all tabs. Postalocity jobs are not deleted.';
         clear.onclick=()=>{if(window.confirm('Clear all local totals for this client, including pending and approved jobs? Postalocity jobs will NOT be deleted.')){if(clearSession(r.session))tick();}};
-        const del=el('button','Delete job in Postalocity');del.title='Use Postalocity’s own Delete Job action.';del.disabled=!!r.deleted||isApproved(r);del.onclick=requestNativeDeletion;
+        const del=el('button','Delete job');del.title='Delete job in Postalocity';del.disabled=!!r.deleted||isApproved(r);del.onclick=requestNativeDeletion;
         footer.append(clear,del);panel.append(footer);
-        const note=el('div','Approved totals remain until Clear. Closing an unapproved tab excludes it; the browser-only ledger does not delete Postalocity jobs.');
-        note.className='sp-ledger-meta';note.style.marginTop='9px';panel.append(note);
     }
     function requestNativeDeletion(){
         const current=read('job:'+id());
