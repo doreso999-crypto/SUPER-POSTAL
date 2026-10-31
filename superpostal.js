@@ -2008,6 +2008,98 @@ document.body.appendChild(box);
         const name=norm(r.name);
         return !!name&&!/^(?:UNNAMED|UNTITLED|UNASSIGNED)(?:\s+(?:JOB|LETTER))?$/.test(name);
     }
+    // The full return address is an unreliable primary identity: a client
+    // editing it must not make their previously tracked jobs disappear.
+    // Preserve the original group key and remember saved address variations.
+    function aliasesOf(session){
+        if(!session)return [];
+        const values=Array.isArray(session.addressAliases)?session.addressAliases.filter(v=>typeof v==='string'):[];
+        if(complete(session.address))values.push(addressKey(session.address));
+        return [...new Set(values)];
+    }
+    function resolvedSessionKey(key){
+        const seen=new Set();
+        while(key&&!seen.has(key)){
+            seen.add(key);
+            const item=read('session:'+key);
+            if(!item||!item.mergedInto)break;
+            key=item.mergedInto;
+        }
+        return key;
+    }
+    function sessionForAddress(a){
+        if(!complete(a))return '';
+        const exact=addressKey(a),direct=read('session:'+exact);
+        // An explicitly cleared session must never silently reappear.
+        if(direct&&direct.ended)return exact;
+        if(direct&&!direct.mergedInto)return exact;
+        if(direct&&direct.mergedInto)return resolvedSessionKey(exact);
+        const candidates=keys().filter(k=>k.startsWith('session:')).map(k=>k.slice(8))
+            .filter(key=>{const ss=read('session:'+key);return ss&&!ss.ended&&!ss.mergedInto&&aliasesOf(ss).includes(exact);});
+        if(candidates.length===1)return candidates[0];
+        const ended=keys().filter(k=>k.startsWith('session:')).map(k=>k.slice(8))
+            .filter(key=>{const ss=read('session:'+key);return ss&&ss.ended&&aliasesOf(ss).includes(exact);});
+        return ended.length?ended[0]:exact;
+    }
+    function rememberClientAddress(key,a){
+        if(!complete(a))return false;
+        key=resolvedSessionKey(key);
+        const session=read('session:'+key);
+        if(!session||session.ended||!complete(session.address)||
+           norm(session.address.name)!==norm(a.name))return false;
+        const previous=aliasesOf(session),value=addressKey(a);
+        if(previous.includes(value))return true;
+        session.addressAliases=[...new Set([...previous,value])];
+        session.address=a;
+        write('session:'+key,session);
+        return true;
+    }
+    // Recover jobs from groups that an older script split after an address
+    // edit. Only reconcile an exact sender name in the same ZIP and city/state;
+    // do not combine different senders, cleared sessions or unrelated ZIPs.
+    function healAddressSplit(key){
+        key=resolvedSessionKey(key);
+        const target=read('session:'+key);
+        if(!target||target.ended||target.mergedInto||!complete(target.address))return key;
+        const base=target.address,baseName=norm(base.name),baseZip=norm(base.zip);
+        const baseCity=norm(base.city),baseState=spStateCode(base.state)||norm(base.state);
+        const siblings=keys().filter(k=>k.startsWith('session:')).map(k=>k.slice(8))
+            .filter(k=>{
+                const item=read('session:'+k);
+                return !!item&&!item.ended&&!item.mergedInto&&complete(item.address)&&
+                    norm(item.address.name)===baseName&&norm(item.address.zip)===baseZip&&
+                    norm(item.address.city)===baseCity&&
+                    (spStateCode(item.address.state)||norm(item.address.state))===baseState;
+            });
+        if(siblings.length<2)return key;
+        const counts=new Map();
+        keys().filter(k=>k.startsWith('job:')).forEach(k=>{
+            const job=read(k);
+            if(job&&!job.deleted)counts.set(job.session,(counts.get(job.session)||0)+1);
+        });
+        siblings.sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0)||String(a).localeCompare(String(b)));
+        const winner=siblings[0],destination=read('session:'+winner);
+        if(!destination||destination.ended)return key;
+        const mergedAliases=new Set(aliasesOf(destination));
+        const records=keys().filter(k=>k.startsWith('job:'));
+        siblings.slice(1).forEach(from=>{
+            const original=read('session:'+from);
+            if(!original||original.ended||original.mergedInto)return;
+            aliasesOf(original).forEach(a=>mergedAliases.add(a));
+            records.forEach(j=>{
+                const item=read(j);
+                if(item&&item.session===from){item.session=winner;write(j,item);}
+            });
+            original.mergedInto=winner;
+            write('session:'+from,original);
+        });
+        destination.addressAliases=[...mergedAliases];
+        // Favor the latest address from the initiating job if it was saved.
+        if(aliasesOf(destination).includes(addressKey(base))&&
+           norm(destination.address.name)===baseName)destination.address=base;
+        write('session:'+winner,destination);
+        return winner;
+    }
     function countable(r){
         if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!named(r))return false;
         const session=read('session:'+r.session);
@@ -2119,8 +2211,23 @@ document.body.appendChild(box);
     function capture(patch){
         const jobId=id();if(!jobId)return null;
         let r=read('job:'+jobId), a=returnAddress();
+        if(r){
+            const resolved=resolvedSessionKey(r.session);
+            if(resolved!==r.session&&read('session:'+resolved)){
+                r.session=resolved;write('job:'+jobId,r);
+            }
+        }
         if(r&&!read('session:'+r.session)){remove('job:'+jobId);r=null;}
+        if(r&&read('session:'+r.session)?.ended)return null;
         if(r&&r.deleted){remove('live:'+PAGE_ID);return r;}
+        if(r&&a){
+            // Editing this client's saved return address must not reassign
+            // just this job and make all of their sibling jobs disappear.
+            if(rememberClientAddress(r.session,a)){
+                const healed=healAddressSplit(r.session);
+                if(healed!==r.session){r.session=healed;write('job:'+jobId,r);}
+            }
+        }
         if(r&&isApproved(r)){
             const savedSession=read('session:'+r.session);
             if(savedSession&&savedSession.ended)return null;
@@ -2142,8 +2249,8 @@ document.body.appendChild(box);
         const prior=observed.get(jobId)||{};
         const currentAddress=a?addressKey(a):'';
         const linked=r&&read('session:'+r.session);
-        const key=r&&linked&&(!a||(complete(linked.address)&&addressKey(linked.address)===currentAddress))
-            ?r.session:currentAddress;
+        let key=r&&linked&&!linked.ended&&(!a||aliasesOf(linked).includes(currentAddress))
+            ?r.session:sessionForAddress(a);
         let session=read('session:'+key);
         if(session&&session.ended)return null;
         if(!session){if(!complete(a))return null;session={address:a,seen:Date.now()};write('session:'+key,session);}
@@ -2168,8 +2275,15 @@ document.body.appendChild(box);
         }
         observed.set(jobId,{cost:price.valid?price.cents:undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
         if(before!==JSON.stringify(r))write('job:'+jobId,r);
+        // Restore pre-existing jobs from a split address group after a save;
+        // these job records were always local, never deleted.
+        const healed=healAddressSplit(key);
+        if(healed!==key){
+            key=healed;session=read('session:'+key);
+            if(session){r.session=key;write('job:'+jobId,r);}
+        }
         if(!isApproved(r))markActive(jobId);
-        if(Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
+        if(session&&Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
         return r;
     }
     // Capture recipient only after Postalocity reports a successful add.
