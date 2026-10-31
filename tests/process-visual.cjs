@@ -19,7 +19,7 @@ const button={
  insertAdjacentElement:(where,node)=>{hint=node;}
 };
 const document={
- head:{append:e=>{style=e;}},
+ head:{appendChild:e=>{style=e;}},
  querySelector:q=>q==='#step4'?step:q==='#overview-jobName'?{value:jobName}:
  q==='#step3 .contactListSize'?{textContent:String(recipients.length)}:
  q==='#spProcessDisabledStyle'?style:q==='#spProcessMissingHint'?hint:null,
