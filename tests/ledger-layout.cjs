@@ -81,7 +81,7 @@ assert.match(panelSource,/top:'150px'/,'panel lowered 5px from 145px');
 assert.doesNotMatch(panelSource,/top:'120px'/,'old position removed');
 assert.match(panelSource,/border:'2px solid #202a36'/,'dark outer frame');
 assert.ok(panelSource.includes("background:'#fff'"),'outer background is white');
-assert.equal((panelSource.match(/boxShadow:'none'/g)||[]).length,3,'no shadows in normal, minimized or restored states');
+assert.equal((panelSource.match(/boxShadow:'none'/g)||[]).length,4,'no shadows in normal, minimized, restored or peeking-image styles');
 assert.ok(panelSource.includes("heading.textContent='CLIENT TOTALS'"),'title is in the yellow header next to minimize');
 assert.doesNotMatch(panelSource,/EMPTY_HEIGHT_SCALE|spEmptyTotalsSize|data-empty|awts\\.png/i,'no empty-state enlargement or old mascot references');
 assert.doesNotMatch(src,/awts\\.png|postalMascot|miniMascot|applyMascotPosition|MASCOT_SETTINGS/i,'script contains no mascot asset references');
