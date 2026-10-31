@@ -1830,7 +1830,7 @@ spAddRecipientBureauDropdown();
 ///////////////////////////////
 (function(){
 
-// White totals panel with a yellow header; no external decorative artwork.
+// White totals panel with a yellow header and a decorative peeking image.
 // No accounting, price tracking, filenames, or client-session logic.
 document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
 
@@ -1855,6 +1855,53 @@ Object.assign(box.style,{
     boxSizing:'border-box',
     fontFamily:'Arial, sans-serif'
 });
+
+///////////////////////////////
+// PEEKING MASCOT: A NON-INTERACTIVE GOOGLE DRIVE IMAGE
+///////////////////////////////
+
+// The user-provided Drive file is only displayed; it is never stored,
+// downloaded to localStorage, or used to modify job data. For public/shared
+// images Drive's thumbnail endpoint can serve as a direct image source.
+const mascot=document.createElement('img');
+mascot.id='spTotalsPeekMascot';
+mascot.alt='';
+mascot.setAttribute('aria-hidden','true');
+mascot.draggable=false;
+mascot.decoding='async';
+Object.assign(mascot.style,{
+    position:'absolute',
+    left:'50%',
+    bottom:'calc(100% - 9px)',
+    transform:'translateX(-50%)',
+    width:'auto',
+    height:'128px',
+    maxWidth:'300px',
+    objectFit:'contain',
+    objectPosition:'center bottom',
+    zIndex:'9',
+    pointerEvents:'none',
+    userSelect:'none',
+    background:'transparent',
+    border:'0',
+    boxShadow:'none'
+});
+// The original shared link is a preview page, not a valid <img> URL.
+// Try the Drive thumbnail first; fall back to the direct-view endpoint.
+const mascotFileId='1s2EebzZmprVW6ToR24WilwqRSlxNhgNK';
+let mascotSourceAttempt=0;
+mascot.onerror=function(){
+    if(mascotSourceAttempt===0){
+        mascotSourceAttempt=1;
+        mascot.src='https://drive.google.com/uc?export=view&id='+mascotFileId;
+    }else{
+        // A non-public Drive file may not render in a different domain.
+        mascotSourceAttempt=2;
+        mascot.style.display='none';
+    }
+};
+mascot.src='https://drive.google.com/thumbnail?id='+mascotFileId+'&sz=w1000';
+box.appendChild(mascot);
 
 ///////////////////////////////
 // YELLOW HEADER / MINIMIZE BUTTON
@@ -1946,12 +1993,13 @@ document.addEventListener("mouseup",function(){
 ///////////////////////////////
 
 // Use the same accessible control for both minimize and restore.
-// No external image assets, observers, or decorative overlay are needed.
+// Hide the peeking artwork while minimized; no observers are needed.
 function minimizeBox(){
     if(box.dataset.minimized==='true')return;
     box.dataset.minimized='true';
     dragging=false;
     header.style.display='none';
+    mascot.style.display='none';
     minimize.textContent='Totals';
     minimize.title='Restore client totals';
     minimize.setAttribute('aria-label','Restore client totals');
@@ -1991,6 +2039,7 @@ function restoreBox(){
     if(box.dataset.minimized!=='true')return;
     box.dataset.minimized='false';
     header.style.display='flex';
+    if(mascotSourceAttempt<2)mascot.style.display='block';
     minimize.textContent='−';
     minimize.title='Minimize client totals';
     minimize.setAttribute('aria-label','Minimize client totals');
