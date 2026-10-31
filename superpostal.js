@@ -1800,6 +1800,11 @@ document.body.appendChild(box);
 (function spClientLedger(){
     if(!/\/jobui\b/.test(location.pathname))return;
     const PREFIX='sp-ledger-v1:', GRACE=15*60*1000;
+    // One presence lease per open page, not per job. Multiple tabs may show the
+    // same job; the last open tab controls whether an unapproved job is counted.
+    const PAGE_ID=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
+    const LIVE_TTL=2*60*1000, LIVE_INTERVAL=4000;
+    let leaving=false,lastPresence=0;
     const fields=['name','company1','company2','address1','address2','city','state','zip','country'];
     let error='', lastView='', lastHeartbeat=0;
     const observed=new Map(), recovered=new Map(), recoveryAttempts=new Set();
@@ -1815,8 +1820,26 @@ document.body.appendChild(box);
     function write(key,value){try{localStorage.setItem(PREFIX+key,JSON.stringify(value));return true;}catch(e){error='Local storage unavailable. Totals cannot be saved.';return false;}}
     function keys(){try{return Object.keys(localStorage).filter(k=>k.startsWith(PREFIX)).map(k=>k.slice(PREFIX.length));}catch(e){error='Local storage unavailable.';return [];}}
     function remove(key){try{localStorage.removeItem(PREFIX+key);}catch(e){error='Unable to clear local totals.';}}
+    function active(jobId){
+        const now=Date.now();
+        return keys().some(k=>{
+            if(!k.startsWith('live:'))return false;
+            const entry=read(k);
+            return !!entry&&entry.jobId===String(jobId)&&entry.seen<=now&&now-entry.seen<LIVE_TTL;
+        });
+    }
+    function markActive(jobId){
+        if(leaving||!jobId)return;
+        const key='live:'+PAGE_ID, now=Date.now(),previous=read(key);
+        if(previous&&previous.jobId===String(jobId)&&now-lastPresence<LIVE_INTERVAL)return;
+        if(write(key,{jobId:String(jobId),seen:now}))lastPresence=now;
+    }
     function clean(){
         const now=Date.now();
+        keys().filter(k=>k.startsWith('live:')).forEach(k=>{
+            const entry=read(k);
+            if(!entry||!Number.isFinite(entry.seen)||now-entry.seen>=LIVE_TTL)remove(k);
+        });
         keys().filter(k=>k.startsWith('session:')).forEach(k=>{
             const s=read(k);
             if(!s||now-s.seen>GRACE){
@@ -1906,11 +1929,11 @@ document.body.appendChild(box);
     function countable(r){
         if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!norm(r.name))return false;
         const session=read('session:'+r.session);
-        return !!session&&!session.ended&&!!complete(session.address)&&group(r).key!=='Unassigned';
+        return !!session&&!session.ended&&!!complete(session.address)&&group(r).key!=='Unassigned'&&(isApproved(r)||active(r.id));
     }
     const approvedState=status=>/^(?:approved|mailed)(?:\b|$)/i.test(String(status||'').trim());
     const isApproved=r=>!!r&&(r.approved===true||approvedState(r.status));
-    function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted);}
+    function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted&&(isApproved(r)||active(r.id)));}
     function canClear(key){const s=read('session:'+key);return !!s&&!s.ended;}
     function markLifecycle(jobId,action){
         const r=read('job:'+jobId);if(!r)return;
@@ -1971,7 +1994,7 @@ document.body.appendChild(box);
         const jobId=id();if(!jobId)return null;
         let r=read('job:'+jobId), a=returnAddress();
         if(r&&!read('session:'+r.session)){remove('job:'+jobId);r=null;}
-        if(r&&r.deleted)return r;
+        if(r&&r.deleted){remove('live:'+PAGE_ID);return r;}
         if(r&&isApproved(r)){
             const savedSession=read('session:'+r.session);
             if(savedSession&&savedSession.ended)return null;
@@ -2000,6 +2023,7 @@ document.body.appendChild(box);
         }
         observed.set(jobId,{cost:cost?cost.textContent.trim().replace(/[$,\s]/g,''):undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
         if(before!==JSON.stringify(r))write('job:'+jobId,r);
+        if(!isApproved(r))markActive(jobId);
         if(Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
         return r;
     }
@@ -2122,7 +2146,7 @@ document.body.appendChild(box);
         nativeDelete.title='Use Postalocity’s own Delete Job action before closing the tab.';
         nativeDelete.onclick=requestNativeDeletion;
         if(r.deleted||isApproved(r))nativeDelete.disabled=true;
-        panel.append(copy,end,nativeDelete,el('small','Closing a browser tab can only show a leave-page warning. To remove a Postalocity job, use Delete job in Postalocity. Totals stay on this browser for up to 15 minutes of inactivity.'));
+        panel.append(copy,end,nativeDelete,el('small','Closing a job tab immediately excludes its unapproved job from panel totals; approved jobs remain. This does not delete the Postalocity job. Use Delete job in Postalocity for permanent deletion.'));
     }
     function requestNativeDeletion(){
         const current=read('job:'+id());
@@ -2146,11 +2170,21 @@ document.body.appendChild(box);
         event.preventDefault();
         event.returnValue='';
     }
-    function tick(){try{clean();hookRecipientSave();render(capture());}catch(e){console.warn('SUPER POSTAL totals:',e);}}
+    function leavePage(){
+        // pagehide fires after the browser confirms a navigation or tab close.
+        // Remove ONLY this page's counting lease, never the Postalocity job.
+        // Reloads immediately renew the lease on the next document.
+        capture();
+        leaving=true;
+        remove('live:'+PAGE_ID);
+        lastView='';
+    }
+    function tick(){try{if(leaving)return;clean();hookRecipientSave();render(capture());}catch(e){console.warn('SUPER POSTAL totals:',e);}}
     window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
     document.addEventListener('click',e=>{if(e.target.closest('#processBtn')){const r=capture();if(r&&!r.deleted&&!isApproved(r)){r.cents=null;r.status='Processing';write('job:'+r.id,r);}}},true);
     window.addEventListener('beforeunload',warnIfLeaving);
-    window.addEventListener('pagehide',()=>capture());
+    window.addEventListener('pagehide',leavePage);
+    window.addEventListener('pageshow',()=>{leaving=false;lastPresence=0;tick();});
     setInterval(tick,1500);tick();
 })();
 
