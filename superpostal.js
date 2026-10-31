@@ -1523,7 +1523,7 @@ box.innerHTML = `
     </div>
     <div id="liqClientGroups" style="max-height:355px;overflow:auto;"></div>
     <div id="liqHint" style="font-size:10px;line-height:1.5;color:#49340c;margin-top:9px;">
-        Only the current client's jobs are kept in this tab. Switching clients starts a fresh session; prices are added after processing.
+        Only the current saved return address is tracked in this tab. Saving a different name/address starts a fresh session; prices are added after processing.
     </div>
 </div>
 `;
@@ -1532,7 +1532,7 @@ box.innerHTML = `
 // CLIENT LIQUIDATION — STAGE JOB, THEN ATTACH ACTUAL PROCESSED PRICE
 ///////////////////////////////
 // Local, per-browser working container. Never add the hidden new-job estimate.
-const LIQ_STORE_KEY='sp-client-liquidation-session-v3';
+const LIQ_STORE_KEY='sp-return-identity-liquidation-v4';
 const LIQ_TARGETS={EQU:'Equifax',EX:'Experian',TU:'TransUnion'};
 function liqEmptySession(){
     return {clientKey:'',clientName:'',jobs:{}};
@@ -1588,17 +1588,41 @@ function liqJobName(){
 function liqKey(value){
     return String(value||'').trim().replace(/\s+/g,' ').toUpperCase();
 }
-function liqClientKey(value){
-    return liqKey(value).replace(/[.'\u2019]/g,'').replace(/\s*-\s*/g,'-');
+function liqReturnIdentity(){
+    const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
+    // Only the saved return address is authoritative, not pasted text,
+    // a draft form, a sample address, or an old job's cached PDF name.
+    if(!form || !spReturnSavedReady())return null;
+    const fields=['name','address1','address2','city','state','zip','country'];
+    const parts=fields.map(function(fieldName){
+        const field=spReturnFormField(form,fieldName);
+        const text=String(field&&field.value||'');
+        return liqKey(text).replace(/[.,#'’]/g,'').replace(/\s+/g,' ');
+    });
+    if(!parts[0]||!parts[1]||!parts[3]||!parts[4]||!parts[5])return null;
+    // Two independent compact checksums avoid storing the raw address.
+    // These identify the same saved name+address across separate jobs.
+    const value=JSON.stringify(parts);
+    let hashA=2166136261,hashB=2246822519;
+    for(let i=0;i<value.length;i++){
+        const code=value.charCodeAt(i);
+        hashA=Math.imul(hashA^code,16777619);
+        hashB=Math.imul(hashB^code,2246822519);
+    }
+    const key='RA:'+([hashA,hashB].map(function(n){
+        return (n>>>0).toString(16).padStart(8,'0');
+    }).join(''))+':'+value.length;
+    const display=spReturnFormField(form,'name');
+    return {key:key,name:String(display.value||'').trim()};
 }
-function liqSwitchClient(client,jobId){
-    const key=liqClientKey(client);
-    if(!key || !jobId)return false;
+function liqSwitchClient(identity,jobId){
+    if(!identity||!identity.key||!identity.name||!jobId)return false;
     const current=liqRead();
-    if(current.clientKey===key)return true;
-    // Don't automatically move an existing staged job to a new client.
+    if(current.clientKey===identity.key)return true;
+    // An existing processed record must not move between clients merely
+    // because a form changed on that same job page.
     if(Object.prototype.hasOwnProperty.call(current.jobs,jobId))return false;
-    liqSave({clientKey:key,clientName:String(client).trim(),jobs:{}});
+    liqSave({clientKey:identity.key,clientName:identity.name,jobs:{}});
     liqRender();
     return true;
 }
@@ -1607,13 +1631,11 @@ function liqDetectNewClient(){
     if(!status || !/^new\b/i.test(status.textContent.trim()) ||
        !document.querySelector('#newJobContent'))return;
     const id=liqJobId();
-    if(!id)return;
-    if(liqRead().jobs[id])return;
-    const parsed=liqFromFiles(spPdfNamesFromPage(),liqJobName());
-    // A new job with no trustworthy client name must never erase the
-    // previous client session or create a placeholder category.
-    if(parsed && liqValidAssignment(parsed.client,parsed.target))
-        liqSwitchClient(parsed.client,id);
+    if(!id || liqRead().jobs[id])return;
+    const identity=liqReturnIdentity();
+    // A different saved return address starts a new session. An empty or
+    // still-editing return address must not silently erase existing totals.
+    if(identity)liqSwitchClient(identity,id);
 }
 function liqTarget(raw){
     const key=liqKey(raw);
@@ -1680,18 +1702,21 @@ function liqStageJob(){
     const jobName=liqJobName();
     const names=spPdfNamesFromPage();
     const parsed=liqFromFiles(names,jobName);
-    // Require an identifiable client AND bureau/creditor.
-    if(!parsed || !liqValidAssignment(parsed.client,parsed.target))return;
-    if(!liqSwitchClient(parsed.client,id))return;
+    // The saved return address supplies the client identity, while the
+    // filename/job title only supplies the mailing destination.
+    const identity=liqReturnIdentity();
+    if(!identity || !parsed || !parsed.target)return;
+    if(!liqSwitchClient(identity,id))return;
     const data=liqRead();
     const prev=data.jobs[id];
     const record={
         id:id,jobName:jobName||'Job #'+id,files:parsed.files,
-        client:data.clientName,target:parsed.target,targetLabel:parsed.targetLabel,
+        client:data.clientName,sessionKey:data.clientKey,
+        target:parsed.target,targetLabel:parsed.targetLabel,
         source:parsed.source,priceCents:null,status:'processing',
         manual:false,updatedAt:Date.now()
     };
-    if(prev&&prev.manual&&liqClientKey(prev.client)===data.clientKey){
+    if(prev&&prev.manual&&prev.sessionKey===data.clientKey){
         record.target=prev.target;
         record.targetLabel=prev.targetLabel;
         record.manual=true;
@@ -1707,7 +1732,7 @@ function liqCaptureProcessed(){
     // Never auto-import unrelated or historic jobs. A job must have been
     // explicitly staged by Process within the current client session.
     const previous=data.jobs[id];
-    if(!previous||liqClientKey(previous.client)!==data.clientKey)return;
+    if(!previous||previous.sessionKey!==data.clientKey)return;
     const record={...previous};
     const jobName=liqJobName();
     if(jobName)record.jobName=jobName;
@@ -1737,9 +1762,9 @@ function liqGroupData(data){
     const jobs=Object.values(data.jobs).filter(job=>job &&
         /^\d+$/.test(String(job.id)) &&
         liqValidAssignment(job.client,job.target) &&
-        liqClientKey(job.client)===data.clientKey);
+        job.sessionKey===data.clientKey);
     jobs.forEach(job=>{
-        const key=liqKey(job.client);
+        const key=data.clientKey;
         if(!clients.has(key))clients.set(key,{
             client:job.client,key:key,total:0,processed:0,pending:0,targets:new Map()
         });
@@ -1880,13 +1905,13 @@ function liqConnectControls(){
             const label=window.prompt('Bureau or creditor for Job #'+record.id,
                 record.targetLabel);
             if(label===null)return;
-            const target=liqTarget(label),clean=name.trim(),key=liqClientKey(clean);
-            if(!clean||!key||!target){
+            const target=liqTarget(label),clean=name.trim();
+            if(!clean||!target){
                 window.alert('Enter a valid client name and bureau or creditor.');
                 return;
             }
-            // One session = one client. Renaming affects every job in it.
-            data.clientKey=key;
+            // One session = one saved return address. Editing only changes
+            // the display name and destination, never its identity checksum.
             data.clientName=clean;
             Object.values(data.jobs).forEach(function(job){job.client=clean;});
             record.target=target.key;
