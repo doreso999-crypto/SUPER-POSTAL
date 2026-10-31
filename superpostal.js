@@ -479,8 +479,17 @@ function spCleanLabel(text){
 }
 // Authoritative uploaded filenames come from Postalocity's existing read-only
 // listUploadedFiles action, rather than temporary upload tiles.
-const spPdfState={job:null,names:null,status:'idle',message:'',requestNumber:0,lastRequest:0,loading:false};
+const spPdfState={job:null,names:null,status:'idle',message:'',requestNumber:0,lastRequest:0,loading:false,retries:0};
 let spPdfRefreshTimer=null;
+let spPdfDiscoveryTimer=null;
+function spRetryPdfDiscovery(){
+    if(spPdfDiscoveryTimer!==null || spPdfState.retries>=3)return;
+    const delay=2500*(++spPdfState.retries);
+    spPdfDiscoveryTimer=setTimeout(function(){
+        spPdfDiscoveryTimer=null;
+        if(spPdfState.status!=='loaded')spRequestPdfList(true);
+    },delay);
+}
 function spCurrentJobId(){
     const id=typeof jobId!=='undefined'?jobId:window.jobId;
     return (id===undefined||id===null||String(id).trim()==='')?'':String(id);
@@ -504,12 +513,13 @@ function spRequestPdfList(force){
     const id=spCurrentJobId();
     if(!id){
         spPdfState.status='unavailable';
-        spPdfState.message='Job ID not available yet. Use Refresh PDFs after the job loads.';
-        spQueueRecipientOverview();return;
+        spPdfState.message='Waiting for Postalocity job ID. Use Refresh PDFs if this continues.';
+        spQueueRecipientOverview();spRetryPdfDiscovery();return;
     }
     if(spPdfState.job!==id){
         spPdfState.job=id;spPdfState.names=null;
         spPdfState.status='idle';spPdfState.lastRequest=0;
+        spPdfState.loading=false;spPdfState.requestNumber++;spPdfState.retries=0;
     }
     if(spPdfState.loading)return;
     if(!force && spPdfState.status==='loaded')return;
@@ -520,8 +530,8 @@ function spRequestPdfList(force){
     const api=window.apiAction && window.apiAction.job && window.apiAction.job.listUploadedFiles;
     if(typeof api!=='function'){
         spPdfState.status='unavailable';
-        spPdfState.message='Postalocity file-list service is not ready. Click Refresh PDFs to retry.';
-        spQueueRecipientOverview();return;
+        spPdfState.message='Waiting for Postalocity file-list service. Click Refresh PDFs if needed.';
+        spQueueRecipientOverview();spRetryPdfDiscovery();return;
     }
     const requestId=++spPdfState.requestNumber;
     spPdfState.loading=true;spPdfState.status='loading';spPdfState.message='';
@@ -542,7 +552,8 @@ function spRequestPdfList(force){
             spPdfState.message='Could not verify uploaded PDFs. Click Refresh PDFs to retry.';
         }else{
             spPdfState.names=spNormalizePdfFiles(response.fileNames);
-            spPdfState.status='loaded';spPdfState.message='';
+            spPdfState.status='loaded';spPdfState.message='';spPdfState.retries=0;
+            if(spPdfDiscoveryTimer!==null){clearTimeout(spPdfDiscoveryTimer);spPdfDiscoveryTimer=null;}
         }
         spQueueRecipientOverview();
         spRefreshBureauMismatchWarning();
@@ -556,7 +567,10 @@ function spRequestPdfList(force){
         handleFailureResponse:function(){finish(null,true);},
         handleError:function(){finish(null,true);}
     };
-    try{api.call(window.apiAction.job,action);}catch(err){finish(null,err);}
+    try{
+        const result=api.call(window.apiAction.job,action);
+        if(result&&typeof result.catch==='function')result.catch(function(err){finish(null,err);});
+    }catch(err){finish(null,err);}
 }
 function spSchedulePdfRefresh(){
     if(spPdfRefreshTimer!==null)clearTimeout(spPdfRefreshTimer);
