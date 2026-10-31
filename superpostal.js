@@ -1802,7 +1802,8 @@ document.body.appendChild(box);
     const PREFIX='sp-ledger-v1:', GRACE=15*60*1000;
     const fields=['name','company1','company2','address1','address2','city','state','zip','country'];
     let error='', lastView='', lastHeartbeat=0;
-    const observed=new Map();
+    const observed=new Map(), recovered=new Map(), recoveryAttempts=new Set();
+    let recovering=false, recoveryMessage='';
     const norm=v=>String(v||'').normalize('NFKC').trim().replace(/\s+/g,' ').toUpperCase();
     function canonical(a){
         return fields.map(k=>k==='state'?(spStateCode(a[k])||norm(a[k])):
@@ -1829,23 +1830,54 @@ document.body.appendChild(box);
         const ids=new Set(Array.from(document.querySelectorAll('a[href*="jobId="]')).map(a=>new URL(a.href,location.href).searchParams.get('jobId')).filter(v=>/^\d+$/.test(v||'')));
         return ids.size===1?[...ids][0]:'';
     }
-    function returnAddress(){
-        // Native saved summary is authoritative; never group from unsaved input.
-        const summary=document.querySelector('#settingsReturnAddressSource-Link');
+    function savedAddressFrom(doc){
+        const summary=doc.querySelector('#settingsReturnAddressSource-Link');
         if(summary){
-            const clone=summary.cloneNode(true);clone.querySelectorAll('br').forEach(br=>br.replaceWith('\n'));
-            const raw=clone.textContent.replace(/^\s*FROM JOB SETTINGS:\s*/i,'');
+            const clone=summary.cloneNode(true);
+            clone.querySelectorAll('br').forEach(br=>br.replaceWith('\n'));
+            const raw=clone.textContent.replace(/^\s*(?:RETURN ADDRESS\s*:\s*)?FROM\s+(?:JOB SETTINGS|ACCOUNT)\s*:\s*/i,'');
             if(!spReturnIsSampleText(raw)){
                 const parsed=spParseAddress(raw);
                 if(!parsed.errors.length)return parsed.data;
             }
         }
+        // Detached server-rendered form values are saved data, never user drafts.
+        if(doc!==document){
+            const form=doc.querySelector('#envelopeReturn-address'),a={};
+            if(form){
+                fields.forEach(k=>{const f=spReturnFormField(form,k);a[k]=f?f.value:'';});
+                if(complete(a)&&!spReturnIsSampleText(Object.values(a).join(' ')))return a;
+            }
+        }
+        return null;
+    }
+    function returnAddress(){
+        const saved=savedAddressFrom(document);if(saved)return saved;
         if(spReturnSavedReady()){
             const form=document.querySelector('#envelopeReturn-address'),a={};
             fields.forEach(k=>{const f=spReturnFormField(form,k);a[k]=f?f.value:'';});
-            return complete(a)?a:null;
+            if(complete(a))return a;
         }
-        return null;
+        const recovery=recovered.get(id());return recovery?recovery.address:null;
+    }
+    async function recoverSavedJob(){
+        const jobId=id();
+        if(!jobId||recoveryAttempts.has(jobId)||read('job:'+jobId))return;
+        recoveryAttempts.add(jobId);recovering=true;recoveryMessage='';
+        try{
+            const url=new URL('/jobui',location.origin);url.searchParams.set('edit','true');url.searchParams.set('id',jobId);
+            const response=await fetch(url.href,{credentials:'same-origin'});
+            if(!response.ok)throw new Error('Saved settings could not be loaded.');
+            const destination=new URL(response.url||url.href);
+            if(destination.origin!==location.origin||destination.pathname!=='/jobui'||destination.searchParams.get('id')!==jobId)
+                throw new Error('Saved settings require opening this job.');
+            const doc=new DOMParser().parseFromString(await response.text(),'text/html');
+            const address=savedAddressFrom(doc);
+            if(!address)throw new Error('Open this job’s saved settings once to link its address. No need to re-enter it.');
+            const name=doc.querySelector('#overview-jobName');
+            recovered.set(jobId,{address:address,name:name?name.value:''});
+        }catch(e){recoveryMessage=e.message;}
+        finally{recovering=false;lastView='';tick();}
     }
     function recipientForm(){
         const a={};fields.forEach(k=>{const f=document.querySelector('#contactModal [name="extractedAddress.'+k+'"]');a[k]=f?f.value.trim():'';});return a;
@@ -1898,6 +1930,7 @@ document.body.appendChild(box);
         const before=JSON.stringify(r);
         r=Object.assign({id:jobId,recipients:[],cents:null},r||{},patch||{},{session:key});
         const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
+        if(!r.name&&recovered.has(jobId))r.name=recovered.get(jobId).name;
         const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
         const state=document.querySelector('#jobState');if(state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
         const cost=document.querySelector('.totalPriceRow .totalPrice');
@@ -1961,13 +1994,20 @@ document.body.appendChild(box);
         }
         const session=r&&read('session:'+r.session);
         const jobs=session&&!session.ended?keys().filter(k=>k.startsWith('job:')).map(read).filter(j=>j&&j.session===r.session):[];
-        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error]);if(view===lastView)return;lastView=view;
+        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage]);if(view===lastView)return;lastView=view;
         panel.replaceChildren(el('strong','CLIENT TOTALS'));
         if(error)panel.append(el('p',error));
         if(!r||!session||session.ended){
             panel.append(el('p',(session&&session.ended)||(read('job:'+id())&&read('session:'+read('job:'+id()).session)?.ended)?'Session ended.':'Save a return address to start tracking. Processed jobs need their original client link.'));
             const existing=read('job:'+id());const s=existing&&read('session:'+existing.session);
             if(s&&s.ended){const start=el('button','Start new session');start.onclick=()=>{remove('session:'+existing.session);observed.clear();keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===existing.session)remove(k);});lastView='';tick();};panel.append(start);}
+            if(!s||!s.ended){
+                panel.querySelector('p').textContent=recovering?'Reading this job’s saved return address…':recoveryMessage||'Looking for this job’s saved client link.';
+                const link=el('a','Open saved job settings');
+                const url=new URL('/jobui',location.origin);url.searchParams.set('edit','true');url.searchParams.set('id',id());
+                link.href=url.href;panel.append(link);
+                if(!recovering&&!recoveryAttempts.has(id()))recoverSavedJob();
+            }
             return;
         }
         panel.append(el('h4',session.address.name),el('small',[session.address.address1,session.address.address2,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(', ')));
