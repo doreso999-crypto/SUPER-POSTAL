@@ -1842,6 +1842,7 @@ document.body.appendChild(box);
         finally{
             leaving=true;
             remove('live:'+PAGE_ID);
+            const duplicateModal=document.querySelector('#spDuplicateNameModal');if(duplicateModal)duplicateModal.remove();
             lastView='';
         }
     }
@@ -1946,6 +1947,17 @@ document.body.appendChild(box);
     const isApproved=r=>!!r&&(r.approved===true||approvedState(r.status));
     function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted&&(isApproved(r)||active(r.id)));}
     function canClear(key){const s=read('session:'+key);return !!s&&!s.ended;}
+    function duplicateNameMatches(r){
+        if(!r||!countable(r))return [];
+        return sessionJobs(r.session).filter(j=>String(j.id)!==String(r.id)&&norm(j.name)===norm(r.name)&&countable(j));
+    }
+    function duplicateReviewKey(a,b){
+        const ids=[String(a.id),String(b.id)].sort();
+        const value=a.session+'|'+norm(a.name);
+        let hash=2166136261;
+        for(let i=0;i<value.length;i++){hash^=value.charCodeAt(i);hash=Math.imul(hash,16777619);}
+        return 'duplicate-reviewed:'+ids.join(':')+':'+(hash>>>0).toString(36);
+    }
     function markLifecycle(jobId,action){
         const r=read('job:'+jobId);if(!r)return;
         const session=read('session:'+r.session);if(!session||session.ended)return;
@@ -2077,6 +2089,38 @@ document.body.appendChild(box);
             return original.apply(this,arguments);
         }
         wrapped.spLedger=true;api.job.addRecipient=wrapped;
+    }
+    let deferredDuplicateSignature='';
+    function reviewDuplicateNames(r){
+        const existing=document.querySelector('#spDuplicateNameModal');
+        if(!r||r.deleted){if(existing)existing.remove();return;}
+        const matches=duplicateNameMatches(r).filter(j=>!read(duplicateReviewKey(r,j)));
+        const signature=matches.length?r.id+':'+matches.map(j=>j.id).sort().join(',')+':'+norm(r.name):'';
+        if(!signature||signature===deferredDuplicateSignature){if(existing)existing.remove();return;}
+        if(existing&&existing.dataset.signature===signature)return;
+        if(existing)existing.remove();
+        const overlay=el('div');overlay.id='spDuplicateNameModal';overlay.dataset.signature=signature;
+        overlay.style.cssText='position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;background:rgba(15,25,43,.58);padding:20px';
+        const dialog=el('section');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
+        dialog.setAttribute('aria-label','Confirm jobs with matching names');
+        dialog.style.cssText='width:min(470px,100%);max-height:80vh;overflow:auto;background:#fff;color:#1c2b40;border:1px solid #d7e2ee;border-radius:14px;box-shadow:0 16px 50px rgba(0,0,0,.25);padding:22px;box-sizing:border-box';
+        const title=el('h3','Matching job names detected');title.style.cssText='margin:0 0 10px;font-size:18px';
+        const intro=el('p','These different Postalocity Job IDs share a job name and saved return address:');
+        intro.style.cssText='line-height:1.55;margin:0 0 12px';
+        const listing=el('div');listing.style.cssText='background:#f5f8fc;border-radius:9px;padding:10px 12px;line-height:1.6;overflow-wrap:anywhere';
+        [r,...matches].forEach(j=>listing.append(el('div','#'+j.id+' — '+j.name)));
+        const note=el('p','They remain separate and both count toward the total. Confirm if they are intentional; delete an unwanted job through Postalocity’s Delete Job action.');
+        note.style.cssText='font-size:12px;line-height:1.55;color:#596b81;margin:12px 0';
+        const actions=el('div');actions.style.cssText='display:flex;flex-wrap:wrap;gap:9px;justify-content:flex-end';
+        const later=el('button','Review later');later.type='button';
+        const confirm=el('button','Keep separate jobs');confirm.type='button';
+        [later,confirm].forEach(btn=>{btn.style.cssText='border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:650;border:1px solid #cbd7e6;background:#fff;color:#253b59';});
+        confirm.style.background='#1f5eaf';confirm.style.color='#fff';
+        later.onclick=()=>{deferredDuplicateSignature=signature;overlay.remove();};
+        confirm.onclick=()=>{matches.forEach(j=>write(duplicateReviewKey(r,j),{confirmed:true,seen:Date.now()}));deferredDuplicateSignature='';overlay.remove();lastView='';tick();};
+        dialog.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();later.click();}});
+        actions.append(later,confirm);dialog.append(title,intro,listing,note,actions);overlay.append(dialog);
+        (document.body||document.documentElement).append(overlay);confirm.focus();
     }
     const money=c=>'$'+(c/100).toFixed(2);
     const el=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;};
@@ -2219,7 +2263,7 @@ document.body.appendChild(box);
         event.preventDefault();
         event.returnValue='';
     }
-    function tick(){try{if(leaving)return;clean();hookRecipientSave();render(capture());}catch(e){console.warn('SUPER POSTAL totals:',e);}}
+    function tick(){try{if(leaving)return;clean();hookRecipientSave();const r=capture();render(r);reviewDuplicateNames(r);}catch(e){console.warn('SUPER POSTAL totals:',e);}}
     window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
     document.addEventListener('click',e=>{if(e.target.closest('#processBtn')){const r=capture();if(r&&!r.deleted&&!isApproved(r)){r.cents=null;r.status='Processing';write('job:'+r.id,r);}}},true);
     trackNormalNavigation();
