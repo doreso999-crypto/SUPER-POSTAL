@@ -692,165 +692,130 @@ addQuickReturnAddress();
 addRecipientPdfOverview();
 
 ///////////////////////////////
-// AUTO POPULATE RECIPIENT BASED ON JOB NAME
+// RECIPIENT MODAL — AUTO-DETECT OR CHOOSE A BUREAU
 ///////////////////////////////
-
-function fillRecipient(field, value) {
-
-    const input = document.querySelector(field);
-
-    if (input) {
-
-        input.value = value;
-
-        input.dispatchEvent(
-            new Event('change', { bubbles:true })
-        );
-
+// These are the same addresses from the previous recipient autofill logic.
+const SP_RECIPIENT_BUREAUS={
+    EX:{name:'Experian',address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'},
+    EQU:{name:'Equifax Information Services LLC',address1:'P.O. Box 740256',city:'Atlanta',state:'GA',zip:'30374-0256'},
+    TU:{name:'TransUnion LLC Consumer Dispute Center',address1:'PO Box 2000',city:'Chester',state:'PA',zip:'19016'}
+};
+function spDetectBureauForRecipient(jobName){
+    const tokens=String(jobName||'').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+    const found=new Set();
+    tokens.forEach(function(part){
+        if(['EX','EXP','EXPERIAN'].includes(part))found.add('EX');
+        else if(['EQU','EQ','EQUIFAX'].includes(part))found.add('EQU');
+        else if(['TU','TRANSUNION'].includes(part))found.add('TU');
+    });
+    return found.size===1?Array.from(found)[0]:'';
+}
+function spRecipientBureauStatus(message,type){
+    const el=document.querySelector('#contactModal #spRecipientBureauStatus');
+    if(!el)return;
+    el.textContent=message;
+    el.dataset.status=type||'info';
+}
+function spFillRecipientBureau(code,method){
+    const modal=document.querySelector('#contactModal');
+    const data=SP_RECIPIENT_BUREAUS[code];
+    if(!modal||!data)return false;
+    const fields={
+        name:modal.querySelector('#address-name'),
+        address1:modal.querySelector('#address-addr1'),
+        city:modal.querySelector('#address-city'),
+        state:modal.querySelector('#address-state'),
+        zip:modal.querySelector('#address-zip')
+    };
+    if(Object.values(fields).some(function(input){return !input;})){
+        spRecipientBureauStatus('The recipient address form is incomplete. No values were changed.','error');
+        return false;
     }
-
+    Object.keys(fields).forEach(function(key){
+        spSetField(fields[key],data[key]);
+    });
+    const names={EX:'Experian',EQU:'Equifax',TU:'TransUnion'};
+    spRecipientBureauStatus(names[code]+' address filled ('+method+'). Review before saving.','success');
+    return true;
+}
+function populateRecipientFromJob(){
+    const job=document.querySelector('#overview-jobName');
+    const picker=document.querySelector('#contactModal #spRecipientBureauSelect');
+    if(!job || (picker && picker.dataset.manualChoice==='true'))return;
+    const bureau=spDetectBureauForRecipient(job.value);
+    if(picker)picker.value=bureau;
+    if(bureau)spFillRecipientBureau(bureau,'automatically selected');
+    else if(picker){
+        spRecipientBureauStatus('No single bureau detected from the job name. Choose one from the dropdown.','info');
+    }
+}
+function spAddRecipientBureauDropdown(){
+    const modal=document.querySelector('#contactModal');
+    if(!modal||modal.querySelector('#spRecipientBureauSelect'))return;
+    const body=modal.querySelector('.modal-body');
+    if(!body)return;
+    if(!document.querySelector('#spRecipientBureauStyles')){
+        const style=document.createElement('style');
+        style.id='spRecipientBureauStyles';
+        style.textContent=[
+            '#contactModal #spRecipientBureauPicker{background:#f5f9ff;border:1px solid #d6e3f3;border-radius:10px;padding:12px 14px;margin-bottom:14px}',
+            '#contactModal #spRecipientBureauPicker label{display:block;font-size:13px;color:#294461;font-weight:700;margin-bottom:7px}',
+            '#contactModal #spRecipientBureauSelect{display:block;width:100%;height:39px;border:1px solid #b3c5d9;border-radius:7px;background:white;color:#203b57;padding:7px 10px;font-size:13px}',
+            '#contactModal #spRecipientBureauSelect:focus{outline:2px solid #6fa3e4;outline-offset:1px}',
+            '#contactModal #spRecipientBureauStatus{font-size:12px;color:#62768e;line-height:1.5;margin:7px 0 0}',
+            '#contactModal #spRecipientBureauStatus[data-status="success"]{color:#1f7544}',
+            '#contactModal #spRecipientBureauStatus[data-status="error"]{color:#aa3030}'
+        ].join('\n');
+        document.head.appendChild(style);
+    }
+    const control=document.createElement('div');
+    control.id='spRecipientBureauPicker';
+    control.innerHTML=[
+        '<label for="spRecipientBureauSelect">Credit bureau address</label>',
+        '<select id="spRecipientBureauSelect" aria-describedby="spRecipientBureauStatus">',
+        '<option value="">Choose a bureau manually</option>',
+        '<option value="EX">Experian</option>',
+        '<option value="EQU">Equifax</option>',
+        '<option value="TU">TransUnion</option>',
+        '</select>',
+        '<p id="spRecipientBureauStatus" role="status" aria-live="polite"></p>'
+    ].join('');
+    body.insertBefore(control,body.firstChild);
+    const picker=control.querySelector('#spRecipientBureauSelect');
+    picker.addEventListener('change',function(){
+        // Manual choice must not be overwritten by automatic job-name updates.
+        picker.dataset.manualChoice='true';
+        if(picker.value)spFillRecipientBureau(picker.value,'manually selected');
+        else spRecipientBureauStatus('Existing address fields are unchanged. Select a bureau to populate them.','info');
+    });
+    const jq=window.jQuery||window.$;
+    if(jq && jq.fn){
+        jq(modal).on('shown.bs.modal.spRecipientBureauPicker',function(){
+            if(picker.dataset.manualChoice!=='true')populateRecipientFromJob();
+        });
+        jq(modal).on('hidden.bs.modal.spRecipientBureauPicker',function(){
+            // A fresh recipient can be auto-detected next time the modal opens.
+            picker.dataset.manualChoice='false';
+        });
+    }
+    populateRecipientFromJob();
 }
 
-function populateRecipientFromJob() {
-
-    const jobName = document.querySelector('#overview-jobName');
-
-    if (!jobName) return;
-
-    const name = jobName.value.toUpperCase();
-
-    // =============================
-    // EQUIFAX
-    // =============================
-
-    if (name.includes("EQU") || name.includes("EQ")) {
-
-        fillRecipient(
-            '#address-name',
-            'Equifax Information Services LLC'
-        );
-
-        fillRecipient(
-            '#address-addr1',
-            'P.O. Box 740256'
-        );
-
-        fillRecipient(
-            '#address-city',
-            'Atlanta'
-        );
-
-        fillRecipient(
-            '#address-state',
-            'GA'
-        );
-
-        fillRecipient(
-            '#address-zip',
-            '30374-0256'
-        );
-
-        console.log("Equifax address loaded");
-    }
-
-    // =============================
-    // TRANSUNION
-    // =============================
-
-    else if (name.includes("TU")) {
-
-        fillRecipient(
-            '#address-name',
-            'TransUnion LLC Consumer Dispute Center'
-        );
-
-        fillRecipient(
-            '#address-addr1',
-            'PO Box 2000'
-        );
-
-        fillRecipient(
-            '#address-city',
-            'Chester'
-        );
-
-        fillRecipient(
-            '#address-state',
-            'PA'
-        );
-
-        fillRecipient(
-            '#address-zip',
-            '19016'
-        );
-
-        console.log("TransUnion address loaded");
-    }
-
-    // =============================
-    // EXPERIAN
-    // =============================
-
-    else if (
-        name.includes("EXP") ||
-        name.includes("EXPERIAN")
-    ) {
-
-        fillRecipient(
-            '#address-name',
-            'Experian'
-        );
-
-        fillRecipient(
-            '#address-addr1',
-            'P.O. Box 2002'
-        );
-
-        fillRecipient(
-            '#address-city',
-            'Allen'
-        );
-
-        fillRecipient(
-            '#address-state',
-            'TX'
-        );
-
-        fillRecipient(
-            '#address-zip',
-            '75013'
-        );
-
-        console.log("Experian address loaded");
-    }
-
+function watchJobName(){
+    const job=document.querySelector('#overview-jobName');
+    if(!job||job.dataset.recipientWatcher)return;
+    job.dataset.recipientWatcher='true';
+    job.addEventListener('blur',populateRecipientFromJob);
+    job.addEventListener('change',populateRecipientFromJob);
+    job.addEventListener('input',populateRecipientFromJob);
 }
-
-function watchJobName() {
-
-    const job = document.querySelector('#overview-jobName');
-
-    if (!job) return;
-
-    if (job.dataset.recipientWatcher) return;
-    job.dataset.recipientWatcher = "true";
-
-    job.addEventListener('blur', populateRecipientFromJob);
-    job.addEventListener('change', populateRecipientFromJob);
-    job.addEventListener('input', populateRecipientFromJob);
-
-}
-
-const recipientObserver = new MutationObserver(() => {
+const recipientObserver=new MutationObserver(function(){
     watchJobName();
+    spAddRecipientBureauDropdown();
 });
-
-recipientObserver.observe(document.body, {
-    childList:true,
-    subtree:true
-});
-
+recipientObserver.observe(document.body,{childList:true,subtree:true});
 watchJobName();
+spAddRecipientBureauDropdown();
 
 ///////////////////////////////
 // POSTAL CALCULATOR
