@@ -858,6 +858,16 @@ function spReturnMarkSaved(form){
         try{window.sessionStorage.setItem(key,JSON.stringify({signature:signature,savedAt:Date.now()}));}
         catch(_e){}
     }
+    // A confirmed Save Changes is the authoritative point to retain the
+    // address for this Job ID before Postalocity replaces the editor page.
+    const savedId=spPdfCurrentJobId();
+    if(savedId){
+        const keys=['name','company1','company2','address1','address2','city','state','zip','country'];
+        const address={};
+        keys.forEach(function(k){const f=spReturnFormField(form,k);address[k]=f?f.value:'';});
+        try{window.localStorage.setItem('sp-ledger-v1:saved-return:'+savedId,
+            JSON.stringify({address:address,seen:Date.now()}));}catch(_e){}
+    }
     spQueueRecipientOverview();
 }
 // On an already-saved Postalocity job, the native address fields can be
@@ -2135,6 +2145,59 @@ document.body.appendChild(box);
         const ids=new Set(Array.from(document.querySelectorAll('a[href*="jobId="]')).map(a=>new URL(a.href,location.href).searchParams.get('jobId')).filter(v=>/^\d+$/.test(v||'')));
         return ids.size===1?[...ids][0]:'';
     }
+
+    // Store only an address confirmed for this exact Postalocity Job ID.
+    // A processed job page omits the sender entirely, so preserve the
+    // earlier saved setting before navigating away from the editor.
+    const SAVED_RETURN_PREFIX=PREFIX+'saved-return:';
+    const PROCESS_HANDOFF_KEY=PREFIX+'process-handoff';
+    function savedReturnFor(jobId){
+        if(!/^\d+$/.test(String(jobId||'')))return null;
+        try{
+            const record=JSON.parse(localStorage.getItem(SAVED_RETURN_PREFIX+jobId)||'null');
+            return record&&complete(record.address)&&
+                !spReturnIsSampleText(Object.values(record.address).join(' '))?record.address:null;
+        }catch(_e){return null;}
+    }
+    function rememberSavedReturn(jobId,a){
+        if(!/^\d+$/.test(String(jobId||''))||!complete(a)||
+           spReturnIsSampleText(Object.values(a).join(' ')))return;
+        try{localStorage.setItem(SAVED_RETURN_PREFIX+jobId,JSON.stringify({address:a,seen:Date.now()}));}
+        catch(_e){/* Keep tracking from the live page if storage is unavailable. */}
+    }
+    function currentName(){
+        const input=document.querySelector('#overview-jobName');
+        const label=document.querySelector('#jobName');
+        return String(input&&input.value||label&&label.textContent||'').trim();
+    }
+    function pendingProcessAddress(jobId){
+        if(!/^\d+$/.test(String(jobId||'')))return null;
+        let pending;
+        try{pending=JSON.parse(sessionStorage.getItem(PROCESS_HANDOFF_KEY)||'null');}catch(_e){return null;}
+        if(!pending||!complete(pending.address)||!named({name:pending.name})||
+           !Number.isFinite(pending.started)||Date.now()-pending.started<0||
+           Date.now()-pending.started>5*60*1000||
+           pending.fromId&&String(pending.fromId)!==String(jobId)||
+           norm(currentName())!==norm(pending.name))return null;
+        const state=document.querySelector('#jobState');
+        if(!state||!/(?:processed|ready for approval|awaiting approval|pending approval|approved|mailed)/i.test(state.textContent||''))
+            return null;
+        try{sessionStorage.removeItem(PROCESS_HANDOFF_KEY);}catch(_e){}
+        rememberSavedReturn(jobId,pending.address);
+        return pending.address;
+    }
+    function stageProcessHandoff(){
+        const name=currentName(),address=returnAddress();
+        if(!named({name})||!complete(address))return;
+        // Only a confirmed native saved address is valid for a new job;
+        // for an existing ID, a previously confirmed per-job snapshot is valid.
+        const jobId=id();
+        if(!spReturnSavedReady()&&!savedReturnFor(jobId))return;
+        if(jobId)rememberSavedReturn(jobId,address);
+        try{sessionStorage.setItem(PROCESS_HANDOFF_KEY,JSON.stringify({
+            name,address,fromId:jobId||'',started:Date.now()
+        }));}catch(_e){}
+    }
     function savedAddressFrom(doc){
         const summary=doc.querySelector('#settingsReturnAddressSource-Link');
         if(summary){
@@ -2157,13 +2220,20 @@ document.body.appendChild(box);
         return null;
     }
     function returnAddress(){
-        const saved=savedAddressFrom(document);if(saved)return saved;
+        const jobId=id();
+        const saved=savedAddressFrom(document);
+        if(saved){rememberSavedReturn(jobId,saved);return saved;}
         if(spReturnSavedReady()){
             const form=document.querySelector('#envelopeReturn-address'),a={};
             fields.forEach(k=>{const f=spReturnFormField(form,k);a[k]=f?f.value:'';});
-            if(complete(a))return a;
+            if(complete(a)){rememberSavedReturn(jobId,a);return a;}
         }
-        const recovery=recovered.get(id());return recovery?recovery.address:null;
+        const recovery=recovered.get(jobId);
+        if(recovery&&complete(recovery.address)){
+            rememberSavedReturn(jobId,recovery.address);
+            return recovery.address;
+        }
+        return savedReturnFor(jobId)||pendingProcessAddress(jobId);
     }
     // Best-effort discovery only. A job with no confirmed saved address stays
     // untracked, without displaying an error or asking for a manual link.
@@ -2181,6 +2251,7 @@ document.body.appendChild(box);
             const address=savedAddressFrom(doc);
             const name=doc.querySelector('#overview-jobName');
             recovered.set(jobId,{address:address||null,name:name?name.value:''});
+            if(address)rememberSavedReturn(jobId,address);
         }catch(_error){
             // Missing or inaccessible job settings must not interrupt tracking.
         }finally{lastView='';tick();}
@@ -2860,7 +2931,20 @@ document.body.appendChild(box);
     }
     function tick(){try{if(leaving)return;clean();hookRecipientSave();const r=capture();render(r);reviewDuplicateNames(r);}catch(e){console.warn('SUPER POSTAL totals:',e);}}
     window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
-    document.addEventListener('click',e=>{if(e.target.closest('#processBtn')){const r=capture();if(r&&!r.deleted&&!isApproved(r)){r.cents=null;r.status='Processing';write('job:'+r.id,r);}}},true);
+    document.addEventListener('click',e=>{
+        const control=e.target&&e.target.closest&&
+            e.target.closest('button,input[type="submit"],input[type="button"],a,[role="button"]');
+        if(!control||!(control.matches('#processBtn')||spIsNativeProcessJobControl(control)))return;
+        // A validation-blocked click must not stage an address for another job.
+        if(e.defaultPrevented||!spJobDetailsReadiness().ready)return;
+        stageProcessHandoff();
+        const r=capture();
+        if(r&&!r.deleted&&!isApproved(r)){r.cents=null;r.status='Processing';write('job:'+r.id,r);}
+    },true);
+    document.addEventListener('submit',e=>{
+        if(e.defaultPrevented||!e.target.closest||!e.target.closest('#step4'))return;
+        if(spJobDetailsReadiness().ready)stageProcessHandoff();
+    },true);
     trackNormalNavigation();
     window.addEventListener('beforeunload',warnIfLeaving);
     window.addEventListener('pagehide',leavePage);
