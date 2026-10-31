@@ -1592,19 +1592,81 @@ emptyStyle.id='spEmptyTotalsSize';
 emptyStyle.textContent=`
 #bureauTotals[data-empty="true"][data-minimized="false"]{
     width:min(320px,calc(100vw - 30px))!important;
+    height:max(140px,min(${240*EMPTY_HEIGHT_SCALE}px,calc(100vh - 150px)))!important;
     min-height:max(140px,min(${240*EMPTY_HEIGHT_SCALE}px,calc(100vh - 150px)))!important;
     display:flex!important;
-    align-items:center;
-    justify-content:center;
+    align-items:stretch;
+    justify-content:stretch;
 }
 #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel{
+    display:flex;
+    flex:1 1 auto;
+    flex-direction:column;
+    align-self:stretch;
+    justify-content:space-between;
+    gap:14px;
     width:100%;
+    min-width:0;
+    min-height:0;
     max-width:100%;
-    margin:auto;
+    margin:0;
+    padding:26px 13px!important;
     background:transparent!important;
+    color:#453109;
     text-align:center;
     max-height:none;
-    overflow:visible;
+    overflow:auto;
+}
+#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-title{
+    font-size:14px;
+    line-height:1.5;
+    letter-spacing:.10em;
+    color:#5b4215;
+}
+#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-client{
+    font-size:23px;
+    line-height:1.3;
+    margin:0;
+}
+#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-empty{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex:1 1 auto;
+    margin:0;
+    padding:12px 0;
+    font-size:18px;
+    line-height:1.5;
+    font-weight:600;
+    color:#4b391b;
+}
+#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-footer{
+    justify-content:center;
+    margin-top:auto;
+    gap:10px;
+}
+#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel button,
+#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel > a{
+    font-size:13px;
+    line-height:1.35;
+    padding:12px 14px;
+    border-radius:9px;
+    min-height:44px;
+}
+#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel > a{
+    display:block;
+    margin-top:auto;
+    color:#2f517b;
+    background:#fff;
+    border:1px solid #c6d4e4;
+    text-decoration:none;
+    font-weight:700;
+}
+@media(max-height:520px){
+    #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel{padding:12px 8px!important;gap:6px}
+    #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-empty{font-size:15px;padding:5px 0}
+    #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel button,
+    #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel > a{min-height:34px;padding:7px 9px}
 }
 `;
 document.head.appendChild(emptyStyle);
@@ -2462,6 +2524,9 @@ document.body.appendChild(box);
             return;
         }
         const client=el('div',session.address.name||'Client');client.className='sp-ledger-client';panel.append(client);
+        if(!groups.length){
+            const empty=el('p','No letters yet');empty.className='sp-ledger-empty';panel.append(empty);
+        }
         // No repeated address/status paragraphs: the client name is enough.
         // The bureau cards below show only existing, named jobs.
         let grand=0,missing=0;
