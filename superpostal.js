@@ -989,33 +989,49 @@ function spProcessJobWarning(missing,control){
 // This bridge lives in the outer userscript scope. The LIQUIDATION module
 // below has its own nested scope and registers its tracking function here.
 let spLiquidationStageJob=null;
+function spLiquidationTrackingNotice(message){
+    // LIQUIDATION is an independent expense calculator. Failure to record a
+    // price must be visible, but must never prevent Postalocity processing.
+    const text=String(message||'Unable to track this job.');
+    console.warn('[SUPER-POSTAL LIQUIDATION]',text);
+    if(!document.body)return;
+    let note=document.querySelector('#spLiquidationTrackingNotice');
+    if(!note){
+        note=document.createElement('div');
+        note.id='spLiquidationTrackingNotice';
+        note.setAttribute('role','alert');
+        note.style.cssText='position:fixed;top:18px;right:18px;z-index:2147483100;max-width:380px;padding:13px 36px 13px 15px;border:2px solid #b56b13;border-radius:10px;background:#fff5df;color:#533600;font:600 12px/1.5 Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.22)';
+        document.body.appendChild(note);
+    }
+    note.replaceChildren();
+    const label=document.createElement('span');
+    label.textContent='LIQUIDATION warning: '+text+' Postalocity processing is not blocked by LIQUIDATION.';
+    const close=document.createElement('button');
+    close.type='button';
+    close.textContent='×';
+    close.setAttribute('aria-label','Dismiss LIQUIDATION warning');
+    close.style.cssText='position:absolute;top:5px;right:7px;font-size:20px;border:0;background:none;cursor:pointer';
+    close.addEventListener('click',function(){note.remove();});
+    note.append(label,close);
+}
 function spBlockIncompleteProcess(event,control){
     let result;
     try{result=spJobDetailsReadiness();}
-    catch(_e){
-        // If a required field cannot be checked, fail closed rather than send
-        // a potentially incomplete mail job.
-        result={ready:false,missing:['Job details could not be verified']};
-    }
+    catch(_error){result={ready:false,missing:['Job details could not be verified']};}
+    // Postalocity's own required job details are the only blocking checks.
+    // LIQUIDATION already calculates the displayed pre-Process price from
+    // uploaded jobs, so it must never hold the native Process button hostage.
     if(result.ready){
         try{
-            // A Postalocity job must not proceed unless its liquidation
-            // record has also been written and read back successfully.
             const tracking=typeof spLiquidationStageJob==='function'?
-                spLiquidationStageJob():
-                {ready:false,reason:'LIQUIDATION has not initialized. Reload Postalocity before processing.'};
-            if(!tracking||tracking.ready!==true){
-                result={ready:false,missing:[tracking&&tracking.reason||
-                    'LIQUIDATION could not verify this job. Reload Postalocity.']};
-            }
+                spLiquidationStageJob():{ready:false,reason:'LIQUIDATION has not loaded.'};
+            if(!tracking||tracking.ready!==true)
+                spLiquidationTrackingNotice(tracking&&tracking.reason||
+                    'Could not record the uploaded job price.');
         }catch(_error){
-            console.error('[SUPER-POSTAL] LIQUIDATION staging error:',_error);
-            result={ready:false,missing:[
-                'LIQUIDATION encountered a script error. Reload Postalocity; if it continues, check the browser console.'
-            ]};
+            console.error('[SUPER-POSTAL] LIQUIDATION stage error:',_error);
+            spLiquidationTrackingNotice('The expense tracker encountered an error.');
         }
-    }
-    if(result.ready){
         const previous=document.querySelector('#spProcessJobBlocked');
         if(previous)previous.remove();
         spDismissProcessToast();
