@@ -182,6 +182,23 @@ function parseAddress(){
         ' Double-check the address before submitting.');
 }
 
+// Expand only the Postalocity dialog that contains the return-address form.
+// Place parser beside its form when they are the only two siblings, avoiding
+// changes to the site's unrelated modals and DOM structure.
+function spSizeReturnAddressDialog(form,parser){
+    const dialog=form.closest('.modal, [role="dialog"]');
+    if(!dialog)return;
+    dialog.classList.add('sp-address-modal');
+    const parent=form.parentElement;
+    if(!parent||parent!==parser.parentElement)return;
+    const children=Array.from(parent.children).filter(function(node){
+        return node.tagName!=='SCRIPT' && node.tagName!=='STYLE';
+    });
+    if(children.length===2 && children.includes(form) && children.includes(parser)){
+        parent.classList.add('sp-address-two-column');
+    }
+}
+
 function addParser(){
     const form=document.querySelector('#envelopeReturn-address');
     if(!form||document.querySelector('#returnAddressParser'))return;
@@ -212,6 +229,16 @@ function addParser(){
           '#returnAddressParser #spParserPreview strong{display:block;color:#293c55;font-size:12px;overflow-wrap:anywhere}',
           '#returnAddressParser .sp-hint{margin-top:10px;font-size:11px}',
           '#returnAddressParser [hidden]{display:none!important}',
+          /* Give the form and parser room; avoid the original nested modal-body scrollbar. */
+          'body .sp-address-modal .modal-dialog{width:min(1180px,calc(100vw - 32px))!important;max-width:min(1180px,calc(100vw - 32px))!important;margin:12px auto!important}',
+          'body .sp-address-modal .modal-content{max-height:none!important;overflow:visible!important}',
+          'body .sp-address-modal .modal-body{max-height:none!important;overflow:visible!important}',
+          'body .sp-address-modal{overflow-y:auto!important}',
+          'body .sp-address-modal .sp-address-two-column{display:grid!important;grid-template-columns:minmax(280px,.8fr) minmax(420px,1.25fr);align-items:start;gap:18px}',
+          'body .sp-address-modal .sp-address-two-column>#returnAddressParser{min-width:0;margin:0}',
+          'body .sp-address-modal .sp-address-two-column>#envelopeReturn-address{min-width:0;max-width:100%}',
+          '@media(max-width:920px){body .sp-address-modal .sp-address-two-column{grid-template-columns:minmax(0,1fr)}}',
+          '@media(max-height:700px){body .sp-address-modal .modal-dialog{margin:6px auto!important}}',
           '@media(max-width:460px){#returnAddressParser #spParserPreview{grid-template-columns:1fr}#returnAddressParser button{flex:1}}'
         ].join('\n');
         document.head.appendChild(style);
@@ -232,6 +259,7 @@ function addParser(){
       '<p class="sp-hint">Review Postalocity fields before submitting. Ctrl+Enter to parse.</p>'
     ].join('');
     form.parentNode.insertBefore(box,form);
+    spSizeReturnAddressDialog(form,box);
     const paste=box.querySelector('#returnAddressPaste');
     box.querySelector('#parseReturnBtn').addEventListener('click',parseAddress);
     box.querySelector('#spClearPasteBtn').addEventListener('click',function(){
