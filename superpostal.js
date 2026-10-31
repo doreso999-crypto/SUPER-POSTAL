@@ -2171,19 +2171,58 @@ document.body.appendChild(box);
         if(typeof window.deleteJob==='function'){window.deleteJob();return;}
         window.alert('Postalocity’s Delete Job control was not found. Delete the job from Postalocity before closing the tab.');
     }
+    // beforeunload itself does not identify why the page is leaving.
+    // Recognize normal navigations and reloads before they reach it. The
+    // remaining case is *likely* tab/window close, never a guaranteed signal.
+    const NAVIGATION_GRACE_MS=1800;
+    let lastKnownNavigation=0;
+    function noteKnownNavigation(){lastKnownNavigation=Date.now();}
+    function recentKnownNavigation(){
+        return lastKnownNavigation>0&&Date.now()-lastKnownNavigation<NAVIGATION_GRACE_MS;
+    }
+    function trackNormalNavigation(){
+        // Modern browsers report toolbar refresh, Back/Forward, links and
+        // programmatic navigation here. This does not fire on tab close.
+        if(window.navigation&&typeof window.navigation.addEventListener==='function'){
+            window.navigation.addEventListener('navigate',event=>{
+                if(event.hashChange||event.downloadRequest!=null)return;
+                noteKnownNavigation();
+            });
+        }
+        // Fallbacks for browsers without the Navigation API.
+        document.addEventListener('click',event=>{
+            if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+            const link=event.target&&event.target.closest&&event.target.closest('a[href]');
+            if(!link||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
+            const href=(link.getAttribute('href')||'').trim();
+            if(href&&!href.startsWith('#')&&!/^(?:javascript:|mailto:|tel:)/i.test(href))noteKnownNavigation();
+        },true);
+        document.addEventListener('submit',event=>{
+            if(!event.defaultPrevented)noteKnownNavigation();
+        },true);
+        document.addEventListener('keydown',event=>{
+            const key=String(event.key||'').toLowerCase();
+            if(key==='f5'||((event.ctrlKey||event.metaKey)&&key==='r')||
+               (event.altKey&&(key==='arrowleft'||key==='arrowright')))noteKnownNavigation();
+        },true);
+    }
     function warnIfLeaving(event){
+        // A recognized refresh, link, form submission or history navigation
+        // must not show SUPER POSTAL's close-tab prompt.
+        if(recentKnownNavigation())return;
         const current=read('job:'+id());
         if(!current||current.deleted||isApproved(current))return;
         const session=read('session:'+current.session);
         if(!session||session.ended)return;
-        // Browsers cannot distinguish closing a tab from reloading/navigating
-        // or reliably finish an asynchronous server deletion after tab close.
+        // Native browser X/close has no dedicated cancelable event. This is a
+        // best-effort close-only prompt, not a reliable close detector.
         event.preventDefault();
         event.returnValue='';
     }
     function tick(){try{if(leaving)return;clean();hookRecipientSave();render(capture());}catch(e){console.warn('SUPER POSTAL totals:',e);}}
     window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
     document.addEventListener('click',e=>{if(e.target.closest('#processBtn')){const r=capture();if(r&&!r.deleted&&!isApproved(r)){r.cents=null;r.status='Processing';write('job:'+r.id,r);}}},true);
+    trackNormalNavigation();
     window.addEventListener('beforeunload',warnIfLeaving);
     window.addEventListener('pagehide',leavePage);
     window.addEventListener('pageshow',()=>{leaving=false;lastPresence=0;tick();});
