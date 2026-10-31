@@ -52,6 +52,9 @@ const realClientChip=flatten(panel).find(el=>el.className==='sp-ledger-client-ch
 assert.ok(realClientChip,'real client has a prominent name chip');
 assert.equal(realClientChip.textContent,'Casey Example');
 assert.equal(realClientChip.dataset.placeholder,undefined,'real client is not mistaken for an example');
+const realClientBar=flatten(panel).find(el=>el.className==='sp-ledger-client');
+assert.ok(realClientBar,'client name has a dedicated full-width row');
+assert.equal(realClientBar.dataset.placeholder,undefined,'real client uses mint full-width bar');
 assert.equal(session.address.name,'Casey Example','rendering does not alter the stored sender name');
 assert.equal(flatten(panel).filter(el=>el.className==='sp-ledger-totalrow').length,2,'two total rows');
 assert.equal(flatten(panel).filter(el=>el.textContent==='Copy').length,2,'each available bureau has a Copy button');
@@ -74,7 +77,7 @@ assert.equal(otherTotal.children[2].disabled,true,'unverified bureau cannot copy
 const panelSource=src.slice(src.indexOf('// FLOATING SIDE PANEL'),src.indexOf('// TEMPORARY, DEVICE-LOCAL CLIENT TOTALS'));
 assert.match(panelSource,/width:'320px'/,'original width restored');
 assert.match(panelSource,/minHeight:'240px'/,'original minimum height restored');
-assert.match(panelSource,/top:'145px'/,'panel raised by 25px');
+assert.match(panelSource,/top:'150px'/,'panel lowered 5px from 145px');
 assert.doesNotMatch(panelSource,/top:'120px'/,'old position removed');
 assert.match(panelSource,/border:'2px solid #202a36'/,'dark outer frame');
 assert.ok(panelSource.includes("background:'#fff'"),'outer background is white');
@@ -92,8 +95,9 @@ assert.ok(src.includes("panel.style.cssText='position:relative;z-index:5;cursor:
 assert.doesNotMatch(src,/panel.append\(el\('div','CLIENT TOTALS'\)\)/,'old duplicate heading removed');
 assert.ok(innerCSS.includes('button:disabled{opacity:'),'disabled styles retained');
 assert.ok(innerCSS.includes('button:focus-visible'),'keyboard focus styles retained');
-assert.ok(innerCSS.includes('.sp-ledger-client-chip{display:inline-block;max-width:100%;padding:6px 10px;border:1px solid #b4dec3;border-radius:8px;background:#eaf7ef'),'real names receive subtle mint rather than an aggressive green fill');
-assert.ok(innerCSS.includes('.sp-ledger-client-chip[data-placeholder="true"]{background:#fff5dd'),'unconfirmed example uses amber instead of green');
+assert.ok(innerCSS.includes('.sp-ledger-client{display:flex;align-items:center;width:100%;min-height:46px;padding:10px 12px;margin:3px 0 13px;border:1px solid #b4dec3;border-radius:8px;background:#eaf7ef'),'real name section fills its entire horizontal content width in light green');
+assert.ok(innerCSS.includes('.sp-ledger-client-chip{display:block;flex:1 1 auto'),'name text expands within the full-width green section');
+assert.ok(innerCSS.includes('.sp-ledger-client[data-placeholder="true"]{background:#fff5dd'),'unconfirmed example uses a full-width amber strip instead of green');
 assert.ok(innerCSS.includes('.sp-ledger-onboard{display:flex;flex-direction:column'),'empty state has a structured compact card');
 assert.ok(innerCSS.includes('.sp-ledger-onboard-index{display:inline-flex'),'empty state has a compact stage marker');
 assert.ok(innerCSS.includes('.sp-ledger-onboard-title{font-size:15px'),'empty state has clear typography');
@@ -108,7 +112,7 @@ assert.match(textAll(emptyPanel),/No letters yet/,'empty client still has a conc
 assert.match(textAll(emptyPanel),/Add a named job and its recipient/,'client with an address sees the next practical step');
 assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-onboard').length,1,'no duplicated empty cards');
 assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-onboard-title').length,1);
-assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-onboard-index')[0].textContent,'02','letters is second step');
+assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-onboard-index').length,0,'No letters yet has no number or step marker');
 assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-group').length,0,'empty state never fabricates bureau groups');
 assert.equal(root.dataset.empty,undefined,'no empty-state size flag remains');
 jobs=[{id:'101',name:'EX Dispute Letter',session:'client',bureau:'EX',cents:139,status:'Processed'}];
@@ -119,6 +123,7 @@ render(jobs[0]);
 let placeholderChip=flatten(document.querySelector('#spLedgerPanel')).find(el=>el.className==='sp-ledger-client-chip');
 assert.equal(placeholderChip.textContent,'Client name','site demo label is replaced with explicit placeholder');
 assert.equal(placeholderChip.dataset.placeholder,'true','demo label uses caution tint');
+assert.equal(flatten(document.querySelector('#spLedgerPanel')).find(el=>el.className==='sp-ledger-client').dataset.placeholder,'true','entire sample-name bar is amber');
 assert.equal(session.address.name,'Sampla A Sample','visual replacement must not change Postalocity data');
 assert.doesNotMatch(textAll(document.querySelector('#spLedgerPanel')),/Sampla A Sample/);
 session.address.name='Sample A. Sample';
