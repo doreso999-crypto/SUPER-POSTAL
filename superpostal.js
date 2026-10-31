@@ -764,6 +764,113 @@ function spReturnAddressLines(){
     return spReturnIsSampleText(lines.join(' '))?[]:lines;
 }
 
+// Job Details must distinguish a draft Return Address from a saved one.
+// Nothing is marked saved merely because a field was filled or Parse was used.
+const spReturnSaveState={pending:null,memory:null};
+function spReturnSaveKey(){
+    const key=spPdfMemoryKey();
+    return key?key.replace('sp-pdf-names-for-job-v1-','sp-return-save-v1-'):'';
+}
+function spReturnSignature(form){
+    if(!form)return '';
+    const parts=['name','company1','company2','address1','address2','city','state','zip','country'].map(function(key){
+        const field=spReturnFormField(form,key);
+        return field?String(field.value||'').trim().replace(/\s+/g,' ').toUpperCase():'';
+    });
+    // Store only a checksum of the address, not the raw personal information.
+    let hash=2166136261;
+    const joined=JSON.stringify(parts);
+    for(let i=0;i<joined.length;i++){
+        hash^=joined.charCodeAt(i);
+        hash=Math.imul(hash,16777619);
+    }
+    return (hash>>>0).toString(16).padStart(8,'0');
+}
+function spReturnAddressComplete(form){
+    if(!form||spReturnIsSampleForm(form))return false;
+    return ['name','address1','city','state','zip'].every(function(key){
+        const field=spReturnFormField(form,key);
+        return !!field&&spReturnIsMeaningful(field,form,true);
+    });
+}
+function spReturnSavedSignature(){
+    const key=spReturnSaveKey();
+    if(spReturnSaveState.memory && spReturnSaveState.memory.key===key)
+        return spReturnSaveState.memory.signature;
+    if(!key)return '';
+    try{
+        const record=JSON.parse(window.sessionStorage.getItem(key)||'null');
+        if(record && record.signature && Number.isFinite(record.savedAt) &&
+           Date.now()-record.savedAt>=0 && Date.now()-record.savedAt<86400000)
+            return record.signature;
+    }catch(_e){}
+    return '';
+}
+function spReturnMarkSaved(form){
+    if(!spReturnAddressComplete(form))return;
+    const key=spReturnSaveKey(),signature=spReturnSignature(form);
+    spReturnSaveState.memory={key:key,signature:signature};
+    if(key){
+        try{window.sessionStorage.setItem(key,JSON.stringify({signature:signature,savedAt:Date.now()}));}
+        catch(_e){}
+    }
+    spQueueRecipientOverview();
+}
+function spReturnSavedReady(){
+    const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
+    return spReturnAddressComplete(form)&&!!spReturnSavedSignature()&&
+        spReturnSavedSignature()===spReturnSignature(form)&&!spReturnSaveState.pending;
+}
+function spReturnSaveHasVisibleError(modal){
+    const invalid=modal.querySelectorAll('[aria-invalid="true"], .alert-danger, .has-error, .invalid-feedback, #spParserStatus[data-type="error"]');
+    return Array.from(invalid).some(function(el){
+        return !el.hidden && el.getClientRects().length>0;
+    });
+}
+function spWatchReturnSaveAction(){
+    const modal=document.querySelector('#settingsReturnAddress-Modal');
+    if(!modal||modal.dataset.spReturnSaveWatch==='true')return;
+    modal.dataset.spReturnSaveWatch='true';
+    modal.addEventListener('click',function(event){
+        const target=event.target.closest('button,input[type="submit"],input[type="button"],a');
+        if(!target)return;
+        const label=String(target.tagName==='INPUT'?target.value:
+            (target.textContent||target.getAttribute('aria-label')||''))
+            .replace(/\s+/g,' ').trim().toLowerCase();
+        if(label==='save changes'||label==='save change'){
+            const form=modal.querySelector('#envelopeReturn-address');
+            spReturnSaveState.pending=spReturnAddressComplete(form)?
+                {signature:spReturnSignature(form),started:Date.now()}:null;
+            spQueueRecipientOverview();
+        }else if(target.matches('[data-dismiss="modal"],.close') ||
+                /^(close|cancel|discard)$/.test(label)){
+            // Closing/cancelling is NOT a save, even after an earlier save click.
+            spReturnSaveState.pending=null;
+            spQueueRecipientOverview();
+        }
+    },true);
+    modal.addEventListener('keydown',function(event){
+        if(event.key==='Escape'){spReturnSaveState.pending=null;spQueueRecipientOverview();}
+    },true);
+    const jq=window.jQuery||window.$;
+    if(jq&&jq.fn){
+        jq(modal).on('hidden.bs.modal.spReturnSave',function(){
+            const pending=spReturnSaveState.pending;
+            spReturnSaveState.pending=null;
+            const form=modal.querySelector('#envelopeReturn-address');
+            if(pending && Date.now()-pending.started<45000 &&
+               spReturnAddressComplete(form) &&
+               spReturnSignature(form)===pending.signature &&
+               !spReturnSaveHasVisibleError(modal)){
+                // Confirmation requires the native Save Changes action AND
+                // the native modal completing its close without visible errors.
+                spReturnMarkSaved(form);
+            }
+            spQueueRecipientOverview();
+        });
+    }
+}
+
 function spRefreshRecipientPdfOverview(){
     const panel=document.querySelector('#spRecipientPdfOverview');
     if(!panel)return;
@@ -775,7 +882,26 @@ function spRefreshRecipientPdfOverview(){
     const recipientKey=JSON.stringify([countLabel,recipientNames]);
     const fileKey=JSON.stringify([pdfNames,spPdfNamesRestored]);
     const returnLines=spReturnAddressLines();
-    const returnKey=JSON.stringify(returnLines);
+    const returnReady=spReturnSavedReady();
+    const recipientsReady=countLabel>0||recipientNames.length>0;
+    const pdfReady=pdfNames.length>0;
+    const returnKey=JSON.stringify([returnLines,returnReady]);
+    const states=[
+        {ready:recipientsReady,label:'Recipient names'},
+        {ready:pdfReady,label:'Uploaded PDFs'},
+        {ready:returnReady,label:'Saved return address'}
+    ];
+    const done=states.every(function(item){return item.ready;});
+    panel.dataset.completion=done?'complete':'incomplete';
+    panel.querySelectorAll('.sp-overview-col').forEach(function(section,i){
+        section.dataset.completion=states[i]&&states[i].ready?'complete':'incomplete';
+    });
+    const header=panel.querySelector('#spOverviewCompletionLabel');
+    if(header){
+        const missing=states.filter(function(item){return !item.ready;}).map(function(item){return item.label;});
+        const statusText=done?'All job details ready':'Missing: '+missing.join(', ');
+        if(header.textContent!==statusText)header.textContent=statusText;
+    }
     if(panel.dataset.recipientKey!==recipientKey){
         panel.dataset.recipientKey=recipientKey;
         panel.querySelector('#spOverviewRecipientCount').textContent=countLabel+' recipients';
@@ -810,6 +936,14 @@ function spRefreshRecipientPdfOverview(){
                 block.className='sp-return-address-block';
                 block.textContent=returnLines.join('\n');
                 preview.appendChild(block);
+                if(!returnReady){
+                    const warning=document.createElement('p');
+                    warning.className='sp-return-save-warning';
+                    warning.textContent=spReturnSaveState.pending?
+                        'Waiting for Save Changes to complete.':
+                        'Not saved — click Save Changes.';
+                    preview.appendChild(warning);
+                }
             }else{
                 const empty=document.createElement('p');
                 empty.className='sp-empty';
@@ -852,10 +986,12 @@ function addRecipientPdfOverview(){
     const step=document.querySelector('#step3');
     if(!step||!document.querySelector('#sourceUploadedList'))return;
     if(step.querySelector('#spRecipientPdfOverview')){
+        spWatchReturnSaveAction();
         spQueueRecipientOverview();
         return;
     }
     spWatchNativeUploadedFiles();
+    spWatchReturnSaveAction();
     if(!document.querySelector('#spRecipientPdfStyles')){
         const styles=document.createElement('style');
         styles.id='spRecipientPdfStyles';
@@ -865,7 +1001,17 @@ function addRecipientPdfOverview(){
             '#step3 #spRecipientPdfOverview .sp-overview-header{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-bottom:10px}',
             '#step3 #spRecipientPdfOverview .sp-overview-header strong{font-size:14px}',
             '#step3 #spRecipientPdfOverview .sp-overview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}',
-            '#step3 #spRecipientPdfOverview .sp-overview-col{min-width:0;border:1px solid #e6edf5;border-radius:8px;background:#fafcfe;padding:10px}',
+            '#step3 #spRecipientPdfOverview .sp-overview-col{min-width:0;border:1px solid #e6edf5;border-radius:8px;background:#fafcfe;padding:10px;transition:border-color .15s ease,background-color .15s ease}',
+            '#step3 #spRecipientPdfOverview[data-completion="incomplete"]{border-color:#dc7777}',
+            '#step3 #spRecipientPdfOverview[data-completion="complete"]{border-color:#74bd90}',
+            '#step3 #spRecipientPdfOverview .sp-overview-col[data-completion="incomplete"]{border-color:#dc7777;background:#fff9f9}',
+            '#step3 #spRecipientPdfOverview .sp-overview-col[data-completion="complete"]{border-color:#74bd90;background:#f6fcf8}',
+            '#step3 #spRecipientPdfOverview .sp-overview-col[data-completion="incomplete"] .sp-overview-col-title{color:#a12b2b}',
+            '#step3 #spRecipientPdfOverview .sp-overview-col[data-completion="complete"] .sp-overview-col-title{color:#207345}',
+            '#step3 #spOverviewCompletionLabel{font-size:11px;font-weight:600;line-height:1.35}',
+            '#step3 #spRecipientPdfOverview[data-completion="incomplete"] #spOverviewCompletionLabel{color:#a12b2b}',
+            '#step3 #spRecipientPdfOverview[data-completion="complete"] #spOverviewCompletionLabel{color:#207345}',
+            '#step3 #spRecipientPdfOverview .sp-return-save-warning{margin:9px 0 0;color:#a12b2b;font-size:11px;font-weight:600}',
             '#step3 #spRecipientPdfOverview .sp-overview-col-title{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px;font-weight:700;font-size:12px}',
             '#step3 #spRecipientPdfOverview .sp-count{color:#536c8a;font-size:11px;font-weight:500}',
             '#step3 #spRecipientPdfOverview ul{list-style:none;padding:0;margin:0;max-height:230px;overflow-y:auto}',
@@ -885,7 +1031,8 @@ function addRecipientPdfOverview(){
     card.id='spRecipientPdfOverview';
     card.setAttribute('aria-label','Recipient names, uploaded PDF filenames and return address');
     card.innerHTML=[
-      '<div class="sp-overview-header"><strong>Job Details</strong>',
+      '<div class="sp-overview-header"><div><strong>Job Details</strong>',
+      '<div id="spOverviewCompletionLabel" role="status" aria-live="polite"></div></div>',
       '<button type="button" id="spOverviewOpenRecipients">Open recipient list</button></div>',
       '<div class="sp-overview-grid">',
       '<section class="sp-overview-col"><div class="sp-overview-col-title">',
