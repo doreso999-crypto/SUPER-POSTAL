@@ -1192,10 +1192,13 @@ function spScarePreview(control,form){
     const actions=document.createElement('div');actions.className='sp-scare-actions';
     const skip=document.createElement('button');skip.type='button';skip.textContent='Skip and process';
     const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';
-    const pending={control,form,overlay,media:null,stopSound:null,timer:null,done:false};
+    const pending={control,form,overlay,media:null,visual:null,stopSound:null,timer:null,done:false,fallback:false};
     spScarePending=pending;
     skip.addEventListener('click',function(){spScareProceed(pending);});
     cancel.addEventListener('click',function(){spScareClose(pending);});
+    overlay.addEventListener('keydown',function(e){
+        if(e.key==='Escape'){e.preventDefault();spScareClose(pending);}
+    });
     actions.append(skip,cancel);
     stage.append(actions);overlay.append(stage);document.body.appendChild(overlay);
     skip.focus({preventScroll:true});
@@ -1203,8 +1206,11 @@ function spScarePreview(control,form){
     const gifURL=SP_PROCESS_SCARE_MEDIA.gif.trim();
     const audioURL=SP_PROCESS_SCARE_MEDIA.audio.trim();
     function original(){
-        if(pending.done)return;
+        if(pending.done||pending.fallback)return;
+        pending.fallback=true;
+        if(pending.timer!==null){clearTimeout(pending.timer);pending.timer=null;}
         if(pending.media){try{pending.media.pause();}catch(_e){} pending.media=null;}
+        if(pending.visual)pending.visual.remove();
         const art=document.createElement('div');art.className='sp-scare-original';
         const face=document.createElement('div');face.className='sp-scare-face';
         const headline=document.createElement('div');headline.className='sp-scare-horror';
@@ -1217,7 +1223,7 @@ function spScarePreview(control,form){
     if(videoURL){
         const video=document.createElement('video');
         video.src=videoURL;video.preload='auto';video.playsInline=true;video.muted=false;video.volume=0.6;
-        pending.media=video;
+        pending.media=video;pending.visual=video;
         stage.insertBefore(video,actions);
         video.addEventListener('ended',function(){spScareProceed(pending);},{once:true});
         video.addEventListener('error',original,{once:true});
@@ -1229,7 +1235,7 @@ function spScarePreview(control,form){
     }else if(gifURL&&audioURL){
         const picture=document.createElement('img');picture.src=gifURL;picture.alt='Horror preview';
         const audio=document.createElement('audio');audio.src=audioURL;audio.volume=0.6;
-        pending.media=audio;
+        pending.media=audio;pending.visual=picture;
         stage.insertBefore(picture,actions);
         pending.timer=setTimeout(function(){spScareProceed(pending);},SP_PROCESS_SCARE_MEDIA.fallbackMs+1200);
         audio.addEventListener('error',original,{once:true});
