@@ -12,7 +12,7 @@ function tab(id,client='John Doe',store=shared){
  spBureauDisplayName:c=>({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[c]||'Unknown bureau',
  SP_RECIPIENT_BUREAUS:{EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}},
  document:{querySelector:s=>s==='#envelopeReturn-address'?{}:s==='#overview-jobName'?(state.name===null?null:{value:state.name}):s==='#jobState'?{textContent:state.status}:s==='.totalPriceRow .totalPrice'?(state.cost?{textContent:state.cost}:null):null,querySelectorAll:()=>[]}};
- vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage};})();',ctx);return {api:ctx.api,state,ctx};
+ vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage,duplicateNameMatches,duplicateReviewKey};})();',ctx);return {api:ctx.api,state,ctx};
 }
 const a=tab('101'),b=tab('102'),j=tab('103','Jane Doe');const ar=a.api.capture(),br=b.api.capture(),jr=j.api.capture();
 assert.equal(ar.session,br.session);assert.notEqual(ar.session,jr.session);
@@ -90,3 +90,19 @@ const duplicate=tab('981','Close case',closeStore);duplicate.state.status='Proce
 reopened.api.leavePage();assert.equal(closeTotal(),278,'one of two open tabs must not hide the same job');
 duplicate.api.leavePage();assert.equal(closeTotal(),139,'last tab closing removes the unapproved job from totals');
 console.log('PASS: pending tab close deducts price, approved close preserves price, reopening restores job, duplicate tabs are not double counted.');
+
+const duplicateStore=storage();
+const dupA=tab('5101','Duplicate Client',duplicateStore),dupB=tab('5102','Duplicate Client',duplicateStore),distinct=tab('5103','Other Client',duplicateStore);
+dupA.state.name='SAME EX TITLE';dupB.state.name='SAME EX TITLE';distinct.state.name='SAME EX TITLE';
+dupA.api.capture();dupB.api.capture();distinct.api.capture();
+let matches=dupA.api.duplicateNameMatches(dupA.api.read('job:5101'));
+assert.equal(matches.length,1,'only a second ID under the same saved return address is reported');
+assert.equal(matches[0].id,'5102');
+dupB.state.name='DIFFERENT EX TITLE';dupB.api.capture();
+assert.equal(dupA.api.duplicateNameMatches(dupA.api.read('job:5101')).length,0,'different job names are not flagged');
+dupB.state.name='SAME EX TITLE';dupB.api.capture();
+const reviewKey=dupA.api.duplicateReviewKey(dupA.api.read('job:5101'),dupB.api.read('job:5102'));
+assert.equal(reviewKey,dupB.api.duplicateReviewKey(dupB.api.read('job:5102'),dupA.api.read('job:5101')),'acknowledgement key must be independent of tab order');
+assert.equal(dupA.api.countable(dupA.api.read('job:5101')),true);
+assert.equal(dupA.api.countable(dupA.api.read('job:5102')),true);
+console.log('PASS: identical job names have distinct IDs and prices; same return address triggers duplicate review, different names or clients do not.');
