@@ -1582,23 +1582,24 @@ box.id='bureauTotals';
 box.dataset.minimized='false';
 box.dataset.empty='true'; // Keep the larger empty state until named jobs are visible.
 
-// At normal size the panel stays 320 × 240. With no visible jobs its
-// dimensions grow by 2.5× (800 × 600), capped to the browser viewport.
+// At normal size the panel stays 320 × 240. With no visible jobs, only
+// its minimum height grows 2.5× to 600px; the width stays 320px.
+// The empty height is capped to fit the viewport.
 // The minimized mascot is never enlarged.
-const EMPTY_SIZE_SCALE=2.5;
+const EMPTY_HEIGHT_SCALE=2.5;
 const emptyStyle=document.createElement('style');
 emptyStyle.id='spEmptyTotalsSize';
 emptyStyle.textContent=`
 #bureauTotals[data-empty="true"][data-minimized="false"]{
-    width:min(${320*EMPTY_SIZE_SCALE}px,calc(100vw - 30px))!important;
-    min-height:max(140px,min(${240*EMPTY_SIZE_SCALE}px,calc(100vh - 150px)))!important;
+    width:min(320px,calc(100vw - 30px))!important;
+    min-height:max(140px,min(${240*EMPTY_HEIGHT_SCALE}px,calc(100vh - 150px)))!important;
     display:flex!important;
     align-items:center;
     justify-content:center;
 }
 #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel{
     width:100%;
-    max-width:480px;
+    max-width:100%;
     margin:auto;
     background:transparent!important;
     text-align:center;
