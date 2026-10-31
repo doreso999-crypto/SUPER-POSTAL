@@ -159,3 +159,17 @@ assert.equal(deleteTab.api.read('job:6601').deleted,undefined,'failed native res
 handler.handleSuccessResponse({success:true});
 assert.equal(deleteTab.api.read('job:6601').deleted,true,'only successful native callback removes job');
 console.log('PASS: changing native delete method names and failed/successful responses.');
+
+const approvalPriceStore=storage();
+const approvalPrice=tab('6701','Approved Price',approvalPriceStore);
+approvalPrice.state.status='Processed - Ready for Approval';approvalPrice.state.cost='$5.00';
+approvalPrice.api.capture();approvalPrice.api.markLifecycle('6701','approve');
+approvalPrice.state.status='Approved';approvalPrice.state.cost='$5.49';
+let corrected=approvalPrice.api.capture();
+assert.equal(corrected.cents,549,'approved page may correct an originally verified total');
+approvalPrice.state.cost='Price currently unavailable';
+corrected=approvalPrice.api.capture();
+assert.equal(corrected.priceNeedsReview,true,'invalid current approved total must be flagged');
+approvalPrice.state.cost='$5.49';corrected=approvalPrice.api.capture();
+assert.equal(corrected.priceNeedsReview,false,'fresh verified approved total removes warning');
+console.log('PASS: approved-page total corrections and invalid-price safeguards.');
