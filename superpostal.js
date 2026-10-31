@@ -194,7 +194,7 @@ function spSizeReturnAddressDialog(form,parser){
 }
 
 
-// Hide TOTALOCITY and its child mascot only while this specific Return Address
+// Hide the totals panel only while this specific Return Address
 // modal is open; restore them when it closes. Their layout stays unchanged.
 function spKeepCalculatorVisibleForReturnModal(modal){
     if(!modal)return;
@@ -1573,104 +1573,13 @@ spAddRecipientBureauDropdown();
 ///////////////////////////////
 (function(){
 
-// Keep the original yellow panel, mascot position and draggable layout.
+// Keep the original yellow, draggable totals panel without decorative artwork.
 // No accounting, price tracking, filenames, or client-session logic.
 document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
 
 const box=document.createElement('div');
 box.id='bureauTotals';
 box.dataset.minimized='false';
-box.dataset.empty='true'; // Keep the larger empty state until named jobs are visible.
-
-// At normal size the panel stays 320 × 240. With no visible jobs, only
-// its minimum height grows 2.5× to 600px; the width stays 320px.
-// The empty height is capped to fit the viewport.
-// The minimized mascot is never enlarged.
-const EMPTY_HEIGHT_SCALE=2.5;
-const emptyStyle=document.createElement('style');
-emptyStyle.id='spEmptyTotalsSize';
-emptyStyle.textContent=`
-#bureauTotals[data-empty="true"][data-minimized="false"]{
-    width:min(320px,calc(100vw - 30px))!important;
-    height:max(140px,min(${240*EMPTY_HEIGHT_SCALE}px,calc(100vh - 150px)))!important;
-    min-height:max(140px,min(${240*EMPTY_HEIGHT_SCALE}px,calc(100vh - 150px)))!important;
-    display:flex!important;
-    align-items:stretch;
-    justify-content:stretch;
-}
-#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel{
-    display:flex;
-    flex:1 1 auto;
-    flex-direction:column;
-    align-self:stretch;
-    justify-content:space-between;
-    gap:14px;
-    width:100%;
-    min-width:0;
-    min-height:0;
-    max-width:100%;
-    margin:0;
-    padding:26px 13px!important;
-    background:transparent!important;
-    color:#453109;
-    text-align:center;
-    max-height:none;
-    overflow:auto;
-}
-#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-title{
-    font-size:14px;
-    line-height:1.5;
-    letter-spacing:.10em;
-    color:#5b4215;
-}
-#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-client{
-    font-size:23px;
-    line-height:1.3;
-    margin:0;
-}
-#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-empty{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    flex:1 1 auto;
-    margin:0;
-    padding:12px 0;
-    font-size:18px;
-    line-height:1.5;
-    font-weight:600;
-    color:#4b391b;
-}
-#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-footer{
-    justify-content:center;
-    margin-top:auto;
-    gap:10px;
-}
-#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel button,
-#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel > a{
-    font-size:13px;
-    line-height:1.35;
-    padding:12px 14px;
-    border-radius:9px;
-    min-height:44px;
-}
-#bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel > a{
-    display:block;
-    margin-top:auto;
-    color:#2f517b;
-    background:#fff;
-    border:1px solid #c6d4e4;
-    text-decoration:none;
-    font-weight:700;
-}
-@media(max-height:520px){
-    #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel{padding:12px 8px!important;gap:6px}
-    #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel .sp-ledger-empty{font-size:15px;padding:5px 0}
-    #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel button,
-    #bureauTotals[data-empty="true"][data-minimized="false"] #spLedgerPanel > a{min-height:34px;padding:7px 9px}
-}
-`;
-document.head.appendChild(emptyStyle);
-
 Object.assign(box.style,{
     position:'fixed',
     top:'120px',
@@ -1690,96 +1599,6 @@ Object.assign(box.style,{
 });
 
 ///////////////////////////////
-// MASCOT SETTINGS
-///////////////////////////////
-//
-// The mascot is a CHILD of the yellow calculator panel,
-// like a sticker attached to a board.
-//
-// The yellow panel has overflow: visible.
-// The mascot can therefore be fully inside the panel
-// or extend outside any edge.
-//
-// X/Y are relative to the panel's top-left corner.
-//
-// X:
-//   negative = left
-//   positive = right
-//
-// Y:
-//   negative = up
-//   positive = down
-//
-// ONLY CHANGE THESE VALUES.
-//
-
-const MASCOT_SETTINGS = {
-    x: -242,
-    y: -50,
-
-    width: 500,
-    height: 400
-};
-
-///////////////////////////////
-// MASCOT
-///////////////////////////////
-
-document.querySelectorAll("#postalMascot").forEach(el => el.remove());
-
-const mascot =
-document.createElement("img");
-
-mascot.id = "postalMascot";
-
-mascot.src =
-    "https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=" + Date.now();
-
-Object.assign(mascot.style, {
-    position: "absolute",
-    left: "0px",
-    top: "0px",
-    width: MASCOT_SETTINGS.width + "px",
-    height: MASCOT_SETTINGS.height + "px",
-    objectFit: "contain",
-    pointerEvents: "none",
-    userSelect: "none",
-    zIndex: "1",
-    display: "block"
-});
-
-function applyMascotPosition() {
-
-    mascot.style.setProperty("left", "0px", "important");
-    mascot.style.setProperty("top", "0px", "important");
-
-    mascot.style.setProperty(
-        "margin-left",
-        MASCOT_SETTINGS.x + "px",
-        "important"
-    );
-
-    mascot.style.setProperty(
-        "margin-top",
-        MASCOT_SETTINGS.y + "px",
-        "important"
-    );
-}
-
-box.appendChild(mascot);
-
-applyMascotPosition();
-
-const mascotPositionObserver = new MutationObserver(() => {
-    applyMascotPosition();
-});
-
-mascotPositionObserver.observe(mascot, {
-    attributes: true,
-    attributeFilter: ["style", "class"]
-});
-
-///////////////////////////////
 // MINIMIZE BUTTON
 ///////////////////////////////
 
@@ -1787,7 +1606,10 @@ const minimize =
 document.createElement("button");
 
 minimize.id="minimizeTotals";
-minimize.innerHTML="−";
+minimize.type='button';
+minimize.textContent="−";
+minimize.title='Minimize client totals';
+minimize.setAttribute('aria-label','Minimize client totals');
 
 Object.assign(minimize.style,{
     position:"absolute",
@@ -1855,35 +1677,34 @@ document.addEventListener("mouseup",function(){
 // MINIMIZE / RESTORE
 ///////////////////////////////
 
-// An actual child is kept for each state, so restoring the panel does not
-// detach its mascot, duplicate buttons, or call undefined functions.
-const miniMascot=document.createElement('img');
-miniMascot.src='https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts='+Date.now();
-Object.assign(miniMascot.style,{
-    width:'60px',
-    height:'60px',
-    objectFit:'contain',
-    pointerEvents:'none',
-    userSelect:'none',
-    display:'none'
-});
-box.appendChild(miniMascot);
-
+// Use the same accessible control for both minimize and restore.
+// No external image assets, observers, or decorative overlay are needed.
 function minimizeBox(){
     if(box.dataset.minimized==='true')return;
     box.dataset.minimized='true';
     dragging=false;
-    mascot.style.display='none';
-    minimize.style.display='none';
-    miniMascot.style.display='block';
+    minimize.textContent='Totals';
+    minimize.title='Restore client totals';
+    minimize.setAttribute('aria-label','Restore client totals');
+    Object.assign(minimize.style,{
+        top:'0px',
+        right:'0px',
+        width:'60px',
+        height:'60px',
+        borderRadius:'50%',
+        fontSize:'12px',
+        lineHeight:'1',
+        letterSpacing:'.01em',
+        background:'rgb(242,179,46)'
+    });
     Object.assign(box.style,{
         width:'60px',
         height:'60px',
         minHeight:'0px',
         padding:'0',
         borderRadius:'50%',
-        background:'transparent',
-        boxShadow:'none',
+        background:'rgb(242,179,46)',
+        boxShadow:'0 0 12px rgba(0,0,0,.3)',
         right:'15px',
         top:'120px',
         left:'auto',
@@ -1898,9 +1719,20 @@ function minimizeBox(){
 function restoreBox(){
     if(box.dataset.minimized!=='true')return;
     box.dataset.minimized='false';
-    miniMascot.style.display='none';
-    mascot.style.display='block';
-    minimize.style.display='block';
+    minimize.textContent='−';
+    minimize.title='Minimize client totals';
+    minimize.setAttribute('aria-label','Minimize client totals');
+    Object.assign(minimize.style,{
+        top:'5px',
+        right:'5px',
+        width:'28px',
+        height:'28px',
+        borderRadius:'50%',
+        fontSize:'20px',
+        lineHeight:'normal',
+        letterSpacing:'normal',
+        background:'rgba(0,0,0,.15)'
+    });
     Object.assign(box.style,{
         width:'320px',
         height:'auto',
@@ -1920,13 +1752,8 @@ function restoreBox(){
 
 minimize.addEventListener('click',function(e){
     e.stopPropagation();
-    minimizeBox();
-});
-box.addEventListener('click',function(e){
-    if(box.dataset.minimized==='true'){
-        e.stopPropagation();
-        restoreBox();
-    }
+    if(box.dataset.minimized==='true')restoreBox();
+    else minimizeBox();
 });
 
 document.body.appendChild(box);
@@ -2499,9 +2326,6 @@ document.body.appendChild(box);
         const tracked=session&&!session.ended?sessionJobs(r.session):[];
         const jobs=tracked.filter(countable);
         const groups=bureauSummary(jobs);
-        // Empty means no visible, named, classified job cards. This does not
-        // include the informational return-address prompt or an empty client.
-        box.dataset.empty=groups.length?'false':'true';
         const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage]);
         if(view===lastView)return;lastView=view;
         panel.replaceChildren();
