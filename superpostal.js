@@ -2028,7 +2028,10 @@ document.body.appendChild(box);
     function hookLifecycle(api){
         // Observe successful native actions only. Button clicks/confirmation dialogs
         // and failure callbacks never modify the ledger.
-        ['delete','deleteJob','removeJob','approve','approveJob'].forEach(method=>{
+        // Observe only known API operations. Do not interpret a click or a
+        // confirmation dialog as a completed deletion.
+        Object.keys(api.job).filter(method=>/^(?:delete|remove|discard)(?:Job)?$/i.test(method)||
+            /^(?:approve|approveJob)$/i.test(method)).forEach(method=>{
             const original=api.job[method];
             if(typeof original!=='function'||original.spLedgerLifecycle)return;
             function wrapped(handler){
@@ -2037,8 +2040,14 @@ document.body.appendChild(box);
                 const target=String(request.jobId||request.id||(request.job&&request.job.id)||id());
                 const success=handler.handleSuccessResponse;
                 handler.handleSuccessResponse=function(){
+                    const response=arguments[0];
+                    const outcome=success.apply(this,arguments);
+                    // If Postalocity signals failure inside a nominally successful
+                    // callback, do not remove the job from totals.
+                    if(response&&typeof response==='object'&&
+                        (response.success===false||response.ok===false||response.error||response.errors))return outcome;
                     markLifecycle(target,/^approve/i.test(method)?'approve':'delete');
-                    return success.apply(this,arguments);
+                    return outcome;
                 };
                 return original.apply(this,arguments);
             }
@@ -2283,12 +2292,23 @@ document.body.appendChild(box);
         if(!current||current.deleted||isApproved(current))return;
         // Invoke Postalocity's real Delete Job control; removing a local
         // ledger entry alone does not delete a job on Postalocity.
-        const button=[...document.querySelectorAll('button[onclick],a[onclick]')].find(el=>
-            /^\s*(?:return\s+)?deleteJob\s*\(\s*\)\s*;?\s*$/.test(el.getAttribute('onclick')||'')
-            &&!el.closest('#spLedgerPanel')&&!el.disabled);
-        if(button){button.click();return;}
-        if(typeof window.deleteJob==='function'){window.deleteJob();return;}
-        window.alert('Postalocity’s Delete Job control was not found. Delete the job from Postalocity before closing the tab.');
+        const controls=[...document.querySelectorAll('button,a,input[type="button"],input[type="submit"]')]
+            .filter(el=>{
+                if(el.closest('#spLedgerPanel')||el.disabled||el.getAttribute('aria-disabled')==='true')return false;
+                const action=String(el.getAttribute('onclick')||'').trim();
+                const id=String(el.id||'');
+                const data=String(el.getAttribute('data-action')||'');
+                const name=String(el.textContent||el.value||'').replace(/\s+/g,' ').trim();
+                return /^(?:return\s+)?(?:deleteJob|removeJob)\s*\(\s*\)\s*;?$/.test(action)||
+                    /^(?:deleteJobBtn|deleteJobButton|removeJobBtn)$/i.test(id)||
+                    /^(?:delete-job|remove-job)$/i.test(data)||
+                    /^(?:delete|remove)\s+(?:this\s+)?job\s*$/i.test(name);
+            });
+        // Ambiguous controls may apply to a different job from a listing.
+        if(controls.length===1){controls[0].click();return;}
+        window.alert(controls.length
+            ?'Multiple Delete Job controls were found. Use Postalocity’s own Delete Job action for the correct job.'
+            :'Postalocity’s Delete Job control could not be verified. Use the website’s native Delete Job action. The totals were not changed.');
     }
     // beforeunload itself does not identify why the page is leaving.
     // Recognize normal navigations and reloads before they reach it. The
