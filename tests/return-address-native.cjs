@@ -129,7 +129,7 @@ assert.equal(api.state.pending,null,'pending marker clears after native modal cl
 assert.equal(api.spReturnSavedReady(),true,'native close confirms unchanged address without Bootstrap event');
 console.log('PASS: successful native Save Settings that closes without Bootstrap event confirms saved address.');
 
-fill(initial);api.state.memory=null;api.state.dirty=true;
+fill(initial);state.fields.address1.value='100 Canceled St';api.state.memory=null;api.state.dirty=true;
 state.open=true;observers[0].notify();
 clickSave('Save changes');
 clickCancel();
@@ -138,7 +138,7 @@ assert.equal(api.spReturnSavedReady(),false,'Cancel after a save click is not co
 assert.equal(api.state.pending,null);
 console.log('PASS: cancelling an attempted save does not create a false positive.');
 
-api.state.dirty=true;api.state.memory=null;
+api.state.dirty=true;api.state.memory=null;state.fields.address1.value='200 Failed St';
 state.open=true;observers[0].notify();
 clickSave('Save changes');state.visibleError=true;
 state.open=false;observers[0].notify();
