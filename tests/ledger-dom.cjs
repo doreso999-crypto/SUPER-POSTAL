@@ -51,3 +51,16 @@ const leaving=new onClose.Event('beforeunload',{cancelable:true});onClose.dispat
 assert.equal(leaving.defaultPrevented,true,'Unapproved tab close produces a browser confirmation');
 onClose.close();
 console.log('PASS: panel invokes native Delete Job; pending job warns before leaving.');
+
+const closingA=page('601',first),closingB=page('602',first);
+assert.match(closingA.document.querySelector('#spLedgerPanel').textContent,/2 job\(s\)/);
+closingA.dispatchEvent(new closingA.Event('pagehide'));
+closingB.testTick();
+assert.doesNotMatch(closingB.document.querySelector('#spLedgerPanel').textContent,/#601/,'closed pending job is removed from a sibling tab');
+assert.match(closingB.document.querySelector('#spLedgerPanel').textContent,/1 job\(s\)/);
+closingB.document.querySelector('#jobState').textContent='Approved';closingB.testTick();
+closingB.dispatchEvent(new closingB.Event('pagehide'));
+const viewer=page('603',first);
+assert.match(viewer.document.querySelector('#spLedgerPanel').textContent,/#602/,'approved closed-tab job stays in panel');
+closingA.close();closingB.close();viewer.close();
+console.log('PASS: cross-tab job close drops a pending record but retains an approved record.');
