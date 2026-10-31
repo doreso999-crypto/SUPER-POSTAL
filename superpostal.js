@@ -2324,7 +2324,7 @@ document.body.appendChild(box);
             const name=el('span',bucket.label.toUpperCase());
             const count=el('span',bucket.jobs.length+' '+(bucket.jobs.length===1?'job':'jobs'));count.className='sp-ledger-count';
             heading.append(name,count);section.append(heading);
-            bucket.jobs.forEach(({job,g})=>{
+            bucket.jobs.forEach(({job,group:g})=>{
                 const letter=el('div');letter.className='sp-ledger-letter';
                 const line=el('div');line.className='sp-ledger-letterhead';
                 const name=el('div',job.name||'Untitled job');name.className='sp-ledger-lettername';
