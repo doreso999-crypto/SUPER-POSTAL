@@ -1782,13 +1782,13 @@ function liqRenderLive(){
         if(data.jobs[draft.id])return;
         if(draft.id===currentId&&liqIsNewJob())return;
         entries.push({id:draft.id,jobName:draft.jobName,files:draft.files,
-            shared:true});
+            quotedCents:draft.quotedCents,shared:true});
     });
     // Once Process has been clicked successfully, the job moves to the
     // recorded list below. Do not show the same files as unprocessed uploads.
     if(localFiles.length && !data.jobs[currentId]){
         entries.unshift({id:currentId,jobName:currentJobName,
-            files:localFiles,shared:false});
+            files:localFiles,quotedCents:liqNewJobTotal(),shared:false});
     }
     const unlinked=!!(active&&localFiles.length&&liqIsNewJob()&&!same);
     const warning=unlinked?(different?
@@ -1797,7 +1797,7 @@ function liqRenderLive(){
         '';
     const signature=JSON.stringify([
         active&&active.id,display&&display.name,display&&display.address,
-        status,warning,entries.map(x=>[x.id,x.jobName,x.files,x.shared])
+        status,warning,entries.map(x=>[x.id,x.jobName,x.files,x.quotedCents,x.shared])
     ]);
     if(signature===liqLastLiveSignature)return;
     liqLastLiveSignature=signature;
@@ -1825,7 +1825,9 @@ function liqRenderLive(){
         const source=entry.shared?'Other tab · uploaded, not processed':
             'Current job · uploaded, not processed';
         card.appendChild(liqElement('div',
-            source+(entry.id?' · Job #'+entry.id:''),{
+            source+(entry.id?' · Job #'+entry.id:'')+
+            (Number.isSafeInteger(entry.quotedCents)?
+                ' · '+liqMoney(entry.quotedCents):' · Price unavailable'),{
                 fontSize:'10px',fontWeight:'700',opacity:'.76',
                 marginBottom:'4px'
             }));
@@ -2321,6 +2323,7 @@ function liqRender(){
     const clients=liqGroupData(data);
     const grand=clients.reduce((sum,cl)=>sum+cl.total,0);
     const processed=clients.reduce((sum,cl)=>sum+cl.processed,0);
+    const quoted=clients.reduce((sum,cl)=>sum+cl.quoted,0);
     const pending=clients.reduce((sum,cl)=>sum+cl.pending,0);
     const total=panel.querySelector('#liqGrandTotal');
     const count=panel.querySelector('#liqJobCount');
@@ -2336,12 +2339,13 @@ function liqRender(){
             (!identity||identity.key===active.clientKey));
     }
     const hint=panel.querySelector('#liqHint');
-    if(hint)hint.textContent=liqLastNotice||'Shared across Postalocity tabs. New verified return addresses create a new temporary session.';
+    if(hint)hint.textContent=liqLastNotice||
+        'LIQUIDATION sums each job’s Postalocity Total Price before Process, by bureau. It reconciles final prices if they change.';
     total.textContent=liqMoney(grand);
-    count.textContent=processed+' processed · '+pending+' pending';
+    count.textContent=processed+' processed · '+quoted+' quoted · '+pending+' awaiting price';
     list.replaceChildren();
     if(!clients.length){
-        list.appendChild(liqElement('p',data.clientName?'No jobs processed for this client yet.':'Create a new client job to begin.',{
+        list.appendChild(liqElement('p',data.clientName?'No quoted jobs yet. Upload PDFs to calculate.':'Save a Return Address and upload PDFs to begin.',{
             fontSize:'11px',padding:'8px 0',margin:'0'
         }));
         liqRenderLive();
@@ -2389,9 +2393,17 @@ function liqRender(){
                 const top=liqElement('div',null,{
                     display:'flex',justifyContent:'space-between',gap:'5px'
                 });
-                top.append(liqElement('strong','Job #'+job.id),liqElement('strong',
-                    Number.isSafeInteger(job.priceCents)?liqMoney(job.priceCents):'Pending price'));
+                top.append(liqElement('strong','Job #'+job.id+' · '+
+                    (job.status==='processed'?'Processed':
+                     job.status==='processing'?'Processing':'Uploaded')),
+                    liqElement('strong',Number.isSafeInteger(job.priceCents)?
+                        liqMoney(job.priceCents):'Price unavailable'));
                 row.appendChild(top);
+                if(job.status==='processed'&&Number.isSafeInteger(job.quotedCents)&&
+                   job.quotedCents!==job.priceCents)row.appendChild(
+                    liqElement('div','Before processing: '+liqMoney(job.quotedCents),{
+                        fontSize:'10px',opacity:'.76'
+                    }));
                 const original=(Array.isArray(job.files)&&job.files.length)?
                     job.files.join(', '):'PDF name not captured';
                 row.appendChild(liqElement('div',original,{
@@ -2512,10 +2524,8 @@ window.addEventListener('storage',function(event){
         liqLastLiveSignature='';
         liqRender();
     }else if(event.key&&event.key.startsWith(LIQ_DRAFT_PREFIX)){
-        // Incoming uploads change the live list only, not the completed
-        // totals. Avoid collapsing expanded job groups on each PDF upload.
         liqLastLiveSignature='';
-        liqRenderLive();
+        liqRender();
     }
 });
 document.addEventListener('input',function(event){
@@ -2541,7 +2551,9 @@ setInterval(function(){
     // Fallback for tabs that miss a storage event.
     const data=liqRead();
     const signature=data.sessionId+JSON.stringify(Object.values(data.jobs)
-        .map(j=>[j.id,j.priceCents,j.target,j.status]).sort());
+        .map(j=>[j.id,j.priceCents,j.target,j.status]).sort())+
+        JSON.stringify(Object.values(data.drafts).map(d=>[
+            d.id,d.quotedCents,d.target,d.files]).sort());
     if(signature!==liqLastView){liqLastView=signature;liqRender();}
 },2200);
 
