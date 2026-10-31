@@ -189,14 +189,14 @@ function spSizeReturnAddressDialog(form,parser){
 }
 
 
-// Keep TOTALOCITY and its mascot above Postalocity's backdrop when this
-// specific Return Address modal opens. Leave their coordinates and behavior alone.
+// Hide TOTALOCITY and its child mascot only while this specific Return Address
+// modal is open; restore them when it closes. Their layout stays unchanged.
 function spKeepCalculatorVisibleForReturnModal(modal){
     if(!modal)return;
     if(!document.querySelector('#spReturnModalStackStyles')){
         const style=document.createElement('style');
         style.id='spReturnModalStackStyles';
-        style.textContent='body.sp-return-address-open #bureauTotals{z-index:2147483000!important;visibility:visible!important;opacity:1!important}';
+        style.textContent='body.sp-return-address-open #bureauTotals{display:none!important} body:has(#settingsReturnAddress-Modal.in) #bureauTotals,body:has(#settingsReturnAddress-Modal.show) #bureauTotals{display:none!important}';
         document.head.appendChild(style);
     }
     const update=function(open){
