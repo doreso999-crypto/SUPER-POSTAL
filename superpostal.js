@@ -2036,7 +2036,10 @@ document.body.appendChild(box);
         if(direct&&direct.mergedInto)return resolvedSessionKey(exact);
         const candidates=keys().filter(k=>k.startsWith('session:')).map(k=>k.slice(8))
             .filter(key=>{const ss=read('session:'+key);return ss&&!ss.ended&&!ss.mergedInto&&aliasesOf(ss).includes(exact);});
-        return candidates.length===1?candidates[0]:exact;
+        if(candidates.length===1)return candidates[0];
+        const ended=keys().filter(k=>k.startsWith('session:')).map(k=>k.slice(8))
+            .filter(key=>{const ss=read('session:'+key);return ss&&ss.ended&&aliasesOf(ss).includes(exact);});
+        return ended.length?ended[0]:exact;
     }
     function rememberClientAddress(key,a){
         if(!complete(a))return false;
@@ -2215,6 +2218,7 @@ document.body.appendChild(box);
             }
         }
         if(r&&!read('session:'+r.session)){remove('job:'+jobId);r=null;}
+        if(r&&read('session:'+r.session)?.ended)return null;
         if(r&&r.deleted){remove('live:'+PAGE_ID);return r;}
         if(r&&a){
             // Editing this client's saved return address must not reassign
