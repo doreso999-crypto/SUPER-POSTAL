@@ -4,16 +4,26 @@ const parserStart=source.indexOf('function spReturnNormalize(');
 const parserEnd=source.indexOf('function spReturnIsDefaultPaste(',parserStart);
 const readyStart=source.indexOf('const spReturnSaveState=');
 const readyEnd=source.indexOf('function spWatchReturnSaveAction(){',readyStart);
+const saveActionStart=source.indexOf('function spWatchReturnSaveAction(){');
+const saveActionEnd=source.indexOf('// Stop Postalocity',saveActionStart);
 const watchStart=source.indexOf('function spWatchFilledReturnFields(){');
 const watchEnd=source.indexOf('function addParser(){',watchStart);
 assert.ok(parserStart>0&&parserEnd>parserStart&&readyStart>0&&readyEnd>readyStart);
 assert.ok(watchStart>0&&watchEnd>watchStart);
-const code=source.slice(parserStart,parserEnd)+source.slice(readyStart,readyEnd)+source.slice(watchStart,watchEnd);
+assert.ok(saveActionStart>0&&saveActionEnd>saveActionStart);
+const code=source.slice(parserStart,parserEnd)+source.slice(readyStart,readyEnd)+
+    source.slice(saveActionStart,saveActionEnd)+source.slice(watchStart,watchEnd);
 assert.match(code,/spReturnNativePrefillReady/,'native hydrated form detection exists');
 assert.match(code,/spReturnSaveState\.dirty=true/,'native form edit tracking exists');
 assert.match(code,/modal\.classList\.contains\('show'\)/,'open modal excluded');
 
-const state={id:'101',open:false,fields:{},events:{}};
+const state={id:'101',open:false,fields:{},events:{},visibleError:false};
+const observers=[];
+class FakeMutationObserver{
+    constructor(callback){this.callback=callback;observers.push(this);}
+    observe(target,options){this.target=target;this.options=options;}
+    notify(){this.callback([]);}
+}
 const fill=data=>{
     state.fields={};
     for(const [name,value] of Object.entries(data)){
@@ -25,7 +35,8 @@ const modal={
     dataset:{},style:{get display(){return state.open?'block':'none';}},
     classList:{contains:k=>state.open&&(k==='show'||k==='in')},
     addEventListener:(type,listener)=>{state.events[type]=listener;},
-    querySelector:q=>q==='#envelopeReturn-address'?form:null
+    querySelector:q=>q==='#envelopeReturn-address'?form:null,
+    querySelectorAll:()=>state.visibleError?[{hidden:false,getClientRects:()=>[{}]}]:[]
 };
 const form={
     querySelector:q=>{
@@ -45,9 +56,9 @@ const window={sessionStorage:{
     setItem:(k,v)=>values.set(k,v)
 }};
 const key=()=>state.id?'sp-pdf-names-for-job-v1-'+state.id:'';
-const funcs=new Function('document','window','spPdfMemoryKey','spQueueRecipientOverview','spRefreshFilledReturnFields',code+
-    ';return {spReturnSavedReady,spReturnNativePrefillReady,spReturnMarkSaved,spReturnSignature,spReturnSaveKey,state:spReturnSaveState,spWatchFilledReturnFields};');
-const api=funcs(document,window,key,()=>{},()=>{});
+const funcs=new Function('document','window','spPdfMemoryKey','spQueueRecipientOverview','spRefreshFilledReturnFields','MutationObserver',code+
+    ';return {spReturnSavedReady,spReturnNativePrefillReady,spReturnMarkSaved,spReturnSignature,spReturnSaveKey,state:spReturnSaveState,spWatchFilledReturnFields,spWatchReturnSaveAction};');
+const api=funcs(document,window,key,()=>{},()=>{},FakeMutationObserver);
 assert.equal(api.spReturnSavedReady(),true,'native saved form is recognized with no script session marker');
 assert.equal(values.size,0,'no synthetic save marker is written when reading saved values');
 api.spWatchFilledReturnFields();
@@ -91,3 +102,47 @@ state.id='102';
 assert.equal(api.spReturnSavedReady(),true,'another existing job can use its own native prefill');
 assert.equal(values.size,0);
 console.log('PASS: native recovery requires a job ID and works independently for other saved jobs.');
+
+
+function clickSave(label){
+    state.events.click({target:{
+        tagName:'BUTTON',textContent:label,getAttribute:()=>null,matches:()=>false,
+        closest:()=>({tagName:'BUTTON',textContent:label,getAttribute:()=>null,matches:()=>false})
+    }});
+}
+function clickCancel(){
+    state.events.click({target:{
+        tagName:'BUTTON',textContent:'Cancel',getAttribute:()=>null,matches:()=>false,
+        closest:()=>({tagName:'BUTTON',textContent:'Cancel',getAttribute:()=>null,matches:()=>false})
+    }});
+}
+fill(initial);api.state.memory=null;api.state.dirty=true;state.id='103';state.open=true;
+api.spWatchReturnSaveAction();
+assert.equal(observers.length,1,'a native-close observer is installed');
+assert.equal(observers[0].target,modal);
+clickSave('Save Settings');
+assert.ok(api.state.pending,'native Save Settings click is detected');
+assert.equal(api.spReturnSavedReady(),false,'pending save stays unconfirmed');
+state.open=false;
+observers[0].notify();
+assert.equal(api.state.pending,null,'pending marker clears after native modal close');
+assert.equal(api.spReturnSavedReady(),true,'native close confirms unchanged address without Bootstrap event');
+console.log('PASS: successful native Save Settings that closes without Bootstrap event confirms saved address.');
+
+fill(initial);api.state.memory=null;api.state.dirty=true;
+state.open=true;observers[0].notify();
+clickSave('Save changes');
+clickCancel();
+state.open=false;observers[0].notify();
+assert.equal(api.spReturnSavedReady(),false,'Cancel after a save click is not confirmation');
+assert.equal(api.state.pending,null);
+console.log('PASS: cancelling an attempted save does not create a false positive.');
+
+api.state.dirty=true;api.state.memory=null;
+state.open=true;observers[0].notify();
+clickSave('Save changes');state.visibleError=true;
+state.open=false;observers[0].notify();
+assert.equal(api.spReturnSavedReady(),false,'visible native validation errors block address');
+assert.equal(api.state.pending,null);
+state.visibleError=false;
+console.log('PASS: native save errors cannot be mistaken for successful saves.');
