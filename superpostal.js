@@ -1573,7 +1573,7 @@ spAddRecipientBureauDropdown();
 ///////////////////////////////
 (function(){
 
-// Keep the original yellow, draggable totals panel without decorative artwork.
+// White totals panel with a yellow header; no external decorative artwork.
 // No accounting, price tracking, filenames, or client-session logic.
 document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
 
@@ -1586,13 +1586,13 @@ Object.assign(box.style,{
     right:'15px',
     width:'320px',
     minHeight:'240px',
-    background:'#f2b32e',
+    background:'#fff',
     color:'#1c2632',
-    padding:'40px 12px 12px',
+    padding:'48px 12px 12px',
     border:'2px solid #202a36',
     borderRadius:'0',
     zIndex:'999999',
-    boxShadow:'5px 6px 0 rgba(28,38,50,.22),0 12px 24px rgba(18,28,42,.12)',
+    boxShadow:'none',
     cursor:'move',
     overflow:'visible',
     boxSizing:'border-box',
@@ -1600,8 +1600,18 @@ Object.assign(box.style,{
 });
 
 ///////////////////////////////
-// MINIMIZE BUTTON
+// YELLOW HEADER / MINIMIZE BUTTON
 ///////////////////////////////
+
+const header=document.createElement('div');
+header.id='spTotalsHeader';
+header.style.cssText='position:absolute;top:0;left:0;right:0;height:44px;box-sizing:border-box;display:flex;align-items:center;padding:0 48px 0 12px;background:#f2b32e;border-bottom:2px solid #202a36;z-index:10;cursor:move;user-select:none';
+const heading=document.createElement('span');
+heading.id='spTotalsHeading';
+heading.textContent='CLIENT TOTALS';
+heading.style.cssText='font:800 12px/1.2 Arial,sans-serif;letter-spacing:.1em;color:#202a36;white-space:nowrap';
+header.appendChild(heading);
+box.appendChild(header);
 
 const minimize =
 document.createElement("button");
@@ -1619,7 +1629,7 @@ Object.assign(minimize.style,{
     width:"28px",
     height:"28px",
     border:"1px solid #202a36",
-    borderRadius:"0",
+    borderRadius:"50%",
     background:"#202a36",
     color:"#fff",
     fontSize:"20px",
@@ -1684,6 +1694,7 @@ function minimizeBox(){
     if(box.dataset.minimized==='true')return;
     box.dataset.minimized='true';
     dragging=false;
+    header.style.display='none';
     minimize.textContent='Totals';
     minimize.title='Restore client totals';
     minimize.setAttribute('aria-label','Restore client totals');
@@ -1692,10 +1703,10 @@ function minimizeBox(){
         right:'0px',
         width:'60px',
         height:'60px',
-        borderRadius:'0',
+        borderRadius:'50%',
         fontSize:'12px',
         lineHeight:'1',
-        letterSpacing:'.05em',
+        letterSpacing:'.02em',
         background:'#f2b32e',
         color:'#202a36',
         border:'0'
@@ -1705,9 +1716,9 @@ function minimizeBox(){
         height:'60px',
         minHeight:'0px',
         padding:'0',
-        borderRadius:'0',
+        borderRadius:'50%',
         background:'#f2b32e',
-        boxShadow:'4px 5px 0 rgba(28,38,50,.2)',
+        boxShadow:'none',
         right:'15px',
         top:'170px',
         left:'auto',
@@ -1722,6 +1733,7 @@ function minimizeBox(){
 function restoreBox(){
     if(box.dataset.minimized!=='true')return;
     box.dataset.minimized='false';
+    header.style.display='flex';
     minimize.textContent='−';
     minimize.title='Minimize client totals';
     minimize.setAttribute('aria-label','Minimize client totals');
@@ -1730,7 +1742,7 @@ function restoreBox(){
         right:'8px',
         width:'28px',
         height:'28px',
-        borderRadius:'0',
+        borderRadius:'50%',
         fontSize:'20px',
         lineHeight:'normal',
         letterSpacing:'normal',
@@ -1742,11 +1754,11 @@ function restoreBox(){
         width:'320px',
         height:'auto',
         minHeight:'240px',
-        padding:'40px 12px 12px',
+        padding:'48px 12px 12px',
         borderRadius:'0',
         border:'2px solid #202a36',
-        background:'#f2b32e',
-        boxShadow:'5px 6px 0 rgba(28,38,50,.22),0 12px 24px rgba(18,28,42,.12)',
+        background:'#fff',
+        boxShadow:'none',
         top:'170px',
         right:'15px',
         left:'auto',
@@ -2288,15 +2300,15 @@ document.body.appendChild(box);
         let panel=document.querySelector('#spLedgerPanel');
         if(!panel){
             panel=el('section');panel.id='spLedgerPanel';
-            panel.style.cssText='position:relative;z-index:5;cursor:default;max-height:72vh;overflow:auto;border:1px solid #4c5967;border-radius:0;background:#fffefa;padding:14px;color:#202a36;font:13px/1.5 Arial,sans-serif';
+            panel.style.cssText='position:relative;z-index:5;cursor:default;max-height:72vh;overflow:auto;border:0;border-radius:0;background:#fff;padding:6px 3px;color:#202a36;font:13px/1.5 Arial,sans-serif';
             panel.addEventListener('mousedown',event=>event.stopPropagation());box.appendChild(panel);
         }
         if(!document.querySelector('#spLedgerV2Styles')){
             const style=el('style');style.id='spLedgerV2Styles';
             style.textContent=`
             #bureauTotals[data-minimized="true"] #spLedgerPanel{display:none}
-            #spLedgerPanel,#spLedgerPanel *,#minimizeTotals{box-sizing:border-box;border-radius:0!important}
-            #spLedgerPanel .sp-ledger-title{background:#202a36;color:#f5c34f;margin:-14px -14px 12px;padding:10px 13px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:800}
+            #spLedgerPanel,#spLedgerPanel *{box-sizing:border-box}
+            #spLedgerPanel .sp-ledger-title{display:none}
             #spLedgerPanel .sp-ledger-client{font-size:19px;line-height:1.25;letter-spacing:-.02em;font-weight:800;overflow-wrap:anywhere;margin:3px 0 13px;color:#1d2732}
             #spLedgerPanel .sp-ledger-address{font-size:11px;color:#718094;overflow-wrap:anywhere}
             #spLedgerPanel .sp-ledger-divider{border:0;border-top:1px solid #cbd2db;margin:13px 0 11px}
@@ -2316,7 +2328,7 @@ document.body.appendChild(box);
             #spLedgerPanel .sp-ledger-totals{display:grid;gap:2px}
             #spLedgerPanel .sp-ledger-totalrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:9px;align-items:center;border:0;border-bottom:1px solid #e5e8ec;padding:8px 0;background:transparent;color:#283646}
             #spLedgerPanel .sp-ledger-totalrow strong{font-size:13px;font-variant-numeric:tabular-nums;color:#1e2b37}
-            #spLedgerPanel button{font:700 11px Arial,sans-serif;border:1px solid #314052;padding:7px 10px;background:#fff;color:#273748;cursor:pointer;max-width:100%;transition:background-color .15s ease,color .15s ease}
+            #spLedgerPanel button{font:700 11px Arial,sans-serif;border:1px solid #314052;border-radius:8px;padding:7px 10px;background:#fff;color:#273748;cursor:pointer;max-width:100%;transition:background-color .15s ease,color .15s ease}
             #spLedgerPanel .sp-ledger-totalrow button{background:#202a36;border-color:#202a36;color:#fff}
             #spLedgerPanel .sp-ledger-totalrow button:hover:not(:disabled){background:#35465a}
             #spLedgerPanel .sp-ledger-footer button:hover:not(:disabled){background:#f8edcd}
@@ -2327,6 +2339,8 @@ document.body.appendChild(box);
             #spLedgerPanel .sp-ledger-pending{color:#8794a5;font-size:10px;font-weight:500;margin-top:2px}
             #spLedgerPanel .sp-ledger-status{padding:9px 10px;border-left:3px solid #ad7723;background:#fff7e8;color:#795326;font-size:11px;margin:10px 0}
             #spLedgerPanel .sp-ledger-empty{font-size:12px;color:#65768a;padding:12px 0}
+            #spLedgerPanel > a{display:inline-block;padding:8px 10px;border:1px solid #314052;border-radius:8px;color:#263747;text-decoration:none;font-size:11px;font-weight:700}
+            #spLedgerPanel > a:hover{background:#fff5d6}
             @media(max-width:380px){#spLedgerPanel .sp-ledger-totalrow{grid-template-columns:minmax(0,1fr) auto}#spLedgerPanel .sp-ledger-totalrow button{grid-column:1/-1}}
             `;
             document.head.append(style);
@@ -2338,7 +2352,7 @@ document.body.appendChild(box);
         const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage]);
         if(view===lastView)return;lastView=view;
         panel.replaceChildren();
-        panel.append(el('div','CLIENT TOTALS'));panel.lastChild.className='sp-ledger-title';
+        // The single CLIENT TOTALS heading lives in the yellow outer header.
         if(error){const warning=el('div',error);warning.className='sp-ledger-status';panel.append(warning);}
         if(!r||!session||session.ended){
             const ended=!!(session&&session.ended);
