@@ -2761,6 +2761,7 @@ document.body.appendChild(box);
                     candidates.forEach(client=>{
                         const option=el('option',client.label);option.value=client.key;chooser.append(option);
                     });
+                    if(candidates.length===1)chooser.value=candidates[0].key;
                     const linkButton=el('button','Link to tracked client');
                     linkButton.type='button';
                     linkButton.onclick=()=>{if(chooser.value)linkJobToClient(chooser.value);};
