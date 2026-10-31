@@ -336,6 +336,21 @@ function watchUploadedFiles() {
 
 }
 
+// Hide only Postalocity's exact "Expand All" and "New Settings" buttons.
+// Leave their handlers, other settings controls, and unrelated UI intact.
+function hidePostalocitySettingsButtons() {
+    const buttons = document.querySelectorAll(
+        'button, input[type="button"], input[type="submit"], [role="button"], a.btn'
+    );
+    buttons.forEach(function (button) {
+        const text = (button.tagName === 'INPUT' ? button.value : button.textContent)
+            .replace(/\s+/g, ' ').trim().toLowerCase();
+        if (text === 'expand all' || text === 'new settings') {
+            button.style.setProperty('display', 'none', 'important');
+        }
+    });
+}
+
 ///////////////////////////////
 // WATCH PAGE CHANGES
 ///////////////////////////////
@@ -346,6 +361,8 @@ const observer = new MutationObserver(() => {
 
     watchUploadedFiles();
 
+    hidePostalocitySettingsButtons();
+
 });
 
 observer.observe(document.body, {
@@ -355,6 +372,7 @@ observer.observe(document.body, {
 
 addParser();
 watchUploadedFiles();
+hidePostalocitySettingsButtons();
 
 ///////////////////////////////
 // AUTO POPULATE RECIPIENT BASED ON JOB NAME
