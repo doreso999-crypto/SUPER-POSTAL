@@ -1582,7 +1582,7 @@ box.id='bureauTotals';
 box.dataset.minimized='false';
 Object.assign(box.style,{
     position:'fixed',
-    top:'170px',
+    top:'145px',
     right:'15px',
     width:'320px',
     minHeight:'240px',
@@ -1720,7 +1720,7 @@ function minimizeBox(){
         background:'#f2b32e',
         boxShadow:'none',
         right:'15px',
-        top:'170px',
+        top:'145px',
         left:'auto',
         display:'flex',
         alignItems:'center',
@@ -1759,7 +1759,7 @@ function restoreBox(){
         border:'2px solid #202a36',
         background:'#fff',
         boxShadow:'none',
-        top:'170px',
+        top:'145px',
         right:'15px',
         left:'auto',
         display:'block',
@@ -2339,8 +2339,13 @@ document.body.appendChild(box);
             #spLedgerPanel .sp-ledger-pending{color:#8794a5;font-size:10px;font-weight:500;margin-top:2px}
             #spLedgerPanel .sp-ledger-status{padding:9px 10px;border-left:3px solid #ad7723;background:#fff7e8;color:#795326;font-size:11px;margin:10px 0}
             #spLedgerPanel .sp-ledger-empty{font-size:12px;color:#65768a;padding:12px 0}
-            #spLedgerPanel > a{display:inline-block;padding:8px 10px;border:1px solid #314052;border-radius:8px;color:#263747;text-decoration:none;font-size:11px;font-weight:700}
-            #spLedgerPanel > a:hover{background:#fff5d6}
+            #spLedgerPanel .sp-ledger-onboard{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-height:130px;padding:16px 14px;margin:4px 0 10px;border:1px solid #e2e6eb;border-left:3px solid #e2aa26;border-radius:9px;background:#fffcf4}
+            #spLedgerPanel .sp-ledger-onboard-index{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid #e2c36c;border-radius:50%;background:#fff5d5;color:#735013;font:bold 11px/1 Arial,sans-serif}
+            #spLedgerPanel .sp-ledger-onboard-title{font-size:15px;line-height:1.3;font-weight:800;letter-spacing:-.01em;color:#202a36;overflow-wrap:anywhere}
+            #spLedgerPanel .sp-ledger-onboard-desc{font-size:12px;line-height:1.55;color:#657084;margin:0;overflow-wrap:anywhere}
+            #spLedgerPanel .sp-ledger-onboard > a,#spLedgerPanel .sp-ledger-onboard > button{display:inline-block;margin-top:7px;padding:8px 12px;border:1px solid #202a36;border-radius:8px;background:#202a36;color:#fff;text-decoration:none;font:700 11px/1.4 Arial,sans-serif;cursor:pointer}
+            #spLedgerPanel .sp-ledger-onboard > a:hover,#spLedgerPanel .sp-ledger-onboard > button:hover{background:#35465a;color:#fff}
+            #spLedgerPanel .sp-ledger-onboard > a:focus-visible,#spLedgerPanel .sp-ledger-onboard > button:focus-visible{outline:2px solid #b36e04;outline-offset:2px}
             @media(max-width:380px){#spLedgerPanel .sp-ledger-totalrow{grid-template-columns:minmax(0,1fr) auto}#spLedgerPanel .sp-ledger-totalrow button{grid-column:1/-1}}
             `;
             document.head.append(style);
@@ -2354,25 +2359,41 @@ document.body.appendChild(box);
         panel.replaceChildren();
         // The single CLIENT TOTALS heading lives in the yellow outer header.
         if(error){const warning=el('div',error);warning.className='sp-ledger-status';panel.append(warning);}
+        // One purposeful, compact empty-state card for each genuine state.
+        // Do not render placeholder jobs or expand the panel when empty.
+        function emptyCard(step,title,detail){
+            const card=el('div');card.className='sp-ledger-onboard';
+            const mark=el('span',step);mark.className='sp-ledger-onboard-index';card.append(mark);
+            const heading=el('div',title);heading.className='sp-ledger-onboard-title';card.append(heading);
+            const desc=el('p',detail);desc.className='sp-ledger-onboard-desc';card.append(desc);
+            panel.append(card);
+            return card;
+        }
         if(!r||!session||session.ended){
             const ended=!!(session&&session.ended);
-            const msg=el('p',ended?'Session ended. Start a new session to track more jobs.':recovering?'Reading saved job settings…':recoveryMessage||'Save a return address to start tracking.');msg.className='sp-ledger-empty';panel.append(msg);
+            const card=ended
+                ?emptyCard('↺','Session ended','Start a new session to track more jobs.')
+                :recovering
+                    ?emptyCard('…','Checking saved settings','Looking for this job’s saved return address.')
+                    :recoveryMessage
+                        ?emptyCard('!','Return address unavailable',recoveryMessage)
+                        :emptyCard('01','Add a return address','Save it in Job Settings to start tracking this client.');
             const existing=read('job:'+id()),old=existing&&read('session:'+existing.session);
             if(old&&old.ended){
                 const start=el('button','Start new session');
                 start.onclick=()=>{remove('session:'+existing.session);observed.clear();keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===existing.session)remove(k);});lastView='';tick();};
-                panel.append(start);
+                card.append(start);
             }else if(!recovering&&id()){
-                const link=el('a','Open saved job settings');
+                const link=el('a','Open job settings');
                 const url=new URL('/jobui',location.origin);url.searchParams.set('edit','true');url.searchParams.set('id',id());
-                link.href=url.href;panel.append(link);
+                link.href=url.href;card.append(link);
                 if(!recoveryAttempts.has(id()))recoverSavedJob();
             }
             return;
         }
         const client=el('div',session.address.name||'Client');client.className='sp-ledger-client';panel.append(client);
         if(!groups.length){
-            const empty=el('p','No letters yet');empty.className='sp-ledger-empty';panel.append(empty);
+            emptyCard('02','No letters yet','Add a named job and its recipient to see bureau totals here.');
         }
         // No repeated address/status paragraphs: the client name is enough.
         // The bureau cards below show only existing, named jobs.
