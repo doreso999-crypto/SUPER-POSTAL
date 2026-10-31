@@ -182,85 +182,10 @@ function parseAddress(){
         ' Double-check the address before submitting.');
 }
 
-// Postalocity's "Return Address" popup is not always a Bootstrap .modal.
-// Find its actual content container by the Save changes button instead of
-// assuming a particular dialog class, then widen that container and any
-// width-constraining wrapper. Other popups are not modified.
+// Exact ID from Postalocity's Return Address dialog. Avoid changing other modals.
 function spSizeReturnAddressDialog(form,parser){
-    if(!form || !parser || !form.isConnected || !parser.isConnected)return;
-
-    const parent=form.parentElement;
-    if(parent && parent===parser.parentElement){
-        const visible=Array.from(parent.children).filter(function(node){
-            return node.tagName!=='SCRIPT' && node.tagName!=='STYLE' &&
-                   !(node.tagName==='INPUT' && node.type==='hidden') && !node.hidden;
-        });
-        if(visible.length===2 && visible.includes(form) && visible.includes(parser)){
-            parent.classList.add('sp-address-two-column');
-        }
-    }
-
-    let shell=null;
-    let node=form.parentElement;
-    while(node && node!==document.body && node!==document.documentElement){
-        // The popup footer says "Save changes"; the parser's own buttons do not.
-        const saveButton=Array.from(node.querySelectorAll('button,input[type="submit"],[role="button"]'))
-            .some(function(button){
-                return /save\s+changes/i.test((button.textContent||button.value||'').trim());
-            });
-        if(saveButton && /Return Address/i.test(node.textContent||'')){
-            shell=node;
-            break;
-        }
-        node=node.parentElement;
-    }
-
-    if(!shell){
-        shell=form.closest('.modal-content,.modal-dialog,[role="dialog"],.ui-dialog,.ant-modal,.MuiDialog-paper,.bootbox');
-    }
-    if(!shell)return;
-
-    // The first matching node is often .modal-content. Its parent (typically
-    // .modal-dialog) also has a 450px max-width, so resize both if necessary.
-    const width='min(980px, calc(100vw - 32px))';
-    let current=shell;
-    let steps=0;
-    while(current && current!==document.body && current!==document.documentElement && steps<5){
-        const rect=current.getBoundingClientRect();
-        const viewportWidth=Math.max(document.documentElement.clientWidth,window.innerWidth||0);
-        const isOverlay=rect.width>=viewportWidth-16;
-        if(isOverlay)break;
-
-        if(rect.width>0 && rect.width<viewportWidth*0.99){
-            current.style.setProperty('width',width,'important');
-            current.style.setProperty('max-width',width,'important');
-            current.style.setProperty('min-width','0','important');
-            current.style.setProperty('box-sizing','border-box','important');
-            current.style.setProperty('margin-left','auto','important');
-            current.style.setProperty('margin-right','auto','important');
-            current.classList.add('sp-address-sized');
-        }
-        current=current.parentElement;
-        steps++;
-    }
-
-    // The scrollbar in the screenshot belongs to the popup body, not the
-    // textarea. Release fixed body heights while keeping normal page scrolling
-    // available for genuinely small displays.
-    let scroller=form.parentElement;
-    while(scroller && scroller!==document.body && scroller!==document.documentElement){
-        const styles=window.getComputedStyle(scroller);
-        const constrained=/auto|scroll|hidden/i.test(styles.overflowY) ||
-                          (styles.maxHeight!=='none' && scroller.scrollHeight>scroller.clientHeight+5);
-        if(constrained || /modal-body|dialog-body|modal-content/i.test(scroller.className||'')){
-            scroller.style.setProperty('max-height','none','important');
-            scroller.style.setProperty('height','auto','important');
-            scroller.style.setProperty('overflow-y','visible','important');
-            scroller.style.setProperty('overflow-x','visible','important');
-        }
-        if(scroller===shell)break;
-        scroller=scroller.parentElement;
-    }
+    const modal=form && form.closest('#settingsReturnAddress-Modal');
+    if(modal && modal.contains(parser)) modal.classList.add('sp-address-layout');
 }
 
 function addParser(){
@@ -295,21 +220,20 @@ function addParser(){
           '#returnAddressParser #spParserPreview strong{display:block;color:#293c55;font-size:12px;overflow-wrap:anywhere}',
           '#returnAddressParser .sp-hint{margin-top:10px;font-size:11px}',
           '#returnAddressParser [hidden]{display:none!important}',
-          /* Give the form and parser room; avoid the original nested modal-body scrollbar. */
-          '#returnAddressParser.sp-address-sized, .sp-address-sized{box-sizing:border-box!important}',
-          '.sp-address-two-column{display:grid!important;grid-template-columns:minmax(270px,.95fr) minmax(380px,1.05fr);gap:18px;align-items:start}',
-          '.sp-address-two-column>#returnAddressParser{margin:0;min-width:0}',
-          '.sp-address-two-column>#envelopeReturn-address{min-width:0;max-width:100%}',
-          '@media(max-width:840px){.sp-address-two-column{grid-template-columns:minmax(0,1fr)}}',
-          'body .sp-address-modal .modal-dialog{width:min(1180px,calc(100vw - 32px))!important;max-width:min(1180px,calc(100vw - 32px))!important;margin:12px auto!important}',
-          'body .sp-address-modal .modal-content{max-height:none!important;overflow:visible!important}',
-          'body .sp-address-modal .modal-body{max-height:none!important;overflow:visible!important}',
-          'body .sp-address-modal{overflow-y:auto!important}',
-          'body .sp-address-modal .sp-address-two-column{display:grid!important;grid-template-columns:minmax(270px,.95fr) minmax(380px,1.05fr);align-items:start;gap:18px}',
-          'body .sp-address-modal .sp-address-two-column>#returnAddressParser{min-width:0;margin:0}',
-          'body .sp-address-modal .sp-address-two-column>#envelopeReturn-address{min-width:0;max-width:100%}',
-          '@media(max-width:920px){body .sp-address-modal .sp-address-two-column{grid-template-columns:minmax(0,1fr)}}',
-          '@media(max-height:700px){body .sp-address-modal .modal-dialog{margin:6px auto!important}}',
+          /* Only the exact Return Address popup is resized. */
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-dialog.modal-md{width:min(980px,calc(100vw - 32px))!important;max-width:min(980px,calc(100vw - 32px))!important;margin:20px auto!important}',
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-content{height:auto!important;max-height:none!important;overflow:visible!important}',
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll{display:grid!important;grid-template-columns:minmax(0,0.95fr) minmax(0,1.05fr);gap:10px 18px;align-items:start;height:auto!important;max-height:none!important;overflow:visible!important}',
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>:not(#returnAddressParser):not(#envelopeReturn-address){grid-column:1/-1}',
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>label.col-form-label{grid-column:1!important;margin:0;align-self:center}',
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#settingsReturnAddressSource-Value{grid-column:2!important;max-width:100%;width:100%;min-width:0}',
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>hr{margin:3px 0}',
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#returnAddressParser{grid-column:1;min-width:0;margin:0;align-self:start}',
+          '#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#envelopeReturn-address{grid-column:2;min-width:0;width:100%;max-width:100%;margin:0;align-self:start}',
+          '#settingsReturnAddress-Modal.sp-address-layout #envelopeReturn-address .settings-addressBlock-combo{width:100%;max-width:100%;min-width:0}',
+          '#settingsReturnAddress-Modal.sp-address-layout #envelopeReturn-address input{max-width:100%;box-sizing:border-box}',
+          '#settingsReturnAddress-Modal.sp-address-layout #returnAddressParser textarea{min-height:112px}',
+          '@media(max-width:720px){#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll{grid-template-columns:minmax(0,1fr)}#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#returnAddressParser,#settingsReturnAddress-Modal.sp-address-layout .modal-body.modalScroll>#envelopeReturn-address{grid-column:1}}',
           '@media(max-width:460px){#returnAddressParser #spParserPreview{grid-template-columns:1fr}#returnAddressParser button{flex:1}}'
         ].join('\n');
         document.head.appendChild(style);
