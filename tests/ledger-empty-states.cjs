@@ -15,7 +15,7 @@ class Element{
 }
 const flatten=node=>[node,...node.children.flatMap(flatten)];
 const textAll=node=>flatten(node).map(x=>x.textContent||'').join(' ');
-function build({saved=false,ended=false,id='',recovering=false,recoveryMessage=''}={}){
+function build({saved=false,ended=false,id='',recovering=false,recoveryMessage='',candidates=[]}={}){
     const box=new Element('div'),head=[];
     const document={
         createElement:t=>new Element(t),
@@ -25,22 +25,24 @@ function build({saved=false,ended=false,id='',recovering=false,recoveryMessage='
     const session={address:{name:'Sample Client',address1:'1 Main St',city:'Denver',state:'CO',zip:'80201'},ended};
     const job={id:'101',session:'client',name:'Sample EX'};
     const read=key=>key==='session:client'&&saved?session:key==='job:101'?job:null;
-    let recoverCalls=0;
+    let recoverCalls=0;const linked=[];
     class FakeURL{
         constructor(path,origin){this.path=path;this.origin=origin;this.params=[];this.searchParams={set:(k,v)=>this.params.push(k+'='+v)};}
         get href(){return this.origin+this.path+(this.params.length?'?'+this.params.join('&'):'');}
     }
     const args=['document','read','group','countable','bureauSummary','sessionJobs','isApproved','id','error',
         'recovering','recoveryMessage','window','navigator','requestNativeDeletion','clearSession','tick',
-        'lastView','norm','location','URL','recoveryAttempts','recoverSavedJob','remove','observed','keys'];
+        'lastView','norm','location','URL','recoveryAttempts','recoverSavedJob','remove','observed','keys',
+        'linkableSessions','linkJobToClient'];
     const factory=new Function(...args,source+';return render;');
     const render=factory(document,read,()=>({key:'EX'}),()=>false,()=>[],()=>[],()=>false,()=>id,'',recovering,
         recoveryMessage,{confirm:()=>false},{clipboard:{writeText:async()=>{}}},()=>{},()=>{},()=>{},'',x=>String(x||'').trim(),
-        {origin:'https://postalocity.example'},FakeURL,new Set(['101']),()=>{recoverCalls++;},()=>{},{clear(){}},()=>[]);
+        {origin:'https://postalocity.example'},FakeURL,new Set(['101']),()=>{recoverCalls++;},()=>{},{clear(){}},()=>[],
+        ()=>candidates,(key)=>{linked.push(key);return true;});
     render(saved?job:null);
     const panel=document.querySelector('#spLedgerPanel');
     assert.ok(panel,'render creates the panel');
-    return {panel,text:textAll(panel),items:flatten(panel),recoverCalls,box};
+    return {panel,text:textAll(panel),items:flatten(panel),recoverCalls,box,linked};
 }
 
 // An untouched job must explain the missing address, without claiming it is tracking.
@@ -86,3 +88,20 @@ assert.match(cleared.text,/Start a new session/);
 assert.ok(cleared.items.find(x=>x.tag==='button'&&x.textContent==='Start new session'));
 assert.doesNotMatch(cleared.text,/No letters yet|Add a return address/);
 console.log('PASS: cleared client session shows explicit restart, without misreporting an unsaved address.');
+
+
+const candidates=[{key:'tracked-1',label:'Sample Client — Denver, CO 80201'}];
+const linkAvailable=build({id:'101',recoveryMessage:'Address not in fetched HTML.',candidates});
+const selector=linkAvailable.items.find(x=>x.id==='spLedgerLinkClient');
+const linkButton=linkAvailable.items.find(x=>x.tag==='button'&&x.textContent==='Link to tracked client');
+assert.ok(selector,'missing-address state shows an existing saved-client selector');
+assert.equal(selector.children.length,2,'placeholder plus one tracked client are offered');
+assert.equal(selector.children[1].value,'tracked-1');
+assert.equal(selector.value,'tracked-1','a sole tracked client is preselected for quicker explicit recovery');
+assert.ok(linkButton,'recovery offers an explicit local link action');
+assert.match(linkAvailable.text,/does not modify Postalocity/,'no native address changes are implied');
+selector.value='tracked-1';linkButton.onclick();
+assert.deepEqual(linkAvailable.linked,['tracked-1'],'confirmed chooser passes exact session key');
+const notLinked=build({id:'101',recoveryMessage:'Address not in fetched HTML.'});
+assert.equal(notLinked.items.filter(x=>x.id==='spLedgerLinkClient').length,0,'no selector without a genuine previously tracked client');
+console.log('PASS: failed read-only address recovery offers a controlled existing-client link instead of inventing an address.');

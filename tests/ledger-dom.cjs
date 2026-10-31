@@ -63,4 +63,17 @@ closingB.dispatchEvent(new closingB.Event('pagehide'));
 const viewer=page('603',first);
 assert.equal(viewer.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'1','approved closed-tab job stays in panel');
 closingA.close();closingB.close();viewer.close();
-console.log('PASS: cross-tab job close drops a pending record but retains an approved record.');
+console.log('PASS: cross-tab close excludes drafts while keeping approved jobs.');
+
+const processedHtml='<span id="settingsReturnAddressSource-Link">FROM JOB SETTINGS:<br>Processed Sender<br>22 Main Street<br>Denver CO 80201</span>'+
+    '<input id="overview-jobName" value="Processed EX"><span id="jobState">Processed - Ready for Approval</span>'+
+    '<div class="totalPriceRow"><span class="totalPrice">$1.39</span></div>';
+const processedTabs=['7201','7202','7203'].map(jobId=>page(jobId,processedHtml));
+const processedPanel=processedTabs[0].document.querySelector('#spLedgerPanel');
+assert.equal(processedPanel.querySelector('.sp-ledger-count').textContent,'3','three processed job IDs are present');
+processedTabs.forEach(w=>w.dispatchEvent(new w.Event('pagehide')));
+const processedReopened=page('7201','<span id="jobState">Processed - Ready for Approval</span>');
+assert.equal(processedReopened.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'3',
+    'processed jobs remain in client totals even after all tabs closed');
+processedTabs.forEach(w=>w.close());processedReopened.close();
+console.log('PASS: processed unapproved jobs survive closing all tabs and remain visible when one is reopened.');
