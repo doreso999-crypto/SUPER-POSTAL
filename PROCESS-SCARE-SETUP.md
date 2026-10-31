@@ -6,12 +6,13 @@ The userscript now uses the selected Vlipsy clip:
 
 ## Playback
 
-After the original four readiness checks pass, **Process this job** opens a full-screen video and attempts to play the clip with audio at 60% volume. When the video ends, processing resumes through the **original Postalocity button**.
+After the original four readiness checks pass, **Process this job** opens the clip as an immersive **full-viewport video** and requests the browser's native **fullscreen** mode. The clip is scaled to cover the entire display, with audio at 60% volume. When it ends, the original Postalocity processing action runs automatically.
 
-- **Skip and process** immediately continues with the original action.
-- **Cancel** or **Escape** closes the preview and leaves the job unprocessed.
-- Before continuing, the script checks that the job is still complete.
-- If direct MP4 playback fails, it attempts Vlipsy's official embedded-player format and retains a link to the exact clip. Because the embedded player is cross-origin, this fallback continues after eight seconds.
+- There are **no visible Skip, Cancel or playback controls** supplied by the userscript, so the scare plays without an advance warning.
+- **Escape** remains an unobtrusive emergency exit. Closing native fullscreen also cancels the pending processing action rather than unexpectedly submitting it.
+- Before processing, the script rechecks that the job is still complete. Incomplete jobs never trigger the clip.
+- If native fullscreen is denied, a fixed video surface still covers the full webpage.
+- If direct MP4 playback fails, the script attempts Vlipsy's borderless embedded player instead. Third-party player controls cannot be hidden by the userscript; that fallback advances after eight seconds.
 - A stalled direct video cannot delay processing indefinitely (ten-second safeguard).
 
 ## Configuration
