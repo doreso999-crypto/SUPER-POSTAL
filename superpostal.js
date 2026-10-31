@@ -2310,6 +2310,8 @@ document.body.appendChild(box);
             #spLedgerPanel,#spLedgerPanel *{box-sizing:border-box}
             #spLedgerPanel .sp-ledger-title{display:none}
             #spLedgerPanel .sp-ledger-client{font-size:19px;line-height:1.25;letter-spacing:-.02em;font-weight:800;overflow-wrap:anywhere;margin:3px 0 13px;color:#1d2732}
+            #spLedgerPanel .sp-ledger-client-chip{display:inline-block;max-width:100%;padding:6px 10px;border:1px solid #b4dec3;border-radius:8px;background:#eaf7ef;color:#225a39;font-size:17px;line-height:1.3;font-weight:800;overflow-wrap:anywhere}
+            #spLedgerPanel .sp-ledger-client-chip[data-placeholder="true"]{background:#fff5dd;border-color:#edcb87;color:#805c18}
             #spLedgerPanel .sp-ledger-address{font-size:11px;color:#718094;overflow-wrap:anywhere}
             #spLedgerPanel .sp-ledger-divider{border:0;border-top:1px solid #cbd2db;margin:13px 0 11px}
             #spLedgerPanel .sp-ledger-heading{font-size:10px;letter-spacing:.12em;font-weight:800;color:#536171;margin:10px 0 7px}
@@ -2391,7 +2393,21 @@ document.body.appendChild(box);
             }
             return;
         }
-        const client=el('div',session.address.name||'Client');client.className='sp-ledger-client';panel.append(client);
+        // Present the client identity prominently, without altering the saved
+        // return address. A Postalocity example name is not a confirmed client.
+        const sourceName=String(session.address.name||'').trim();
+        const demoName=/^(?:SAMPLA|SAMPLE)\s+A\.?\s+SAMPLE$/i.test(sourceName.replace(/\s+/g,' '));
+        const needsName=!sourceName||demoName;
+        const client=el('div');client.className='sp-ledger-client';
+        const clientName=el('span',needsName?'Client name':sourceName);
+        clientName.className='sp-ledger-client-chip';
+        if(needsName){
+            clientName.dataset.placeholder='true';
+            clientName.title='Example name. Update the saved return address to show the client name.';
+        }else{
+            clientName.title='Client name from saved return address';
+        }
+        client.append(clientName);panel.append(client);
         if(!groups.length){
             emptyCard('02','No letters yet','Add a named job and its recipient to see bureau totals here.');
         }
