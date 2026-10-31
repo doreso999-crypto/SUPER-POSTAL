@@ -564,6 +564,135 @@ function spSchedulePdfRefresh(){
         spPdfRefreshTimer=null;spRequestPdfList(true);
     },1100);
 }
+// Strong bureau checks use exact filename tokens, not substrings of client names.
+// Unlabeled or mixed-name PDFs are never treated as proof of a mismatch.
+function spAssessBureauFilenameMatch(files,selected){
+    const names=spNormalizePdfFiles(files);
+    if(!selected||!['EX','EQU','TU'].includes(selected))
+        return {type:'unknown',names:names,bureaus:[]};
+    if(!names.length)return {type:'no-files',names:names,bureaus:[]};
+    const hints=names.map(function(name){
+        return spDetectBureauForRecipient(name.replace(/\.pdf$/i,''));
+    });
+    const recognized=Array.from(new Set(hints.filter(Boolean)));
+    if(!recognized.length || hints.some(function(value){return !value;})){
+        return {type:'uncertain',names:names,bureaus:recognized};
+    }
+    if(recognized.includes(selected)){
+        return {type:'match',names:names,bureaus:recognized};
+    }
+    return {type:'mismatch',names:names,bureaus:recognized};
+}
+function spBureauCaption(code){
+    return {EX:'Experian',EQU:'Equifax',TU:'TransUnion'}[code]||'Unidentified bureau';
+}
+function spVerifiedBureauDecision(selected){
+    if(spPdfState.status!=='loaded'||spPdfState.job!==spCurrentJobId())
+        return {type:'unverified',names:[],bureaus:[]};
+    return spAssessBureauFilenameMatch(spPdfState.names||[],selected);
+}
+function spBureauFromAddressName(value){
+    // Only recognized bureau recipients are checked. Client return addresses
+    // are legitimate and must not be mistaken for a bureau.
+    const name=String(value||'').toUpperCase().replace(/[^A-Z ]/g,' ').trim();
+    if(/\bEQUIFAX\b/.test(name))return 'EQU';
+    if(/\bEXPERIAN\b/.test(name))return 'EX';
+    if(/\bTRANSUNION\b/.test(name))return 'TU';
+    return '';
+}
+function spSelectedRecipientBureau(){
+    const modal=document.querySelector('#contactModal');
+    if(!modal)return '';
+    const name=modal.querySelector('#address-name');
+    const actual=name?spBureauFromAddressName(name.value):'';
+    const chosen=modal.querySelector('#spRecipientBureauSelect');
+    return actual||(chosen&&chosen.value)||'';
+}
+function spReturnAddressBureau(){
+    const input=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address input[name="name"]');
+    return input?spBureauFromAddressName(input.value):'';
+}
+
+let spBureauWarningSkipButton=null;
+function spShowBureauFileError(root,action,decision,selected){
+    if(!root||!action)return;
+    let holder=root.querySelector('.sp-pdf-address-warning');
+    if(!holder){
+        holder=document.createElement('div');
+        holder.className='sp-pdf-address-warning';
+        holder.setAttribute('role','alert');
+        holder.style.cssText='margin:12px 15px;padding:12px;background:#fff2ed;border:1px solid #d99a80;border-radius:8px;color:#76351e;font-size:12px;line-height:1.5';
+        const footer=root.querySelector('.modal-footer');
+        if(footer)footer.parentNode.insertBefore(holder,footer);
+        else root.appendChild(holder);
+    }
+    holder.replaceChildren();
+    const label=document.createElement('strong');label.textContent='PDF / bureau mismatch';
+    const message=document.createElement('p');
+    message.textContent='Selected: '+spBureauCaption(selected)+
+       '. Uploaded PDF filenames explicitly indicate: '+decision.bureaus.map(spBureauCaption).join(', ')+
+       '. Check that the correct document and recipient address are selected.';
+    const files=document.createElement('p');
+    files.textContent='Files: '+decision.names.join(' · ');
+    const approve=document.createElement('button');
+    approve.type='button';approve.className='btn btn-warning btn-sm';
+    approve.textContent='Continue anyway';
+    const cancel=document.createElement('button');
+    cancel.type='button';cancel.className='btn btn-default btn-sm';
+    cancel.textContent='Review selection';
+    cancel.style.marginLeft='8px';
+    approve.addEventListener('click',function(){
+        holder.remove();
+        spBureauWarningSkipButton=action;
+        try{action.click();}finally{spBureauWarningSkipButton=null;}
+    });
+    cancel.addEventListener('click',function(){holder.remove();});
+    holder.append(label,message,files,approve,cancel);
+    approve.focus();
+}
+function spRefreshBureauMismatchWarning(){
+    const labels={
+        recipient:{root:document.querySelector('#contactModal'),code:spSelectedRecipientBureau()},
+        sender:{root:document.querySelector('#settingsReturnAddress-Modal'),code:spReturnAddressBureau()}
+    };
+    Object.keys(labels).forEach(function(key){
+        const entry=labels[key];if(!entry.root)return;
+        const warning=entry.root.querySelector('.sp-pdf-address-warning');
+        if(warning){
+            const decision=spVerifiedBureauDecision(entry.code);
+            if(decision.type!=='mismatch')warning.remove();
+        }
+    });
+}
+function spInstallBureauSaveGuard(){
+    if(document.body.dataset.spBureauSaveGuard==='true')return;
+    document.body.dataset.spBureauSaveGuard='true';
+    // Capture before Postalocity's inline onclick handlers can submit data.
+    document.addEventListener('click',function(event){
+        const action=event.target.closest('button');
+        if(!action||action===spBureauWarningSkipButton)return;
+        const recipient=action.closest('#contactModal');
+        const sender=action.closest('#settingsReturnAddress-Modal');
+        const isRecipientSave=recipient && /(^|\W)addAddress\(/.test(action.getAttribute('onclick')||'');
+        const isSenderSave=sender && action.matches('.fieldSaveBtn');
+        const isJobProcess=action.id==='processBtn' && action.closest('#step4');
+        if(!isRecipientSave&&!isSenderSave&&!isJobProcess)return;
+        let code='';
+        if(isRecipientSave)code=spSelectedRecipientBureau();
+        if(isSenderSave)code=spReturnAddressBureau();
+        if(isJobProcess){
+            const title=document.querySelector('#overview-jobName');
+            code=title?spDetectBureauForRecipient(title.value):'';
+        }
+        // An actual full recipient name takes precedence over stale dropdown.
+        const decision=spVerifiedBureauDecision(code);
+        if(decision.type!=='mismatch')return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const place=isRecipientSave?recipient:isSenderSave?sender:document.querySelector('#step4');
+        spShowBureauFileError(place,action,decision,code);
+    },true);
+}
 function spPdfNamesFromPage(){
     // Only an authoritative server response can confirm which uploads exist.
     // A stale modal table or a disappearing upload tile must not clear it.
@@ -790,6 +919,7 @@ watchUploadedFiles();
 hidePostalocitySettingsButtons();
 addQuickReturnAddress();
 addRecipientPdfOverview();
+spInstallBureauSaveGuard();
 
 ///////////////////////////////
 // RECIPIENT MODAL — AUTO-DETECT OR CHOOSE A BUREAU
