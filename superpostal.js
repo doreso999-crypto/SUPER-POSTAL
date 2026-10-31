@@ -1689,6 +1689,18 @@ function liqStartSession(identity,explicit){
         try{if(window.localStorage.getItem(LIQ_ACTIVE_KEY))return null;}
         catch(_error){return null;}
     }
+    if(active&&explicit){
+        const pending=Object.values(liqJobRecords(active)).filter(function(job){
+            return !Number.isSafeInteger(job.priceCents);
+        }).length;
+        if(pending&&!window.confirm(
+            'The current client still has '+pending+' job(s) awaiting a processed price. '+
+            'Starting '+identity.name+' will clear those pending records. Continue?')){
+            liqLastNotice='Client switch cancelled: finish pending jobs before changing sessions.';
+            liqRender();
+            return null;
+        }
+    }
     const fresh={id:liqNewSessionId(),clientKey:identity.key,
                  clientName:identity.name,createdAt:Date.now()};
     try{
