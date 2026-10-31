@@ -16,107 +16,235 @@
 // RETURN ADDRESS PARSER
 ///////////////////////////////
 
-function addParser() {
-
-    const form = document.querySelector('#envelopeReturn-address');
-
-    if (!form) return;
-
-    if (document.querySelector('#returnAddressParser')) return;
-
-    const box = document.createElement('div');
-
-    box.id = "returnAddressParser";
-
-    box.innerHTML = `
-        <label class="label label-default">
-            Paste Full Address
-        </label>
-
-        <textarea
-            id="returnAddressPaste"
-            class="form-control"
-            rows="4"
-            placeholder="Paste address here"></textarea>
-
-        <button
-            type="button"
-            id="parseReturnBtn"
-            class="btn btn-primary btn-sm btn-block"
-            style="margin-top:5px;">
-            PARSE ADDRESS<br>
-            DOUBLE CHECK ADDRESS! DOUBLE CHECK ADDRESS! DOUBLE CHECK ADDRESS! DOUBLE CHECK ADDRESS!
-        </button>
-
-        <hr>
-    `;
-
-    form.parentNode.insertBefore(box, form);
-
-    document.querySelector('#parseReturnBtn')
-        .onclick = parseAddress;
-
+// Postalocity stores state codes; accept full names, codes, and territories.
+const SP_STATES=('Alabama=AL|Alaska=AK|Arizona=AZ|Arkansas=AR|California=CA|Colorado=CO|' +
+'Connecticut=CT|Delaware=DE|Florida=FL|Georgia=GA|Hawaii=HI|Idaho=ID|Illinois=IL|' +
+'Indiana=IN|Iowa=IA|Kansas=KS|Kentucky=KY|Louisiana=LA|Maine=ME|Maryland=MD|' +
+'Massachusetts=MA|Michigan=MI|Minnesota=MN|Mississippi=MS|Missouri=MO|Montana=MT|' +
+'Nebraska=NE|Nevada=NV|New Hampshire=NH|New Jersey=NJ|New Mexico=NM|New York=NY|' +
+'North Carolina=NC|North Dakota=ND|Ohio=OH|Oklahoma=OK|Oregon=OR|Pennsylvania=PA|' +
+'Rhode Island=RI|South Carolina=SC|South Dakota=SD|Tennessee=TN|Texas=TX|Utah=UT|' +
+'Vermont=VT|Virginia=VA|Washington=WA|West Virginia=WV|Wisconsin=WI|Wyoming=WY|' +
+'District of Columbia=DC|Puerto Rico=PR|Guam=GU|American Samoa=AS|' +
+'Northern Mariana Islands=MP|US Virgin Islands=VI').split('|');
+const SP_STATE_MAP=Object.create(null);
+SP_STATES.forEach(function(pair){
+    const parts=pair.split('=');
+    SP_STATE_MAP[parts[0].toLowerCase()]=parts[1];
+    SP_STATE_MAP[parts[1].toLowerCase()]=parts[1];
+});
+SP_STATE_MAP['washington dc']='DC';
+SP_STATE_MAP['washington d.c.']='DC';
+SP_STATE_MAP['virgin islands']='VI';
+function spStateCode(value){
+    return SP_STATE_MAP[String(value||'').toLowerCase().trim().replace(/\s+/g,' ')]||'';
 }
+const SP_STATE_TOKENS=Object.keys(SP_STATE_MAP)
+    .sort(function(a,b){return b.length-a.length;})
+    .map(function(s){return s.replace(/\./g,'\\.');}).join('|');
+const SP_CITY_RE=new RegExp('^(.+?)(?:,\\s*|\\s+)('+SP_STATE_TOKENS+
+    ')(?:,\\s*|\\s+)(\\d{5}(?:[- ]?\\d{4})?)$', 'i');
 
-function parseAddress() {
-
-    const raw = document.querySelector('#returnAddressPaste').value.trim();
-
-    if (!raw) return;
-
-    const lines = raw
-        .split(/\r?\n/)
-        .map(x => x.trim())
-        .filter(Boolean);
-
-    let name = lines[0] || "";
-    let address1 = "";
-    let city = "";
-    let state = "";
-    let zip = "";
-
-    for (let i = 0; i < lines.length; i++) {
-
-        const match = lines[i].match(
-            /^(.+?)\s+([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/
-        );
-
-        if (match) {
-
-            city = match[1];
-            state = match[2];
-            zip = match[3];
-
-            address1 = lines[i - 1] || "";
-
-            break;
+function spParseAddress(raw){
+    const result={name:'',address1:'',address2:'',city:'',state:'',zip:''};
+    const errors=[],warnings=[];
+    const input=String(raw||'').replace(/\u00a0/g,' ').trim();
+    if(!input)return {data:result,errors:['Paste a client address first.'],warnings:[]};
+    if(input.length>4000)return {data:result,errors:['Address is too long. Paste only the mailing address.'],warnings:[]};
+    let lines=input.split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean);
+    // Accept common one-line, comma-separated addresses.
+    if(lines.length===1 && lines[0].includes(',')){
+        const bits=lines[0].split(/\s*,\s*/).filter(Boolean);
+        if(bits.length>=3){
+            if(bits.length>=4)bits.splice(bits.length-2,2,bits[bits.length-2]+', '+bits[bits.length-1]);
+            lines=bits;
         }
     }
-
-    setField("name", name);
-    setField("address1", address1);
-    setField("city", city);
-    setField("state", state);
-    setField("zip", zip);
-
+    const labels={name:'name',fullname:'name',clientname:'name',recipient:'name',
+        address:'address1',address1:'address1',addressline1:'address1',
+        street:'address1',streetaddress:'address1',addr1:'address1',
+        address2:'address2',addressline2:'address2',apartment:'address2',
+        suite:'address2',unit:'address2',city:'city',state:'state',
+        zip:'zip',zipcode:'zip',postalcode:'zip'};
+    const plain=[];
+    lines.forEach(function(line){
+        const m=line.match(/^([a-z ]{2,24}):\s*(.*)$/i);
+        const key=m&&m[1].replace(/\s+/g,'').toLowerCase();
+        if(key && Object.prototype.hasOwnProperty.call(labels,key)){
+            result[labels[key]]=m[2].trim();
+        }else plain.push(line);
+    });
+    let location=-1;
+    for(let i=plain.length-1;i>=0;i--){
+        const match=plain[i].match(SP_CITY_RE);
+        if(match){
+            if(!result.city)result.city=match[1].trim().replace(/,$/,'');
+            if(!result.state)result.state=match[2];
+            if(!result.zip)result.zip=match[3];
+            location=i;break;
+        }
+    }
+    if(location<0 && plain.length>1 && /^\d{5}(?:[- ]?\d{4})?$/.test(plain[plain.length-1])){
+        const match=(plain[plain.length-2]+' '+plain[plain.length-1]).match(SP_CITY_RE);
+        if(match){
+            if(!result.city)result.city=match[1].trim().replace(/,$/,'');
+            if(!result.state)result.state=match[2];
+            if(!result.zip)result.zip=match[3];
+            plain.pop();location=plain.length-1;
+        }
+    }
+    if(location>=0 && location<plain.length-1 &&
+       !plain.slice(location+1).every(function(s){return /^(?:US|USA|United States(?: of America)?)$/i.test(s);}))
+        errors.push('Unexpected text after the city/state/ZIP; check the pasted lines.');
+    const before=location>=0?plain.slice(0,location):plain.slice();
+    const looksStreet=function(s){return /^(?:\d+[a-z]?\s|p\.?\s*o\.?\s*box\b|post office box\b|rr\s*\d+\b)/i.test(s||'');};
+    if(!result.name && before.length && !looksStreet(before[0]))result.name=before.shift();
+    if(!result.address1 && before.length)result.address1=before.shift();
+    if(before.length){
+        result.address2=[result.address2].concat(before).filter(Boolean).join(', ');
+        if(before.length>1)warnings.push('Multiple apartment or suite lines were combined.');
+    }
+    result.state=spStateCode(result.state);
+    result.zip=result.zip.trim().replace(/^(\d{5})[ -]?(\d{4})$/,'$1-$2');
+    if(!result.name)errors.push('Recipient or business name is missing.');
+    if(!result.address1)errors.push('Street address or PO Box is missing.');
+    if(!result.city)errors.push('City missing; use a line like Orlando, Florida 32801.');
+    if(!result.state)errors.push('State not recognized; use Florida, FL, or another valid U.S. state.');
+    if(!/^\d{5}(?:-\d{4})?$/.test(result.zip))errors.push('A valid ZIP or ZIP+4 is required.');
+    return {data:result,errors:errors,warnings:warnings};
 }
 
-function setField(name, value) {
-
-    const field = document.querySelector(
-        `#envelopeReturn-address input[name="${name}"]`
-    );
-
-    if (field) {
-
-        field.value = value;
-
-        field.dispatchEvent(
-            new Event('change', { bubbles:true })
-        );
-
+function spParserStatus(type,message){
+    const status=document.querySelector('#spParserStatus');
+    if(!status)return;
+    status.dataset.type=type;
+    status.setAttribute('role',type==='error'?'alert':'status');
+    status.textContent=message;
+    status.hidden=false;
+}
+function spSetField(field,value){
+    const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
+    if(field.tagName==='INPUT' && setter && setter.set)setter.set.call(field,value);
+    else field.value=value;
+    field.dispatchEvent(new Event('input',{bubbles:true}));
+    field.dispatchEvent(new Event('change',{bubbles:true}));
+}
+function parseAddress(){
+    const form=document.querySelector('#envelopeReturn-address');
+    const textarea=document.querySelector('#returnAddressPaste');
+    if(!form||!textarea){spParserStatus('error','Return address form is unavailable; reopen it and try again.');return;}
+    const parsed=spParseAddress(textarea.value);
+    const preview=document.querySelector('#spParserPreview');
+    if(preview)preview.hidden=true;
+    if(parsed.errors.length){spParserStatus('error',parsed.errors.join(' '));textarea.focus();return;}
+    const fields={};
+    ['name','address1','address2','city','state','zip'].forEach(function(name){
+        fields[name]=form.querySelector('input[name="'+name+'"],select[name="'+name+'"]');
+    });
+    const missing=['name','address1','city','state','zip'].filter(function(k){return !fields[k];});
+    if(missing.length){spParserStatus('error','Required form field(s) unavailable: '+missing.join(', ')+'. No fields were changed.');return;}
+    const data=Object.assign({},parsed.data);
+    if(data.address2 && !fields.address2){
+        data.address1+=', '+data.address2;
+        parsed.warnings.push('Suite was included with the street because there is no address line 2 field.');
     }
+    const values={};
+    Object.keys(fields).forEach(function(key){if(fields[key])values[key]=fields[key].value;});
+    try{
+        ['name','address1','address2','city','state','zip'].forEach(function(key){
+            const field=fields[key];if(!field)return;
+            let value=data[key];
+            if(key==='state'&&field.tagName==='SELECT'){
+                const opt=Array.from(field.options).find(function(o){
+                    return o.value.toUpperCase()===value||spStateCode(o.textContent)===value;
+                });
+                if(!opt)throw new Error('State '+value+' was not found in the Postalocity dropdown.');
+                value=opt.value;
+            }
+            spSetField(field,value);
+        });
+    }catch(e){
+        Object.keys(values).forEach(function(key){try{spSetField(fields[key],values[key]);}catch(_e){}});
+        spParserStatus('error','Form could not be filled: '+e.message);return;
+    }
+    if(preview){
+        preview.replaceChildren();
+        [['Recipient',data.name],['Address',data.address1],['Unit / suite',data.address2||'None'],
+         ['City, state, ZIP',data.city+', '+data.state+' '+data.zip]].forEach(function(item){
+            const line=document.createElement('div'),name=document.createElement('small'),value=document.createElement('strong');
+            name.textContent=item[0];value.textContent=item[1];
+            line.append(name,value);preview.appendChild(line);
+        });
+        preview.hidden=false;
+    }
+    spParserStatus(parsed.warnings.length?'warning':'success',
+        (parsed.warnings.length?'Address filled with a note: '+parsed.warnings.join(' '):'Address successfully filled.')+
+        ' Double-check the address before submitting.');
+}
 
+function addParser(){
+    const form=document.querySelector('#envelopeReturn-address');
+    if(!form||document.querySelector('#returnAddressParser'))return;
+    if(!document.querySelector('#spParserStyle')){
+        const style=document.createElement('style');
+        style.id='spParserStyle';
+        style.textContent=[
+          '#returnAddressParser{box-sizing:border-box;background:#fff;color:#25334a;border:1px solid #d5e1ee;border-radius:14px;padding:16px;margin:12px 0 18px;box-shadow:0 5px 18px rgba(32,55,85,.08);font-family:inherit}',
+          '#returnAddressParser *{box-sizing:border-box}',
+          '#returnAddressParser .sp-head{display:flex;gap:11px;align-items:flex-start;margin-bottom:12px}',
+          '#returnAddressParser .sp-icon{display:grid;place-items:center;background:#e7f0ff;color:#1a57aa;border-radius:10px;width:34px;height:34px;flex-shrink:0;font-size:19px}',
+          '#returnAddressParser h3{margin:0;color:#1c3152;font-size:16px;font-weight:750}',
+          '#returnAddressParser p{margin:4px 0 0;font-size:12px;line-height:1.5;color:#60728a}',
+          '#returnAddressParser label{display:block;margin:0 0 6px;font-size:12px;font-weight:700;color:#2d405b}',
+          '#returnAddressParser textarea{display:block;width:100%;min-height:88px;resize:vertical;background:#f8fafd;border:1px solid #c6d4e6;border-radius:9px;padding:10px 12px;color:#1d3551;font-size:13px;line-height:1.5}',
+          '#returnAddressParser textarea:focus{outline:2px solid #4388e1;outline-offset:1px}',
+          '#returnAddressParser .sp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}',
+          '#returnAddressParser button{border-radius:8px;border:1px solid #ccd8e7;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer;min-height:36px;background:#fff;color:#425975}',
+          '#returnAddressParser button:hover{background:#f0f5fc}',
+          '#returnAddressParser button:focus-visible{outline:2px solid #4388e1;outline-offset:2px}',
+          '#returnAddressParser #parseReturnBtn{background:#215fbc;border-color:#215fbc;color:#fff}',
+          '#returnAddressParser #parseReturnBtn:hover{background:#184b98}',
+          '#returnAddressParser #spParserStatus{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid #b6dec7;background:#eaf8ef;color:#205b38;font-size:12px;line-height:1.5}',
+          '#returnAddressParser #spParserStatus[data-type="error"]{border-color:#edb5b5;background:#fff0f0;color:#852929}',
+          '#returnAddressParser #spParserStatus[data-type="warning"]{border-color:#e8d098;background:#fff7e6;color:#75501b}',
+          '#returnAddressParser #spParserPreview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;background:#f7fafd;border:1px solid #e0e9f3;border-radius:9px;margin-top:10px;padding:12px}',
+          '#returnAddressParser #spParserPreview small{display:block;color:#738197;font-size:10px}',
+          '#returnAddressParser #spParserPreview strong{display:block;color:#293c55;font-size:12px;overflow-wrap:anywhere}',
+          '#returnAddressParser .sp-hint{margin-top:10px;font-size:11px}',
+          '#returnAddressParser [hidden]{display:none!important}',
+          '@media(max-width:460px){#returnAddressParser #spParserPreview{grid-template-columns:1fr}#returnAddressParser button{flex:1}}'
+        ].join('\n');
+        document.head.appendChild(style);
+    }
+    const box=document.createElement('section');box.id='returnAddressParser';
+    box.setAttribute('aria-label','Return address parser');
+    box.innerHTML=[
+      '<div class="sp-head"><span class="sp-icon" aria-hidden="true">✉</span><div>',
+      '<h3>Return Address Parser</h3>',
+      '<p>Paste the full client address. State names such as Florida and abbreviations such as FL both work.</p>',
+      '</div></div>',
+      '<label for="returnAddressPaste">Client address</label>',
+      '<textarea id="returnAddressPaste" rows="4" placeholder="Jane Doe&#10;123 Main Street, Apt 4&#10;Orlando, Florida 32801" spellcheck="false"></textarea>',
+      '<div class="sp-actions"><button type="button" id="parseReturnBtn">Parse &amp; fill</button>',
+      '<button type="button" id="spClearPasteBtn">Clear paste</button></div>',
+      '<div id="spParserStatus" role="status" aria-live="polite" hidden></div>',
+      '<div id="spParserPreview" aria-label="Parsed address preview" hidden></div>',
+      '<p class="sp-hint">Review Postalocity fields before submitting. Ctrl+Enter to parse.</p>'
+    ].join('');
+    form.parentNode.insertBefore(box,form);
+    const paste=box.querySelector('#returnAddressPaste');
+    box.querySelector('#parseReturnBtn').addEventListener('click',parseAddress);
+    box.querySelector('#spClearPasteBtn').addEventListener('click',function(){
+        paste.value='';box.querySelector('#spParserStatus').hidden=true;
+        box.querySelector('#spParserPreview').hidden=true;paste.focus();
+    });
+    paste.addEventListener('input',function(){
+        box.querySelector('#spParserStatus').hidden=true;
+        box.querySelector('#spParserPreview').hidden=true;
+    });
+    paste.addEventListener('keydown',function(e){
+        if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();parseAddress();}
+    });
 }
 
 ///////////////////////////////
@@ -410,7 +538,7 @@ box.innerHTML = `
         margin-bottom:12px;
         letter-spacing:1px;
     ">
-        POSTALOCITY
+        TOTALOCITY
     </div>
 
     <input
