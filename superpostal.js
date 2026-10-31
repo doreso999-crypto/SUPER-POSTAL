@@ -565,15 +565,31 @@ function spCleanLabel(text){
 // Cache only PDF names already visible on this job page, across the recipient
 // save's full reload. Tab-only storage avoids any new Postalocity API calls.
 let spPdfNamesRestored=false;
-function spPdfMemoryKey(){
-    let id='';
+function spPdfCurrentJobId(){
+    // Resolve once in the same way for filename caching and LIQUIDATION.
+    // A URL job ID is authoritative during same-tab job navigation.
     try{
-        if(typeof jobId!=='undefined' && jobId!=null)id=String(jobId);
-        if(!id && window.jobId!=null)id=String(window.jobId);
-        if(!id)id=new URLSearchParams(window.location.search).get('jobId')||'';
-    }catch(_e){return '';}
-    return /^\d+$/.test(id)?'sp-pdf-names-for-job-v1-'+id:'';
+        const params=new URLSearchParams(window.location.search);
+        const urlId=params.get('jobId')||params.get('id');
+        if(urlId&&/^\d+$/.test(urlId))return urlId;
+    }catch(_error){}
+    const label=document.querySelector('#jobNumberTop');
+    const found=label&&String(label.textContent||'').match(
+        /\bJob\s*#\s*(\d+)\b/i);
+    if(found)return found[1];
+    try{
+        if(typeof jobId!=='undefined'&&/^\d+$/.test(String(jobId)))
+            return String(jobId);
+        if(window.jobId!=null&&/^\d+$/.test(String(window.jobId)))
+            return String(window.jobId);
+    }catch(_error){}
+    return '';
 }
+function spPdfMemoryKey(){
+    const id=spPdfCurrentJobId();
+    return id?'sp-pdf-names-for-job-v1-'+id:'';
+}
+
 function spPdfRemember(names){
     const key=spPdfMemoryKey();
     if(!key||!names.length)return;
@@ -610,6 +626,7 @@ function spPdfRecall(){
 // Native Postalocity "Uploaded Files" modal is the most reliable DOM source.
 // It is populated when the existing Files button is clicked; no custom API calls.
 let spPdfModalSnapshot=null;
+let spPdfModalSnapshotJobId='';
 function spPdfNativeModalNames(){
     const list=document.querySelector('#fileListModal #modalFileList');
     if(!list)return [];
@@ -639,9 +656,11 @@ function spSyncNativeUploadedFiles(){
     // filenames when the table is simply empty during page load.
     if(rows.length && (!Number.isFinite(count)||count===rows.length)){
         spPdfModalSnapshot=rows;
+        spPdfModalSnapshotJobId=spPdfCurrentJobId();
         spPdfRemember(rows);
     }else if(!rows.length && count===0){
         spPdfModalSnapshot=[];
+        spPdfModalSnapshotJobId=spPdfCurrentJobId();
         spPdfForget();
     }else{
         return; // Incomplete table or loading state: preserve known names.
@@ -662,11 +681,23 @@ function spWatchNativeUploadedFiles(){
 }
 
 function spPdfNamesFromPage(){
-    if(spPdfModalSnapshot!==null){
+    const current=spPdfCurrentJobId();
+    if(spPdfModalSnapshotJobId&&current&&
+       spPdfModalSnapshotJobId!==current){
+        // Another Postalocity job was opened in this tab. Its uploaded
+        // file list must never inherit the previous job's modal snapshot.
+        spPdfModalSnapshot=null;
+        // Leave the ID temporarily attached to the old modal DOM so it
+        // cannot be read again until the Files modal is opened for this job.
+    }
+    if(spPdfModalSnapshot!==null&&
+       (!spPdfModalSnapshotJobId||spPdfModalSnapshotJobId===current)){
         spPdfNamesRestored=false;
         return spPdfModalSnapshot.slice();
     }
-    const rows=spPdfNativeModalNames();
+    const modalIsOtherJob=!!(current&&spPdfModalSnapshotJobId&&
+       spPdfModalSnapshotJobId!==current);
+    const rows=modalIsOtherJob?[]:spPdfNativeModalNames();
     if(rows.length){
         spPdfRemember(rows);
         spPdfNamesRestored=false;
@@ -2073,18 +2104,9 @@ function liqParsePrice(value){
     return Number.isSafeInteger(amount)&&amount>=0?amount:null;
 }
 function liqJobId(){
-    const label=document.querySelector('#jobNumberTop');
-    const match=label&&label.textContent.match(/\bJob\s*#\s*(\d+)\b/i);
-    if(match)return match[1];
-    try{
-        if(typeof jobId!=='undefined' && /^\d+$/.test(String(jobId)))return String(jobId);
-        if(window.jobId!=null && /^\d+$/.test(String(window.jobId)))return String(window.jobId);
-        const search=new URLSearchParams(window.location.search);
-        const id=search.get('id')||search.get('jobId');
-        if(id && /^\d+$/.test(id))return id;
-    }catch(_error){}
-    return '';
+    return spPdfCurrentJobId();
 }
+
 function liqJobName(){
     const title=document.querySelector('#jobName');
     const input=document.querySelector('#overview-jobName');
