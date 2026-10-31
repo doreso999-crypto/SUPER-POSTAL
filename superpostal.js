@@ -2020,8 +2020,15 @@ document.body.appendChild(box);
         if(!canClear(key))return false;
         const session=read('session:'+key);if(!session)return false;
         session.ended=true;session.seen=Date.now();write('session:'+key,session);
+        const clearedIds=new Set();
         keys().filter(k=>k.startsWith('job:')).forEach(k=>{
-            const r=read(k);if(r&&r.session===key){r.cents=null;r.recipients=[];r.name='';write(k,r);}
+            const r=read(k);if(r&&r.session===key){
+                clearedIds.add(String(r.id));r.cents=null;r.recipients=[];r.name='';r.priceNeedsReview=false;write(k,r);
+            }
+        });
+        keys().filter(k=>k.startsWith('duplicate-reviewed:')).forEach(k=>{
+            const ids=k.match(/^duplicate-reviewed:(\d+):(\d+):/);
+            if(ids&&(clearedIds.has(ids[1])||clearedIds.has(ids[2])))remove(k);
         });
         lastView='';return true;
     }
@@ -2030,8 +2037,10 @@ document.body.appendChild(box);
         // and failure callbacks never modify the ledger.
         // Observe only known API operations. Do not interpret a click or a
         // confirmation dialog as a completed deletion.
+        const lifecycleMethods=new Set(['delete','deleteJob','removeJob','approve','approveJob']);
         Object.keys(api.job).filter(method=>/^(?:delete|remove|discard)(?:Job)?$/i.test(method)||
-            /^(?:approve|approveJob)$/i.test(method)).forEach(method=>{
+            /^(?:approve|approveJob)$/i.test(method)).forEach(method=>lifecycleMethods.add(method));
+        lifecycleMethods.forEach(method=>{
             const original=api.job[method];
             if(typeof original!=='function'||original.spLedgerLifecycle)return;
             function wrapped(handler){
@@ -2045,7 +2054,8 @@ document.body.appendChild(box);
                     // If Postalocity signals failure inside a nominally successful
                     // callback, do not remove the job from totals.
                     if(response&&typeof response==='object'&&
-                        (response.success===false||response.ok===false||response.error||response.errors))return outcome;
+                        (response.success===false||response.ok===false||response.error||
+                          (Array.isArray(response.errors)?response.errors.length>0:!!response.errors)))return outcome;
                     markLifecycle(target,/^approve/i.test(method)?'approve':'delete');
                     return outcome;
                 };
