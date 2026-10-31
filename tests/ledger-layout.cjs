@@ -65,4 +65,20 @@ assert.ok(pending,'missing job price is indicated inline without warnings');
 assert.equal(pending.textContent,'Pending');
 const otherTotal=flatten(panel).find(el=>el.className==='sp-ledger-totalrow'&&el.dataset.bureau==='OTHER');
 assert.equal(otherTotal.children[2].disabled,true,'unverified bureau cannot copy a misleading amount');
+// The empty state grows 2.5× but regular jobs immediately restore the original
+// dimensions. The minimized mascot is excluded by CSS regardless of emptiness.
+assert.equal(root.dataset.empty,'false','a populated panel must keep its normal dimensions');
+const emptyCSS=src.slice(src.indexOf("emptyStyle.textContent=`"),src.indexOf("document.head.appendChild(emptyStyle);"));
+assert.match(emptyCSS,/width:min\(\$\{320\*EMPTY_SIZE_SCALE\}px,calc\(100vw - 30px\)\)!important/);
+assert.match(emptyCSS,/min-height:max\(140px,min\(\$\{240\*EMPTY_SIZE_SCALE\}px,calc\(100vh - 150px\)\)\)!important/);
+assert.match(emptyCSS,/\[data-empty="true"\]\[data-minimized="false"\]/);
+assert.match(src,/const EMPTY_SIZE_SCALE=2\.5;/);
+jobs=[];
+render({id:'101',name:'EX Dispute Letter',session:'client'});
+assert.equal(root.dataset.empty,'true','empty panel should enlarge automatically');
+assert.equal(flatten(document.querySelector('#spLedgerPanel')).filter(el=>el.className==='sp-ledger-group').length,0);
+jobs=[{id:'101',name:'EX Dispute Letter',session:'client',bureau:'EX',cents:139,status:'Processed'}];
+render(jobs[0]);
+assert.equal(root.dataset.empty,'false','size returns to normal when a named job appears');
+console.log('PASS: empty state 2.5x dimensions, minimized state unaffected, populated state returns to normal.');
 console.log('PASS: minimalist ledger renders job/letter/price only, hides technical metadata, keeps subtotal honest and disables incomplete bureau copy.');
