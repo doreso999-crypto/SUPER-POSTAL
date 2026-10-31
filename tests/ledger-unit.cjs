@@ -12,7 +12,7 @@ function tab(id,client='John Doe',store=shared){
  spBureauDisplayName:c=>({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[c]||'Unknown bureau',
  SP_RECIPIENT_BUREAUS:{EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}},
  document:{querySelector:s=>s==='#envelopeReturn-address'?{}:s==='#overview-jobName'?(state.name===null?null:{value:state.name}):s==='#jobState'?{textContent:state.status}:s===state.priceSelector?(state.cost?{textContent:state.cost}:null):null,querySelectorAll:()=>[]}};
- vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage,duplicateNameMatches,duplicateReviewKey,matchingSessions,separateClientGroup,moveToClientGroup,priceSnapshot,sessionJobs};})();',ctx);return {api:ctx.api,state,ctx};
+ vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage,duplicateNameMatches,duplicateReviewKey,bureauSummary,priceSnapshot,sessionJobs};})();',ctx);return {api:ctx.api,state,ctx};
 }
 const a=tab('101'),b=tab('102'),j=tab('103','Jane Doe');const ar=a.api.capture(),br=b.api.capture(),jr=j.api.capture();
 assert.equal(ar.session,br.session);assert.notEqual(ar.session,jr.session);
@@ -23,9 +23,9 @@ assert.equal(tab('101',null,storage()).api.capture(),null,'different device/prof
 const ex={name:'Experian',address1:'PO Box 2002',city:'Allen',state:'TX',zip:'75013'};
 assert.equal(a.api.group({name:'Unknown',recipients:[ex]}).key,'EX');
 const other={name:'THD/CBNA',address1:'PO Box 6497',city:'Sioux Falls',state:'SD',zip:'57117'};
-assert.equal(a.api.group({name:'Unknown',recipients:[other]}).label,'THD/CBNA');
+assert.equal(a.api.group({name:'Unknown',recipients:[other]}).key,'OTHER');
 assert.equal(a.api.group({name:'John TU',recipients:[ex]}).warning,true);
-assert.equal(a.api.group({recipients:[ex,other]}).key,'Mixed recipients');
+assert.equal(a.api.group({recipients:[ex,other]}).key,'OTHER');
 assert.equal(a.api.group({name:'John TU'}).key,'TU');
 a.state.address='999 New St';const moved=a.api.capture();assert.notEqual(moved.session,ar.session);assert.equal(p.api.capture().session,moved.session);
 const s=a.api.read('session:'+moved.session);s.ended=true;a.api.write('session:'+moved.session,s);assert.equal(a.api.capture(),null);
@@ -117,19 +117,23 @@ assert.equal(per.api.clearSession(persisted.session),true,'explicit Clear still 
 assert.equal(per.api.countable(per.api.read('job:6201')),false);
 console.log('PASS: approved totals persist for months of inactivity, tab closures and expire only via Clear.');
 
-const groupStore=storage();
-const grpA=tab('6301','Shared Address',groupStore),grpB=tab('6302','Shared Address',groupStore),grpC=tab('6303','Shared Address',groupStore);
-grpA.state.name='First Client EX';grpB.state.name='Second Client EX';grpC.state.name='Second Client TU';
-const ra=grpA.api.capture(),rb=grpB.api.capture(),rc=grpC.api.capture();
-assert.equal(ra.session,rb.session,'same return address defaults to existing group');
-const custom=grpB.api.separateClientGroup('6302','Second Client');
-assert.ok(custom&&custom!==ra.session,'separate group uses its own client key');
-assert.equal(grpB.api.capture().session,custom,'subsequent captures must not accidentally merge groups');
-assert.equal(grpC.api.moveToClientGroup('6303',custom),true);
-assert.equal(grpC.api.capture().session,custom);
-assert.equal(grpA.api.sessionJobs(ra.session).some(r=>r.id==='6302'),false,'client one must not count client two');
-assert.ok(grpA.api.matchingSessions({name:'Shared Address',address1:'123 Main St',city:'Denver',state:'CO',zip:'80201'}).length>=2);
-console.log('PASS: separate client groups survive captures while sharing identical return addresses.');
+const bureauStore=storage();
+const bureauTabs=[tab('6301','Shared Address',bureauStore),tab('6302','Shared Address',bureauStore),tab('6303','Shared Address',bureauStore)];
+bureauTabs[0].state.name='First EX';bureauTabs[1].state.name='Second TU';bureauTabs[2].state.name='Direct creditor letter';
+bureauTabs.forEach(t=>{t.state.status='Processed - Ready for Approval';t.state.cost='$1.39';t.api.capture();});
+const creditor=bureauTabs[2].api.read('job:6303');
+creditor.recipients=[{name:'THD/CBNA',address1:'PO Box 6497',city:'Sioux Falls',state:'SD',zip:'57117'}];
+bureauTabs[2].api.write('job:6303',creditor);
+const buckets=bureauTabs[0].api.bureauSummary(bureauTabs.map(t=>bureauTabs[0].api.read('job:'+t.state.id)).filter(t=>bureauTabs[0].api.countable(t)));
+assert.equal(buckets.length,3,'show only EX, TU and OTHER groups with jobs');
+assert.equal(JSON.stringify(buckets.map(b=>b.key)),JSON.stringify(['EX','TU','OTHER']));
+assert.equal(buckets.reduce((x,b)=>x+b.sum,0),417);
+assert.equal(bureauTabs[0].api.bureauSummary([bureauTabs[0].api.read('job:6301')]).length,1,'hide absent bureaus');
+assert.equal(bureauTabs[0].api.group({name:'Direct creditor letter',recipients:creditor.recipients}).key,'OTHER');
+assert.equal(bureauTabs[0].api.group({name:'Direct creditor letter'}).key,'Unassigned','unassigned jobs cannot be automatically counted as Other');
+const withMixed=bureauTabs[0].api.group({name:'Other',recipients:[{name:'Test',address1:'Not bureau',city:'Chicago',state:'IL',zip:'60101'},{name:'Experian',address1:'PO Box 2002',city:'Allen',state:'TX',zip:'75013'}]});
+assert.equal(withMixed.key,'OTHER');assert.equal(withMixed.warning,true);
+console.log('PASS: only populated bureau groups appear; direct creditor is Other; mixed destinations counted once; unassigned excluded.');
 
 const priceStore=storage(),price=tab('6401','Price Client',priceStore);
 price.state.status='Processed - Ready for Approval';price.state.cost='$1,234.50';
