@@ -84,7 +84,7 @@ fill({name:'Person',address1:'',city:'Reno',state:'NV',zip:'89501'});
 assert.equal(api.spReturnSavedReady(),false,'incomplete form cannot become saved');
 console.log('PASS: sample addresses and incomplete fields never qualify.');
 
-fill(initial);api.state.dirty=false;api.state.memory=null;values.clear();
+fill(initial);api.state.dirty=false;api.state.memory=null;state.open=false;values.clear();
 state.id='';
 assert.equal(api.spReturnSavedReady(),false,'native prefill is not accepted without a real job ID');
 state.id='102';
