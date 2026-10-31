@@ -68,7 +68,7 @@ assert.match(emptyLetters.text,/Add a named job and its recipient/);
 assert.doesNotMatch(emptyLetters.text,/Add a return address/);
 assert.equal(emptyLetters.items.filter(x=>x.className==='sp-ledger-onboard-index').length,0,'No letters yet has no numbered step');
 assert.equal(emptyLetters.items.filter(x=>x.className==='sp-ledger-group').length,0);
-console.log('PASS: saved-address client without qualified jobs sees step 02, not setup or fake bureau totals.');
+console.log('PASS: saved-address client without qualified jobs sees an unnumbered No letters yet state, not fake bureau totals.');
 
 const pending=build({id:'101',recovering:true});
 assert.match(pending.text,/Checking saved settings/);
