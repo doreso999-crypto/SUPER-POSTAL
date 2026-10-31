@@ -15,7 +15,7 @@ function page(id,html,savedHtml){
  w.SP_RECIPIENT_BUREAUS={EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}};
  w.eval(parser+'\n'+code);return w;
 }
-const first='<span id="settingsReturnAddressSource-Link">FROM JOB SETTINGS:<br>Test Client<br>123 Main St<br>Denver CO 80201<br></span><input id="overview-jobName"><span id="jobState">New</span>';
+const first='<span id="settingsReturnAddressSource-Link">FROM JOB SETTINGS:<br>Test Client<br>123 Main St<br>Denver CO 80201<br></span><input id="overview-jobName" value="Test EX"><span id="jobState">New</span>';
 const second='<span id="jobState">Processed - Ready for Approval</span><div class="totalPriceRow"><span class="totalPrice">$1.39</span></div>';
 const a=page('1301773',first);a.document.querySelector('#overview-jobName').value='Test EX';a.testTick();
 const p=page('1301773',second);a.testTick();

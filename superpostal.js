@@ -1903,6 +1903,11 @@ document.body.appendChild(box);
                 (spStateCode(a.state)||norm(a.state))===b.state&&String(a.zip).slice(0,5)===b.zip.slice(0,5);
         })||'';
     }
+    function countable(r){
+        if(!r||!/^\d+$/.test(String(r.id||''))||!norm(r.name))return false;
+        const session=read('session:'+r.session);
+        return !!session&&!session.ended&&!!complete(session.address);
+    }
     function group(r){
         if(r.override)return {key:r.override,label:({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[r.override]||r.override};
         const rs=r.recipients||[], byName=spDetectBureauForRecipient(r.name);
@@ -1930,7 +1935,7 @@ document.body.appendChild(box);
         const before=JSON.stringify(r);
         r=Object.assign({id:jobId,recipients:[],cents:null},r||{},patch||{},{session:key});
         const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
-        if(!r.name&&recovered.has(jobId))r.name=recovered.get(jobId).name;
+        if(!name&&!r.name&&recovered.has(jobId))r.name=recovered.get(jobId).name;
         const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
         const state=document.querySelector('#jobState');if(state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
         const cost=document.querySelector('.totalPriceRow .totalPrice');
@@ -1993,7 +1998,7 @@ document.body.appendChild(box);
             const style=el('style');style.textContent='#bureauTotals[data-minimized="true"] #spLedgerPanel{display:none} #spLedgerPanel summary{cursor:pointer;padding:7px 0} #spLedgerPanel button,#spLedgerPanel select{margin:5px 3px 0 0;max-width:100%} #spLedgerPanel small{display:block;overflow-wrap:anywhere}';document.head.appendChild(style);
         }
         const session=r&&read('session:'+r.session);
-        const jobs=session&&!session.ended?keys().filter(k=>k.startsWith('job:')).map(read).filter(j=>j&&j.session===r.session):[];
+        const jobs=session&&!session.ended?keys().filter(k=>k.startsWith('job:')).map(read).filter(j=>j&&j.session===r.session&&countable(j)):[];
         const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage]);if(view===lastView)return;lastView=view;
         panel.replaceChildren(el('strong','CLIENT TOTALS'));
         if(error)panel.append(el('p',error));
@@ -2011,6 +2016,7 @@ document.body.appendChild(box);
             return;
         }
         panel.append(el('h4',session.address.name),el('small',[session.address.address1,session.address.address2,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(', ')));
+        if(!countable(r))panel.append(el('p','This job is excluded until it has both a saved return address and a job name.'));
         const groups=new Map();let total=0,pending=0;
         jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)){b.sum+=j.cents;total+=j.cents;}else pending++;});
         [...groups.values()].sort((a,b)=>a.label.localeCompare(b.label)).forEach(b=>{
