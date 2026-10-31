@@ -1799,11 +1799,11 @@ document.body.appendChild(box);
 ///////////////////////////////
 (function spClientLedger(){
     if(!/\/jobui\b/.test(location.pathname))return;
-    const PREFIX='sp-ledger-v1:', GRACE=15*60*1000;
+    const PREFIX='sp-ledger-v1:'; // Session totals persist until the user explicitly clears them.
     // One presence lease per open page, not per job. Multiple tabs may show the
     // same job; the last open tab controls whether an unapproved job is counted.
     const PAGE_ID=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
-    const LIVE_TTL=2*60*1000, LIVE_INTERVAL=4000;
+    const LIVE_TTL=90*1000, LIVE_INTERVAL=4000; // Abnormal tab exits expire without clearing approved jobs.
     let leaving=false,lastPresence=0;
     const fields=['name','company1','company2','address1','address2','city','state','zip','country'];
     let error='', lastView='', lastHeartbeat=0;
@@ -1848,16 +1848,11 @@ document.body.appendChild(box);
     }
     function clean(){
         const now=Date.now();
+        // Expire only abandoned TAB leases. Never expire client sessions or
+        // approved jobs automatically: those require the explicit Clear action.
         keys().filter(k=>k.startsWith('live:')).forEach(k=>{
             const entry=read(k);
-            if(!entry||!Number.isFinite(entry.seen)||now-entry.seen>=LIVE_TTL)remove(k);
-        });
-        keys().filter(k=>k.startsWith('session:')).forEach(k=>{
-            const s=read(k);
-            if(!s||now-s.seen>GRACE){
-                keys().filter(j=>j.startsWith('job:')).forEach(j=>{const r=read(j);if(r&&r.session===k.slice(8))remove(j);});
-                remove(k);
-            }
+            if(!entry||!Number.isFinite(entry.seen)||entry.seen>now||now-entry.seen>=LIVE_TTL)remove(k);
         });
     }
     function id(){
@@ -1938,6 +1933,27 @@ document.body.appendChild(box);
                 (spStateCode(a.state)||norm(a.state))===b.state&&String(a.zip).slice(0,5)===b.zip.slice(0,5);
         })||'';
     }
+    function priceSnapshot(){
+        // A monetary value is accepted only from a designated job-total field.
+        // Never guess from a subtotal, tax row, PDF name or arbitrary page text.
+        const selectors=['.totalPriceRow .totalPrice','.totalPriceRow [data-total-price]',
+            '.totalPriceRow [class*="totalPrice"]','[data-testid="job-total"]','#jobTotal'];
+        let found=false;
+        for(const selector of selectors){
+            const element=document.querySelector(selector);
+            if(!element)continue;
+            found=true;
+            const raw=String(element.textContent||element.value||'').trim().replace(/\u00a0/g,' ');
+            const match=raw.match(/^(?:total(?:\s+price)?\s*:?\s*)?(?:USD\s*)?\$?\s*((?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.(\d{2}))?\s*$/i);
+            if(match){
+                const dollars=Number(match[1].replace(/,/g,''));
+                const cents=Number(match[2]||'00');
+                const result=dollars*100+cents;
+                if(Number.isSafeInteger(result)&&result>=0)return {found:true,valid:true,cents:result,raw};
+            }
+        }
+        return {found,valid:false,cents:null};
+    }
     function countable(r){
         if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!norm(r.name))return false;
         const session=read('session:'+r.session);
@@ -1947,6 +1963,35 @@ document.body.appendChild(box);
     const isApproved=r=>!!r&&(r.approved===true||approvedState(r.status));
     function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted&&(isApproved(r)||active(r.id)));}
     function canClear(key){const s=read('session:'+key);return !!s&&!s.ended;}
+    function matchingSessions(a){
+        if(!complete(a))return [];
+        return keys().filter(k=>k.startsWith('session:')).map(k=>({key:k.slice(8),data:read(k)}))
+            .filter(x=>x.data&&!x.data.ended&&complete(x.data.address)&&addressKey(x.data.address)===addressKey(a))
+            .sort((a,b)=>String(a.data.label||'').localeCompare(String(b.data.label||'')));
+    }
+    function sessionLabel(key){
+        const s=read('session:'+key);
+        return s&&s.label?s.label:'Default client group';
+    }
+    function moveToClientGroup(jobId,key){
+        const r=read('job:'+jobId),dest=read('session:'+key);
+        if(!r||r.deleted||isApproved(r)||!dest||dest.ended||!complete(dest.address))return false;
+        const old=read('session:'+r.session);
+        if(!old||old.ended||addressKey(old.address)!==addressKey(dest.address))return false;
+        r.session=key;
+        if(!write('job:'+jobId,r))return false;
+        // Do not let the old draft's observed address reassign the job again.
+        observed.delete(String(jobId));lastView='';return true;
+    }
+    function separateClientGroup(jobId,label){
+        const r=read('job:'+jobId);
+        if(!r||r.deleted||isApproved(r)||!norm(label))return null;
+        const current=read('session:'+r.session);if(!current||current.ended)return null;
+        const key=addressKey(current.address)+'|client:'+Date.now().toString(36)+Math.random().toString(36).slice(2);
+        if(!write('session:'+key,{address:current.address,label:String(label).trim().slice(0,80),seen:Date.now()}))return null;
+        if(!moveToClientGroup(jobId,key)){remove('session:'+key);return null;}
+        return key;
+    }
     function duplicateNameMatches(r){
         if(!r||!countable(r))return [];
         return sessionJobs(r.session).filter(j=>String(j.id)!==String(r.id)&&norm(j.name)===norm(r.name)&&countable(j));
@@ -1975,15 +2020,27 @@ document.body.appendChild(box);
         if(!canClear(key))return false;
         const session=read('session:'+key);if(!session)return false;
         session.ended=true;session.seen=Date.now();write('session:'+key,session);
+        const clearedIds=new Set();
         keys().filter(k=>k.startsWith('job:')).forEach(k=>{
-            const r=read(k);if(r&&r.session===key){r.cents=null;r.recipients=[];r.name='';write(k,r);}
+            const r=read(k);if(r&&r.session===key){
+                clearedIds.add(String(r.id));r.cents=null;r.recipients=[];r.name='';r.priceNeedsReview=false;write(k,r);
+            }
+        });
+        keys().filter(k=>k.startsWith('duplicate-reviewed:')).forEach(k=>{
+            const ids=k.match(/^duplicate-reviewed:(\d+):(\d+):/);
+            if(ids&&(clearedIds.has(ids[1])||clearedIds.has(ids[2])))remove(k);
         });
         lastView='';return true;
     }
     function hookLifecycle(api){
         // Observe successful native actions only. Button clicks/confirmation dialogs
         // and failure callbacks never modify the ledger.
-        ['delete','deleteJob','removeJob','approve','approveJob'].forEach(method=>{
+        // Observe only known API operations. Do not interpret a click or a
+        // confirmation dialog as a completed deletion.
+        const lifecycleMethods=new Set(['delete','deleteJob','removeJob','approve','approveJob']);
+        Object.keys(api.job).filter(method=>/^(?:delete|remove|discard)(?:Job)?$/i.test(method)||
+            /^(?:approve|approveJob)$/i.test(method)).forEach(method=>lifecycleMethods.add(method));
+        lifecycleMethods.forEach(method=>{
             const original=api.job[method];
             if(typeof original!=='function'||original.spLedgerLifecycle)return;
             function wrapped(handler){
@@ -1992,8 +2049,15 @@ document.body.appendChild(box);
                 const target=String(request.jobId||request.id||(request.job&&request.job.id)||id());
                 const success=handler.handleSuccessResponse;
                 handler.handleSuccessResponse=function(){
+                    const response=arguments[0];
+                    const outcome=success.apply(this,arguments);
+                    // If Postalocity signals failure inside a nominally successful
+                    // callback, do not remove the job from totals.
+                    if(response&&typeof response==='object'&&
+                        (response.success===false||response.ok===false||response.error||
+                          (Array.isArray(response.errors)?response.errors.length>0:!!response.errors)))return outcome;
                     markLifecycle(target,/^approve/i.test(method)?'approve':'delete');
-                    return success.apply(this,arguments);
+                    return outcome;
                 };
                 return original.apply(this,arguments);
             }
@@ -2021,17 +2085,29 @@ document.body.appendChild(box);
         if(r&&isApproved(r)){
             const savedSession=read('session:'+r.session);
             if(savedSession&&savedSession.ended)return null;
-            // An old draft tab cannot erase an approved job's identity or price.
+            // Preserve approved identity, session and price from stale draft tabs.
+            // A fresh approved page may still correct its displayed total.
+            const state=document.querySelector('#jobState');
+            if(state&&/^(?:approved|mailed)\b/i.test(state.textContent||'')){
+                const price=priceSnapshot();
+                if(price.valid&&(r.cents!==price.cents||r.priceNeedsReview)){
+                    r.cents=price.cents;r.priceNeedsReview=false;write('job:'+jobId,r);
+                }else if(price.found&&!price.valid&&!r.priceNeedsReview){
+                    r.priceNeedsReview=true;write('job:'+jobId,r);
+                }
+            }
             if(savedSession&&Date.now()-lastHeartbeat>15000){savedSession.seen=Date.now();write('session:'+r.session,savedSession);lastHeartbeat=Date.now();}
             return r;
         }
         if(!a&&!r)return null;
         const prior=observed.get(jobId)||{};
         const currentAddress=a?addressKey(a):'';
-        const key=a&&currentAddress!==prior.address?currentAddress:r?r.session:currentAddress;
+        const linked=r&&read('session:'+r.session);
+        const key=r&&linked&&(!a||(complete(linked.address)&&addressKey(linked.address)===currentAddress))
+            ?r.session:currentAddress;
         let session=read('session:'+key);
         if(session&&session.ended)return null;
-        if(!session){session={address:a,seen:Date.now()};write('session:'+key,session);}
+        if(!session){if(!complete(a))return null;session={address:a,seen:Date.now()};write('session:'+key,session);}
         const before=JSON.stringify(r);
         r=Object.assign({id:jobId,recipients:[],cents:null},r||{},patch||{},{session:key});
         const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
@@ -2039,12 +2115,13 @@ document.body.appendChild(box);
         const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
         const state=document.querySelector('#jobState');if(!isApproved(r)&&state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
         if(approvedState(r.status))r.approved=true;
-        const cost=document.querySelector('.totalPriceRow .totalPrice');
-        if(cost&&/processed|approved|mailed/i.test(r.status||'')){
-            const value=cost.textContent.trim().replace(/[$,\s]/g,'');
-            if(value!==prior.cost&&/^\d+(\.\d{1,2})?$/.test(value))r.cents=Math.round(Number(value)*100);
+        const price=priceSnapshot();
+        const onProcessedPage=state&&/processed|approved|mailed/i.test(state.textContent||'');
+        if(onProcessedPage){
+            if(price.valid){r.cents=price.cents;r.priceNeedsReview=false;}
+            else r.priceNeedsReview=true; // An unknown price is NOT part of the displayed total.
         }
-        observed.set(jobId,{cost:cost?cost.textContent.trim().replace(/[$,\s]/g,''):undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
+        observed.set(jobId,{cost:price.valid?price.cents:undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
         if(before!==JSON.stringify(r))write('job:'+jobId,r);
         if(!isApproved(r))markActive(jobId);
         if(Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
@@ -2153,16 +2230,42 @@ document.body.appendChild(box);
             return;
         }
         panel.append(el('h4',session.address.name),el('small',[session.address.address1,session.address.address2,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(', ')));
+        const groupTitle=el('small','Client group: '+sessionLabel(r.session));
+        panel.append(groupTitle);
+        const related=matchingSessions(session.address);
+        if(related.length>1&&!isApproved(r)&&!r.deleted){
+            const select=el('select');select.setAttribute('aria-label','Move job to a separate client group');
+            related.forEach((entry,index)=>{const opt=el('option',(entry.data.label||'Default client group')+' · '+(index+1));opt.value=entry.key;select.append(opt);});
+            select.value=r.session;
+            select.onchange=()=>{
+                if(!window.confirm('Move only Job #'+r.id+' to the selected client group? Its Postalocity job will not change.')){select.value=r.session;return;}
+                if(moveToClientGroup(r.id,select.value))tick();else select.value=r.session;
+            };
+            panel.append(select);
+        }
+        if(!isApproved(r)&&!r.deleted){
+            const split=el('button','Separate client');
+            split.title='Create a distinct client group when two clients use the same saved return address.';
+            split.onclick=()=>{
+                const label=window.prompt('Name the separate client group (for example, client name). The return address stays unchanged:','');
+                if(label===null)return;
+                if(!norm(label)){window.alert('Enter a client group name.');return;}
+                if(separateClientGroup(r.id,label))tick();else window.alert('Could not create a separate client group.');
+            };
+            panel.append(split);
+        }
+        if(related.length>1)panel.append(el('small','Multiple client groups share this return address. Verify each job is assigned to the correct group.'));
+        else panel.append(el('small','Return addresses may be shared by different clients. Use Separate client to prevent combining their totals.'));
         if(r.deleted)panel.append(el('p','This job was deleted. Its cost has been removed.'));
         else if(!countable(r))panel.append(el('p',group(r).key==='Unassigned'
             ?'This job is unassigned and excluded from totals. Assign a bureau or recipient to count it.'
             :'This job is excluded until it has both a saved return address and a job name.'));
         const groups=new Map();let total=0,pending=0;
-        jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)){b.sum+=j.cents;total+=j.cents;}else pending++;});
+        jobs.forEach(j=>{const g=group(j);if(!groups.has(g.key))groups.set(g.key,{label:g.label,jobs:[],sum:0});const b=groups.get(g.key);b.jobs.push({j,g});if(Number.isInteger(j.cents)&&!j.priceNeedsReview){b.sum+=j.cents;total+=j.cents;}else pending++;});
         [...groups.values()].sort((a,b)=>a.label.localeCompare(b.label)).forEach(b=>{
             const details=el('details');details.append(el('summary',b.label+' · '+b.jobs.length+' job(s) · '+money(b.sum)));
             b.jobs.forEach(({j,g})=>{
-                details.append(el('small','#'+j.id+' — '+(j.name||'Unnamed job')+' — '+(Number.isInteger(j.cents)?money(j.cents):'Awaiting price')),el('small',j.status||''));
+                details.append(el('small','#'+j.id+' — '+(j.name||'Unnamed job')+' — '+(j.priceNeedsReview?'Price not verified':Number.isInteger(j.cents)?money(j.cents):'Awaiting price')),el('small',j.status||''));
                 (j.recipients||[]).forEach(a=>details.append(el('small',[a.name,a.address1,a.address2,a.city,a.state,a.zip].filter(Boolean).join(', '))));
                 if(g.warning)details.append(el('small','⚠ Recipient/job-name mismatch or multiple destinations. Review grouping.'));
                 const select=el('select');select.setAttribute('aria-label','Group job '+j.id);
@@ -2187,8 +2290,9 @@ document.body.appendChild(box);
             });
             panel.append(details);
         }
-        panel.append(el('h4','Total: '+money(total)),el('small',pending?pending+' job(s) awaiting price.':'Processed prices; approval status shown per job.'));
-        const copy=el('button','Copy summary');copy.onclick=async()=>{try{await navigator.clipboard.writeText(session.address.name+'\n'+[...groups.values()].map(b=>b.label+': '+money(b.sum)).join('\n')+'\nTotal: '+money(total));copy.textContent='Copied';}catch(e){copy.textContent='Copy unavailable';}};
+        panel.append(el('h4',(pending?'Verified total (incomplete): ':'Total: ')+money(total)),
+            el('small',pending?pending+' job(s) have no verified price. Their amounts are excluded until the price is readable.':'All counted jobs have verified prices.'));
+        const copy=el('button','Copy summary');copy.onclick=async()=>{try{await navigator.clipboard.writeText(session.address.name+'\n'+[...groups.values()].map(b=>b.label+': '+money(b.sum)).join('\n')+'\n'+(pending?'Verified total (incomplete): ':'Total: ')+money(total)+(pending?'\n'+pending+' job(s) without verified prices.':''));copy.textContent='Copied';}catch(e){copy.textContent='Copy unavailable';}};
         const end=el('button','Clear');
         end.title='Clear this client’s tracked totals in all tabs (Postalocity jobs are not deleted).';
         end.onclick=()=>{
@@ -2201,19 +2305,30 @@ document.body.appendChild(box);
         nativeDelete.title='Use Postalocity’s own Delete Job action before closing the tab.';
         nativeDelete.onclick=requestNativeDeletion;
         if(r.deleted||isApproved(r))nativeDelete.disabled=true;
-        panel.append(copy,end,nativeDelete,el('small','Closing a job tab immediately excludes its unapproved job from panel totals; approved jobs remain. This does not delete the Postalocity job. Use Delete job in Postalocity for permanent deletion.'));
+        panel.append(copy,end,nativeDelete,el('small','Unapproved jobs are excluded after tab closure (unexpected crashes may take up to 90 seconds). Approved totals remain until Clear. Browser-only totals do not delete Postalocity jobs.'));
     }
     function requestNativeDeletion(){
         const current=read('job:'+id());
         if(!current||current.deleted||isApproved(current))return;
         // Invoke Postalocity's real Delete Job control; removing a local
         // ledger entry alone does not delete a job on Postalocity.
-        const button=[...document.querySelectorAll('button[onclick],a[onclick]')].find(el=>
-            /^\s*(?:return\s+)?deleteJob\s*\(\s*\)\s*;?\s*$/.test(el.getAttribute('onclick')||'')
-            &&!el.closest('#spLedgerPanel')&&!el.disabled);
-        if(button){button.click();return;}
-        if(typeof window.deleteJob==='function'){window.deleteJob();return;}
-        window.alert('Postalocity’s Delete Job control was not found. Delete the job from Postalocity before closing the tab.');
+        const controls=[...document.querySelectorAll('button,a,input[type="button"],input[type="submit"]')]
+            .filter(el=>{
+                if(el.closest('#spLedgerPanel')||el.disabled||el.getAttribute('aria-disabled')==='true')return false;
+                const action=String(el.getAttribute('onclick')||'').trim();
+                const id=String(el.id||'');
+                const data=String(el.getAttribute('data-action')||'');
+                const name=String(el.textContent||el.value||'').replace(/\s+/g,' ').trim();
+                return /^(?:return\s+)?(?:deleteJob|removeJob)\s*\(\s*\)\s*;?$/.test(action)||
+                    /^(?:deleteJobBtn|deleteJobButton|removeJobBtn)$/i.test(id)||
+                    /^(?:delete-job|remove-job)$/i.test(data)||
+                    /^(?:delete|remove)\s+(?:this\s+)?job\s*$/i.test(name);
+            });
+        // Ambiguous controls may apply to a different job from a listing.
+        if(controls.length===1){controls[0].click();return;}
+        window.alert(controls.length
+            ?'Multiple Delete Job controls were found. Use Postalocity’s own Delete Job action for the correct job.'
+            :'Postalocity’s Delete Job control could not be verified. Use the website’s native Delete Job action. The totals were not changed.');
     }
     // beforeunload itself does not identify why the page is leaving.
     // Recognize normal navigations and reloads before they reach it. The
