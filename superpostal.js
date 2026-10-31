@@ -1611,7 +1611,7 @@ function liqParseFileLabel(raw){
     const client=parts.join('-').replace(/\s+/g,' ').trim();
     const dest=liqTarget(destRaw);
     // "Mary-Anne" is probably a hyphenated name, not creditor "Anne".
-    if(!hadType && dest.key.startsWith('CR:') &&
+    if(!hadType && dest && dest.key.startsWith('CR:') &&
        destRaw!==destRaw.toUpperCase() && !/\s/.test(destRaw)){
         return null;
     }
@@ -1622,7 +1622,7 @@ function liqFromFiles(names,jobName){
     const files=names.filter(name=>/\.pdf$/i.test(String(name))).map(name=>String(name).trim());
     if(!files.length){
         const parsed=liqParseFileLabel(jobName);
-        return {...parsed,files:[],source:'job name'};
+        return parsed?{...parsed,files:[],source:'job name'}:null;
     }
     const parsed=files.map(liqParseFileLabel);
     const first=parsed[0];
