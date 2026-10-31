@@ -1082,14 +1082,17 @@ function spScheduleProcessControlUpdate(){
     if(spProcessVisualTimer!==null)return;
     spProcessVisualTimer=setTimeout(()=>{spProcessVisualTimer=null;spUpdateProcessControlState();},100);
 }
-// Optional media: a GIF cannot carry audio. Supply a user-owned MP4/WebM
-// for synchronized video + sound, or a GIF URL AND a separate MP3/WAV URL.
-// Leaving these blank uses the built-in original, asset-free scare and
-// synthesized shriek; it does not impersonate a copyrighted film clip.
+// Vlipsy "Jump Scare – Creepy Face", chosen by the operator:
+// https://vlipsy.com/clips/3hEsFXt9
+// Vlipsy's documented MP4 URL convention is used for direct audio+video.
+// If this specific media URL is unavailable, use Vlipsy's embedded player.
+// GIF files are silent; optional GIF+audio remains supported for other clips.
 const SP_PROCESS_SCARE_MEDIA={
-    video:'',  // e.g. https://.../your-scare.mp4 (with audio)
-    gif:'',    // e.g. https://.../your-scare.gif
-    audio:'',  // e.g. https://.../your-scream.mp3
+    video:'https://media.vlipsy.com/vlips/3hEsFXt9/480p.mp4',
+    page:'https://vlipsy.com/clips/3hEsFXt9',
+    embed:'https://vlipsy.com/embed/3hEsFXt9',
+    gif:'',
+    audio:'',
     fallbackMs:1900
 };
 let spScarePending=null,spScareBypass=false;
@@ -1170,7 +1173,9 @@ function spScarePreview(control,form){
         style.textContent=[
             '#spProcessScare{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.96);padding:18px;box-sizing:border-box;color:#fff;font-family:Arial,sans-serif}',
             '#spProcessScare .sp-scare-stage{position:relative;width:min(740px,100%);max-height:90vh;overflow:hidden;background:#090608;border:1px solid #54252b;text-align:center}',
-            '#spProcessScare video,#spProcessScare img{display:block;width:100%;height:min(65vh,480px);object-fit:contain;background:#000}',
+            '#spProcessScare video,#spProcessScare img,#spProcessScare iframe{display:block;width:100%;height:min(65vh,480px);object-fit:contain;background:#000;border:0}',
+            '#spProcessScare .sp-scare-source{padding:9px 12px;color:#ccc;font:12px/1.4 Arial,sans-serif}',
+            '#spProcessScare .sp-scare-source a{color:#f2b32e;text-decoration:underline}',
             '#spProcessScare .sp-scare-original{height:min(64vh,430px);min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 45%,#63131b 0%,#18080b 32%,#020203 78%)}',
             '#spProcessScare .sp-scare-face{position:relative;width:190px;height:190px;background:#17070b;border:5px solid #450b14;border-radius:42% 42% 48% 48%;transform:scale(.5);animation:spScareReveal .5s cubic-bezier(.12,.9,.2,1) forwards}',
             '#spProcessScare .sp-scare-face::before{content:"";position:absolute;left:25px;top:60px;width:33px;height:24px;border-radius:50%;background:#fce6d5;box-shadow:99px 0 #fce6d5,0 0 20px #dd1a25,99px 0 20px #dd1a25}',
@@ -1220,18 +1225,46 @@ function spScarePreview(control,form){
         pending.stopSound=spScareFallbackSound();
         pending.timer=setTimeout(function(){spScareProceed(pending);},SP_PROCESS_SCARE_MEDIA.fallbackMs);
     }
+    function sourceEmbed(){
+        if(pending.done||pending.fallback)return;
+        pending.fallback=true;
+        if(pending.timer!==null){clearTimeout(pending.timer);pending.timer=null;}
+        if(pending.media){try{pending.media.pause();}catch(_e){}pending.media=null;}
+        if(pending.visual)pending.visual.remove();
+        const iframe=document.createElement('iframe');
+        iframe.title='Vlipsy horror clip';
+        iframe.src=SP_PROCESS_SCARE_MEDIA.embed+'?autoplay=1';
+        iframe.allow='autoplay; fullscreen';
+        iframe.setAttribute('referrerpolicy','strict-origin-when-cross-origin');
+        stage.insertBefore(iframe,actions);
+        pending.visual=iframe;
+        const note=document.createElement('div');note.className='sp-scare-source';
+        const hint=document.createElement('span');
+        hint.textContent='If the player does not start automatically, press Play. ';
+        note.append(hint);
+        const link=document.createElement('a');
+        link.href=SP_PROCESS_SCARE_MEDIA.page;
+        link.target='_blank';link.rel='noopener noreferrer';
+        link.textContent='Open the clip on Vlipsy';
+        note.append(link);
+        stage.insertBefore(note,actions);
+        // Cross-origin embeds do not expose a trusted "ended" event.
+        // Keep processing finite, with Skip and Cancel available.
+        pending.timer=setTimeout(function(){spScareProceed(pending);},8000);
+    }
     if(videoURL){
         const video=document.createElement('video');
         video.src=videoURL;video.preload='auto';video.playsInline=true;video.muted=false;video.volume=0.6;
         pending.media=video;pending.visual=video;
         stage.insertBefore(video,actions);
         video.addEventListener('ended',function(){spScareProceed(pending);},{once:true});
-        video.addEventListener('error',original,{once:true});
+        const mediaFallback=SP_PROCESS_SCARE_MEDIA.embed&&SP_PROCESS_SCARE_MEDIA.page?sourceEmbed:original;
+        video.addEventListener('error',mediaFallback,{once:true});
         pending.timer=setTimeout(function(){spScareProceed(pending);},10000);
         try{
             const play=video.play();
-            if(play&&typeof play.catch==='function')play.catch(original);
-        }catch(_e){original();}
+            if(play&&typeof play.catch==='function')play.catch(mediaFallback);
+        }catch(_e){mediaFallback();}
     }else if(gifURL&&audioURL){
         const picture=document.createElement('img');picture.src=gifURL;picture.alt='Horror preview';
         const audio=document.createElement('audio');audio.src=audioURL;audio.volume=0.6;
