@@ -2208,8 +2208,22 @@ document.body.appendChild(box);
     function capture(patch){
         const jobId=id();if(!jobId)return null;
         let r=read('job:'+jobId), a=returnAddress();
+        if(r){
+            const resolved=resolvedSessionKey(r.session);
+            if(resolved!==r.session&&read('session:'+resolved)){
+                r.session=resolved;write('job:'+jobId,r);
+            }
+        }
         if(r&&!read('session:'+r.session)){remove('job:'+jobId);r=null;}
         if(r&&r.deleted){remove('live:'+PAGE_ID);return r;}
+        if(r&&a){
+            // Editing this client's saved return address must not reassign
+            // just this job and make all of their sibling jobs disappear.
+            if(rememberClientAddress(r.session,a)){
+                const healed=healAddressSplit(r.session);
+                if(healed!==r.session){r.session=healed;write('job:'+jobId,r);}
+            }
+        }
         if(r&&isApproved(r)){
             const savedSession=read('session:'+r.session);
             if(savedSession&&savedSession.ended)return null;
@@ -2231,8 +2245,8 @@ document.body.appendChild(box);
         const prior=observed.get(jobId)||{};
         const currentAddress=a?addressKey(a):'';
         const linked=r&&read('session:'+r.session);
-        const key=r&&linked&&(!a||(complete(linked.address)&&addressKey(linked.address)===currentAddress))
-            ?r.session:currentAddress;
+        let key=r&&linked&&!linked.ended&&(!a||aliasesOf(linked).includes(currentAddress))
+            ?r.session:sessionForAddress(a);
         let session=read('session:'+key);
         if(session&&session.ended)return null;
         if(!session){if(!complete(a))return null;session={address:a,seen:Date.now()};write('session:'+key,session);}
@@ -2257,8 +2271,15 @@ document.body.appendChild(box);
         }
         observed.set(jobId,{cost:price.valid?price.cents:undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
         if(before!==JSON.stringify(r))write('job:'+jobId,r);
+        // Restore pre-existing jobs from a split address group after a save;
+        // these job records were always local, never deleted.
+        const healed=healAddressSplit(key);
+        if(healed!==key){
+            key=healed;session=read('session:'+key);
+            if(session){r.session=key;write('job:'+jobId,r);}
+        }
         if(!isApproved(r))markActive(jobId);
-        if(Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
+        if(session&&Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
         return r;
     }
     // Capture recipient only after Postalocity reports a successful add.
