@@ -66,7 +66,7 @@ assert.match(emptyLetters.text,/Sample Client/);
 assert.match(emptyLetters.text,/No letters yet/);
 assert.match(emptyLetters.text,/Add a named job and its recipient/);
 assert.doesNotMatch(emptyLetters.text,/Add a return address/);
-assert.equal(emptyLetters.items.filter(x=>x.className==='sp-ledger-onboard-index')[0].textContent,'02');
+assert.equal(emptyLetters.items.filter(x=>x.className==='sp-ledger-onboard-index').length,0,'No letters yet has no numbered step');
 assert.equal(emptyLetters.items.filter(x=>x.className==='sp-ledger-group').length,0);
 console.log('PASS: saved-address client without qualified jobs sees step 02, not setup or fake bureau totals.');
 
