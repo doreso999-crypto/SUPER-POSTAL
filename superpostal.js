@@ -1834,6 +1834,15 @@ document.body.appendChild(box);
         if(previous&&previous.jobId===String(jobId)&&now-lastPresence<LIVE_INTERVAL)return;
         if(write(key,{jobId:String(jobId),seen:now}))lastPresence=now;
     }
+    function leavePage(){
+        // pagehide fires after the browser confirms a navigation or tab close.
+        // Remove ONLY this page's counting lease, never the Postalocity job.
+        // Reloads immediately renew the lease on the next document.
+        capture();
+        leaving=true;
+        remove('live:'+PAGE_ID);
+        lastView='';
+    }
     function clean(){
         const now=Date.now();
         keys().filter(k=>k.startsWith('live:')).forEach(k=>{
@@ -2169,15 +2178,6 @@ document.body.appendChild(box);
         // or reliably finish an asynchronous server deletion after tab close.
         event.preventDefault();
         event.returnValue='';
-    }
-    function leavePage(){
-        // pagehide fires after the browser confirms a navigation or tab close.
-        // Remove ONLY this page's counting lease, never the Postalocity job.
-        // Reloads immediately renew the lease on the next document.
-        capture();
-        leaving=true;
-        remove('live:'+PAGE_ID);
-        lastView='';
     }
     function tick(){try{if(leaving)return;clean();hookRecipientSave();render(capture());}catch(e){console.warn('SUPER POSTAL totals:',e);}}
     window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
