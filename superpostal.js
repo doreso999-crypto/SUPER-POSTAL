@@ -1799,11 +1799,11 @@ document.body.appendChild(box);
 ///////////////////////////////
 (function spClientLedger(){
     if(!/\/jobui\b/.test(location.pathname))return;
-    const PREFIX='sp-ledger-v1:', GRACE=15*60*1000;
+    const PREFIX='sp-ledger-v1:'; // Session totals persist until the user explicitly clears them.
     // One presence lease per open page, not per job. Multiple tabs may show the
     // same job; the last open tab controls whether an unapproved job is counted.
     const PAGE_ID=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
-    const LIVE_TTL=2*60*1000, LIVE_INTERVAL=4000;
+    const LIVE_TTL=90*1000, LIVE_INTERVAL=4000; // Abnormal tab exits expire without clearing approved jobs.
     let leaving=false,lastPresence=0;
     const fields=['name','company1','company2','address1','address2','city','state','zip','country'];
     let error='', lastView='', lastHeartbeat=0;
@@ -1848,16 +1848,11 @@ document.body.appendChild(box);
     }
     function clean(){
         const now=Date.now();
+        // Expire only abandoned TAB leases. Never expire client sessions or
+        // approved jobs automatically: those require the explicit Clear action.
         keys().filter(k=>k.startsWith('live:')).forEach(k=>{
             const entry=read(k);
-            if(!entry||!Number.isFinite(entry.seen)||now-entry.seen>=LIVE_TTL)remove(k);
-        });
-        keys().filter(k=>k.startsWith('session:')).forEach(k=>{
-            const s=read(k);
-            if(!s||now-s.seen>GRACE){
-                keys().filter(j=>j.startsWith('job:')).forEach(j=>{const r=read(j);if(r&&r.session===k.slice(8))remove(j);});
-                remove(k);
-            }
+            if(!entry||!Number.isFinite(entry.seen)||entry.seen>now||now-entry.seen>=LIVE_TTL)remove(k);
         });
     }
     function id(){
@@ -1947,6 +1942,35 @@ document.body.appendChild(box);
     const isApproved=r=>!!r&&(r.approved===true||approvedState(r.status));
     function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted&&(isApproved(r)||active(r.id)));}
     function canClear(key){const s=read('session:'+key);return !!s&&!s.ended;}
+    function matchingSessions(a){
+        if(!complete(a))return [];
+        return keys().filter(k=>k.startsWith('session:')).map(k=>({key:k.slice(8),data:read(k)}))
+            .filter(x=>x.data&&!x.data.ended&&complete(x.data.address)&&addressKey(x.data.address)===addressKey(a))
+            .sort((a,b)=>String(a.data.label||'').localeCompare(String(b.data.label||'')));
+    }
+    function sessionLabel(key){
+        const s=read('session:'+key);
+        return s&&s.label?s.label:'Default client group';
+    }
+    function moveToClientGroup(jobId,key){
+        const r=read('job:'+jobId),dest=read('session:'+key);
+        if(!r||r.deleted||isApproved(r)||!dest||dest.ended||!complete(dest.address))return false;
+        const old=read('session:'+r.session);
+        if(!old||old.ended||addressKey(old.address)!==addressKey(dest.address))return false;
+        r.session=key;
+        if(!write('job:'+jobId,r))return false;
+        // Do not let the old draft's observed address reassign the job again.
+        observed.delete(String(jobId));lastView='';return true;
+    }
+    function separateClientGroup(jobId,label){
+        const r=read('job:'+jobId);
+        if(!r||r.deleted||isApproved(r)||!norm(label))return null;
+        const current=read('session:'+r.session);if(!current||current.ended)return null;
+        const key=addressKey(current.address)+'|client:'+Date.now().toString(36)+Math.random().toString(36).slice(2);
+        if(!write('session:'+key,{address:current.address,label:String(label).trim().slice(0,80),seen:Date.now()}))return null;
+        if(!moveToClientGroup(jobId,key)){remove('session:'+key);return null;}
+        return key;
+    }
     function duplicateNameMatches(r){
         if(!r||!countable(r))return [];
         return sessionJobs(r.session).filter(j=>String(j.id)!==String(r.id)&&norm(j.name)===norm(r.name)&&countable(j));
@@ -2028,10 +2052,12 @@ document.body.appendChild(box);
         if(!a&&!r)return null;
         const prior=observed.get(jobId)||{};
         const currentAddress=a?addressKey(a):'';
-        const key=a&&currentAddress!==prior.address?currentAddress:r?r.session:currentAddress;
+        const linked=r&&read('session:'+r.session);
+        const key=r&&linked&&(!a||(complete(linked.address)&&addressKey(linked.address)===currentAddress))
+            ?r.session:currentAddress;
         let session=read('session:'+key);
         if(session&&session.ended)return null;
-        if(!session){session={address:a,seen:Date.now()};write('session:'+key,session);}
+        if(!session){if(!complete(a))return null;session={address:a,seen:Date.now()};write('session:'+key,session);}
         const before=JSON.stringify(r);
         r=Object.assign({id:jobId,recipients:[],cents:null},r||{},patch||{},{session:key});
         const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
@@ -2153,6 +2179,32 @@ document.body.appendChild(box);
             return;
         }
         panel.append(el('h4',session.address.name),el('small',[session.address.address1,session.address.address2,session.address.city,session.address.state,session.address.zip].filter(Boolean).join(', ')));
+        const groupTitle=el('small','Client group: '+sessionLabel(r.session));
+        panel.append(groupTitle);
+        const related=matchingSessions(session.address);
+        if(related.length>1&&!isApproved(r)&&!r.deleted){
+            const select=el('select');select.setAttribute('aria-label','Move job to a separate client group');
+            related.forEach((entry,index)=>{const opt=el('option',(entry.data.label||'Default client group')+' · '+(index+1));opt.value=entry.key;select.append(opt);});
+            select.value=r.session;
+            select.onchange=()=>{
+                if(!window.confirm('Move only Job #'+r.id+' to the selected client group? Its Postalocity job will not change.')){select.value=r.session;return;}
+                if(moveToClientGroup(r.id,select.value))tick();else select.value=r.session;
+            };
+            panel.append(select);
+        }
+        if(!isApproved(r)&&!r.deleted){
+            const split=el('button','Separate client');
+            split.title='Create a distinct client group when two clients use the same saved return address.';
+            split.onclick=()=>{
+                const label=window.prompt('Name the separate client group (for example, client name). The return address stays unchanged:','');
+                if(label===null)return;
+                if(!norm(label)){window.alert('Enter a client group name.');return;}
+                if(separateClientGroup(r.id,label))tick();else window.alert('Could not create a separate client group.');
+            };
+            panel.append(split);
+        }
+        if(related.length>1)panel.append(el('small','Multiple client groups share this return address. Verify each job is assigned to the correct group.'));
+        else panel.append(el('small','Return addresses may be shared by different clients. Use Separate client to prevent combining their totals.'));
         if(r.deleted)panel.append(el('p','This job was deleted. Its cost has been removed.'));
         else if(!countable(r))panel.append(el('p',group(r).key==='Unassigned'
             ?'This job is unassigned and excluded from totals. Assign a bureau or recipient to count it.'
@@ -2201,7 +2253,7 @@ document.body.appendChild(box);
         nativeDelete.title='Use Postalocity’s own Delete Job action before closing the tab.';
         nativeDelete.onclick=requestNativeDeletion;
         if(r.deleted||isApproved(r))nativeDelete.disabled=true;
-        panel.append(copy,end,nativeDelete,el('small','Closing a job tab immediately excludes its unapproved job from panel totals; approved jobs remain. This does not delete the Postalocity job. Use Delete job in Postalocity for permanent deletion.'));
+        panel.append(copy,end,nativeDelete,el('small','Unapproved jobs are excluded after tab closure (unexpected crashes may take up to 90 seconds). Approved totals remain until Clear. Browser-only totals do not delete Postalocity jobs.'));
     }
     function requestNativeDeletion(){
         const current=read('job:'+id());
