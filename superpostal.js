@@ -406,18 +406,15 @@ function watchUploadedFiles() {
         );
 
         if (match) {
-            const field=document.querySelector('#overview-jobName');
-            // Respect a manually entered or previously restored job name.
-            if(field && !field.value.trim())updateJobName(match[1]);
+            updateJobName(match[1]);
         }
-        spSchedulePdfRefresh();
+
     });
 
     observer.observe(uploadList, {
         childList:true,
         subtree:true
     });
-    spRequestPdfList(false);
 
 }
 
@@ -477,23 +474,6 @@ function addQuickReturnAddress(){
 function spCleanLabel(text){
     return String(text||'').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
 }
-// Authoritative uploaded filenames come from Postalocity's existing read-only
-// listUploadedFiles action, rather than temporary upload tiles.
-const spPdfState={job:null,names:null,status:'idle',message:'',requestNumber:0,lastRequest:0,loading:false,retries:0};
-let spPdfRefreshTimer=null;
-let spPdfDiscoveryTimer=null;
-function spRetryPdfDiscovery(){
-    if(spPdfDiscoveryTimer!==null || spPdfState.retries>=3)return;
-    const delay=2500*(++spPdfState.retries);
-    spPdfDiscoveryTimer=setTimeout(function(){
-        spPdfDiscoveryTimer=null;
-        if(spPdfState.status!=='loaded')spRequestPdfList(true);
-    },delay);
-}
-function spCurrentJobId(){
-    const id=typeof jobId!=='undefined'?jobId:window.jobId;
-    return (id===undefined||id===null||String(id).trim()==='')?'':String(id);
-}
 function spNormalizePdfFiles(value){
     const seen=new Set(),out=[];
     if(!Array.isArray(value))return out;
@@ -508,75 +488,6 @@ function spNormalizePdfFiles(value){
         }
     });
     return out;
-}
-function spRequestPdfList(force){
-    const id=spCurrentJobId();
-    if(!id){
-        spPdfState.status='unavailable';
-        spPdfState.message='Waiting for Postalocity job ID. Use Refresh PDFs if this continues.';
-        spQueueRecipientOverview();spRetryPdfDiscovery();return;
-    }
-    if(spPdfState.job!==id){
-        spPdfState.job=id;spPdfState.names=null;
-        spPdfState.status='idle';spPdfState.lastRequest=0;
-        spPdfState.loading=false;spPdfState.requestNumber++;spPdfState.retries=0;
-    }
-    if(spPdfState.loading)return;
-    if(!force && spPdfState.status==='loaded')return;
-    // Throttle repeated page mutations; explicit Refresh is always allowed.
-    const now=Date.now();
-    if(!force && now-spPdfState.lastRequest<8000)return;
-    spPdfState.lastRequest=now;
-    const api=window.apiAction && window.apiAction.job && window.apiAction.job.listUploadedFiles;
-    if(typeof api!=='function'){
-        spPdfState.status='unavailable';
-        spPdfState.message='Waiting for Postalocity file-list service. Click Refresh PDFs if needed.';
-        spQueueRecipientOverview();spRetryPdfDiscovery();return;
-    }
-    const requestId=++spPdfState.requestNumber;
-    spPdfState.loading=true;spPdfState.status='loading';spPdfState.message='';
-    spQueueRecipientOverview();
-    let complete=false;
-    const timeout=setTimeout(function(){
-        if(complete||requestId!==spPdfState.requestNumber)return;
-        complete=true;spPdfState.loading=false;
-        spPdfState.status='error';
-        spPdfState.message='File-list request timed out. Click Refresh PDFs to retry.';
-        spQueueRecipientOverview();
-    },15000);
-    function finish(response,error){
-        if(complete||requestId!==spPdfState.requestNumber || spPdfState.job!==id)return;
-        complete=true;clearTimeout(timeout);spPdfState.loading=false;
-        if(error || !response || !Array.isArray(response.fileNames)){
-            spPdfState.status='error';
-            spPdfState.message='Could not verify uploaded PDFs. Click Refresh PDFs to retry.';
-        }else{
-            spPdfState.names=spNormalizePdfFiles(response.fileNames);
-            spPdfState.status='loaded';spPdfState.message='';spPdfState.retries=0;
-            if(spPdfDiscoveryTimer!==null){clearTimeout(spPdfDiscoveryTimer);spPdfDiscoveryTimer=null;}
-        }
-        spQueueRecipientOverview();
-        spRefreshBureauMismatchWarning();
-    }
-    const action={
-        request:{id:id},
-        response:null,
-        buildRequest:function(){this.request={id:id};},
-        handleSuccessResponse:function(){finish(this.response,null);},
-        handleErrorResponse:function(){finish(null,true);},
-        handleFailureResponse:function(){finish(null,true);},
-        handleError:function(){finish(null,true);}
-    };
-    try{
-        const result=api.call(window.apiAction.job,action);
-        if(result&&typeof result.catch==='function')result.catch(function(err){finish(null,err);});
-    }catch(err){finish(null,err);}
-}
-function spSchedulePdfRefresh(){
-    if(spPdfRefreshTimer!==null)clearTimeout(spPdfRefreshTimer);
-    spPdfRefreshTimer=setTimeout(function(){
-        spPdfRefreshTimer=null;spRequestPdfList(true);
-    },1100);
 }
 // Strong bureau checks use exact filename tokens, not substrings of client names.
 // Unlabeled or mixed-name PDFs are never treated as proof of a mismatch.
@@ -601,9 +512,10 @@ function spBureauCaption(code){
     return {EX:'Experian',EQU:'Equifax',TU:'TransUnion'}[code]||'Unidentified bureau';
 }
 function spVerifiedBureauDecision(selected){
-    if(spPdfState.status!=='loaded'||spPdfState.job!==spCurrentJobId())
-        return {type:'unverified',names:[],bureaus:[]};
-    return spAssessBureauFilenameMatch(spPdfState.names||[],selected);
+    // Restore checking the original on-page PDF filenames; no background API sync.
+    const files=spPdfNamesFromPage();
+    if(!files.length)return {type:'unverified',names:[],bureaus:[]};
+    return spAssessBureauFilenameMatch(files,selected);
 }
 function spBureauFromAddressName(value){
     // Only recognized bureau recipients are checked. Client return addresses
@@ -641,10 +553,10 @@ function spShowBureauFileError(root,action,decision,selected){
         else root.appendChild(holder);
     }
     holder.replaceChildren();
-    const label=document.createElement('strong');label.textContent='PDF / bureau mismatch';
+    const label=document.createElement('strong');label.textContent='Possible PDF / bureau mismatch';
     const message=document.createElement('p');
     message.textContent='Selected: '+spBureauCaption(selected)+
-       '. Uploaded PDF filenames explicitly indicate: '+decision.bureaus.map(spBureauCaption).join(', ')+
+       '. Visible PDF filenames indicate: '+decision.bureaus.map(spBureauCaption).join(', ')+
        '. Check that the correct document and recipient address are selected.';
     const files=document.createElement('p');
     files.textContent='Files: '+decision.names.join(' · ');
@@ -671,7 +583,7 @@ function spRefreshBureauMismatchWarning(){
     };
     const recipientCheck=spVerifiedBureauDecision(labels.recipient.code);
     if(recipientCheck.type==='mismatch'){
-        spRecipientBureauStatus('Warning: verified PDF filenames indicate '+recipientCheck.bureaus.map(spBureauCaption).join(', ')+'. The selected recipient address indicates '+spBureauCaption(labels.recipient.code)+'.','error');
+        spRecipientBureauStatus('Warning: visible PDF filenames indicate '+recipientCheck.bureaus.map(spBureauCaption).join(', ')+'. The selected recipient address indicates '+spBureauCaption(labels.recipient.code)+'.','error');
     }
     Object.keys(labels).forEach(function(key){
         const entry=labels[key];if(!entry.root)return;
@@ -712,32 +624,36 @@ function spInstallBureauSaveGuard(){
     },true);
 }
 function spPdfNamesFromPage(){
-    // Only an authoritative server response can confirm which uploads exist.
-    // A stale modal table or a disappearing upload tile must not clear it.
-    if(spPdfState.status==='loaded' && spPdfState.job===spCurrentJobId())
-        return spPdfState.names.slice();
-
-    const found=[],seen=new Set();
-    function collectName(candidate){
-        if(!candidate)return;
-        const line=String(candidate).replace(/\u00a0/g,' ').trim();
-        const exact=line.match(/^(.+?\.pdf)(?:\s+(?:delete|remove|preview|download))?$/i);
-        if(exact){
-            const val=exact[1].trim(),key=val.toLowerCase();
-            if(val.length<=300&&!seen.has(key)){seen.add(key);found.push(val);}
-        }
-    }
-    function collectFrom(container){
-        if(!container)return;
-        container.querySelectorAll('[data-filename],[data-file-name],a[title],a').forEach(function(el){
-            collectName(el.getAttribute('data-filename')||el.getAttribute('data-file-name')||
-                el.getAttribute('title')||el.textContent);
+    const found=[];
+    const seen=new Set();
+    function collect(text){
+        if(!text)return;
+        const label=String(text).replace(/\u00a0/g,' ').trim();
+        const pieces=label.split(/\r?\n/);
+        pieces.forEach(function(piece){
+            // Uploaded-file elements sometimes append "Delete" or file counts.
+            let name=piece.trim().replace(/\s+(?:delete|remove|download|preview)\s*$/i,'');
+            if(!/\.pdf$/i.test(name)){
+                const match=name.match(/(?:^|[\s"'])([^"'<>]*?\.pdf)(?=\s|$|["'])/i);
+                name=match ? match[1].trim() : '';
+            }
+            if(name && name.length<=260 && /\.pdf$/i.test(name)){
+                const key=name.toLowerCase();
+                if(!seen.has(key)){seen.add(key);found.push(name);}
+            }
         });
-        const lines=String(container.innerText||container.textContent||'').split(/\r?\n/);
-        lines.forEach(collectName);
     }
-    collectFrom(document.querySelector('#sourceUploadedList'));
-    collectFrom(document.querySelector('#modalFileList'));
+    const uploaded=document.querySelector('#sourceUploadedList');
+    if(uploaded){
+        uploaded.querySelectorAll('[data-filename],[data-file-name],a[title],a').forEach(function(el){
+            collect(el.getAttribute('data-filename')||el.getAttribute('data-file-name')||el.getAttribute('title')||el.textContent);
+        });
+        collect(uploaded.innerText||uploaded.textContent);
+    }
+    const modalFiles=document.querySelector('#modalFileList');
+    if(modalFiles){
+        modalFiles.querySelectorAll('a').forEach(function(el){collect(el.textContent);});
+    }
     return found;
 }
 function spRecipientNamesFromPage(){
@@ -783,7 +699,7 @@ function spRefreshRecipientPdfOverview(){
     const count=countElement?Number.parseInt(countElement.textContent,10):0;
     const countLabel=Number.isFinite(count)&&count>0?count:recipientNames.length;
     const recipientKey=JSON.stringify([countLabel,recipientNames]);
-    const fileKey=JSON.stringify([pdfNames,spPdfState.status,spPdfState.message]);
+    const fileKey=JSON.stringify(pdfNames);
     if(panel.dataset.recipientKey!==recipientKey){
         panel.dataset.recipientKey=recipientKey;
         panel.querySelector('#spOverviewRecipientCount').textContent=countLabel+' recipients';
@@ -811,12 +727,6 @@ function spRefreshRecipientPdfOverview(){
     if(panel.dataset.fileKey!==fileKey){
         panel.dataset.fileKey=fileKey;
         panel.querySelector('#spOverviewPdfCount').textContent=pdfNames.length+' PDFs';
-        const statusEl=panel.querySelector('#spOverviewPdfStatus');
-        if(statusEl){
-            const labels={loading:'Checking uploaded PDFs…',loaded:'Synced with Postalocity',error:spPdfState.message,unavailable:spPdfState.message};
-            statusEl.textContent=labels[spPdfState.status]||'Waiting for file list';
-            statusEl.dataset.status=spPdfState.status;
-        }
         const list=panel.querySelector('#spOverviewPdfNames');
         list.replaceChildren();
         if(pdfNames.length){
@@ -828,9 +738,7 @@ function spRefreshRecipientPdfOverview(){
             });
         }else{
             const li=document.createElement('li');li.className='sp-empty';
-            li.textContent=spPdfState.status==='loaded'?'No PDFs are currently uploaded to this job.':
-                spPdfState.status==='loading'?'Checking uploaded PDFs…':
-                'PDF list not verified. Refresh to check uploads.';
+            li.textContent='No uploaded PDF filenames available yet.';
             list.appendChild(li);
         }
     }
@@ -870,8 +778,6 @@ function addRecipientPdfOverview(){
             '#step3 #spRecipientPdfOverview .sp-empty{color:#748399;font-style:italic}',
             '#step3 #spRecipientPdfOverview button{font-size:11px;padding:5px 9px;border:1px solid #b8cee9;border-radius:6px;background:#eff5ff;color:#26558b;cursor:pointer}',
             '#step3 #spRecipientPdfOverview button:focus-visible{outline:2px solid #4388e1;outline-offset:2px}',
-            '#step3 #spOverviewPdfStatus{font-size:11px;margin:5px 0 8px;color:#5b6d87}',
-            '#step3 #spOverviewPdfStatus[data-status="error"],#step3 #spOverviewPdfStatus[data-status="unavailable"]{color:#a33930}',
             '@media(max-width:520px){#step3 #spRecipientPdfOverview .sp-overview-grid{grid-template-columns:1fr}}'
         ].join('\n');
         document.head.appendChild(styles);
@@ -888,8 +794,6 @@ function addRecipientPdfOverview(){
       '<ul id="spOverviewRecipientNames" aria-label="Full recipient names"></ul></section>',
       '<section class="sp-overview-col"><div class="sp-overview-col-title">',
       '<span>Uploaded PDF filenames</span><span class="sp-count" id="spOverviewPdfCount"></span></div>',
-      '<button type="button" id="spPdfRefreshButton">Refresh PDFs</button>',
-      '<p id="spOverviewPdfStatus" role="status" aria-live="polite"></p>',
       '<ul id="spOverviewPdfNames" aria-label="Uploaded PDF filenames"></ul></section>',
       '</div>'
     ].join('');
@@ -899,14 +803,12 @@ function addRecipientPdfOverview(){
     }else{
         step.appendChild(card);
     }
-    card.querySelector('#spPdfRefreshButton').addEventListener('click',function(){spRequestPdfList(true);});
     card.querySelector('#spOverviewOpenRecipients').addEventListener('click',function(){
         const modal=document.querySelector('#listShowModal');
         const jq=window.jQuery||window.$;
         if(modal && jq && jq.fn && typeof jq.fn.modal==='function')jq(modal).modal('show');
     });
     spQueueRecipientOverview();
-    spRequestPdfList(false);
 }
 
 ///////////////////////////////
@@ -985,7 +887,7 @@ function spFillRecipientBureau(code,method){
     const names={EX:'Experian',EQU:'Equifax',TU:'TransUnion'};
     const check=spVerifiedBureauDecision(code);
     if(check.type==='mismatch'){
-        spRecipientBureauStatus('Warning: verified PDF filenames indicate '+check.bureaus.map(spBureauCaption).join(', ')+', but the selected address is '+names[code]+'. Review before saving.','error');
+        spRecipientBureauStatus('Warning: visible PDF filenames indicate '+check.bureaus.map(spBureauCaption).join(', ')+', but the selected address is '+names[code]+'. Review before saving.','error');
     }else{
         spRecipientBureauStatus(names[code]+' address filled ('+method+'). Review before saving.','success');
     }
