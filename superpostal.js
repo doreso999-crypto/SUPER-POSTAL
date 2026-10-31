@@ -1580,13 +1580,17 @@ function liqJobName(){
 }
 function liqRecipientBureau(){
     const cards=Array.from(document.querySelectorAll('#contactListRow .docCardAddress'));
-    // No recipient address loaded: don't treat a job-name guess as verified.
-    if(!cards.length)return '';
+    // null means the recipient list has not loaded; do not guess from partial data.
+    if(!cards.length)return null;
+    const countNode=document.querySelector('#step3 .contactListSize');
+    const total=countNode?Number.parseInt(countNode.textContent,10):NaN;
+    if(Number.isFinite(total)&&total>0&&cards.length!==total)return null;
     const codes=cards.map(function(card){
         return spDetectBureauForRecipient(card.textContent);
     });
-    if(codes.some(function(code){return !code;}))return '';
-    return new Set(codes).size===1?codes[0]:'';
+    // A mixed/unknown address list cannot be assigned to a single bureau.
+    if(codes.some(function(code){return !code;}))return 'OTHER';
+    return new Set(codes).size===1?codes[0]:'OTHER';
 }
 function liqProcessPrice(){
     const state=document.querySelector('#jobState');
@@ -1605,7 +1609,7 @@ function liqCapturePage(){
     const name=liqJobName();
     let changed=false;
     const actual=liqRecipientBureau();
-    if(actual&&(!data.hints[id]||data.hints[id].bureau!==actual)){
+    if(actual!==null&&(!data.hints[id]||data.hints[id].bureau!==actual)){
         data.hints[id]={bureau:actual,source:'recipient address'};
         changed=true;
     }
