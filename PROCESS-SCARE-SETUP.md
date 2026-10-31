@@ -6,7 +6,9 @@ The userscript now uses the selected Vlipsy clip:
 
 ## Playback
 
-After the original four readiness checks pass, **Process this job** opens the clip as an immersive **full-viewport video** and requests the browser's native **fullscreen** mode. The clip is scaled to cover the entire display, with audio at 60% volume. When it ends, the original Postalocity processing action runs automatically.
+The scare now has an **independent 1% chance per eligible processing attempt** (roughly one in a hundred, not guaranteed to occur exactly once every hundred jobs). On the other **99%** of attempts, the native Postalocity processing action continues immediately with **no overlay, no media playback, and no extra delay**. A normal button click and its matching form submit count as **one attempt**, not two chances.
+
+When the 1% roll triggers, after the original four readiness checks pass, **Process this job** opens the clip as an immersive **full-viewport video** and requests the browser's native **fullscreen** mode. The clip is scaled to cover the entire display, with audio at 60% volume. When it ends, the original Postalocity processing action runs automatically.
 
 - There are **no visible Skip, Cancel or playback controls** supplied by the userscript, so the scare plays without an advance warning.
 - **Escape** remains an unobtrusive emergency exit. Closing native fullscreen also cancels the pending processing action rather than unexpectedly submitting it.
@@ -28,6 +30,8 @@ const SP_PROCESS_SCARE_MEDIA={
     audio:'',
     fallbackMs:1900
 };
+// Separate constant below the media settings:
+// const SP_PROCESS_SCARE_CHANCE=0.01;
 ```
 
 The MP4 address follows Vlipsy's published media URL format. **Actual playback of this specific media address and embedded player has not been independently verified in a live browser.** Some browser policies, blockers or host changes may prevent autoplay with sound. The script neither downloads nor republishes the video.

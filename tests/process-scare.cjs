@@ -10,6 +10,9 @@ assert.match(src,/spProcessScareGuard\(event,form\)/);
 assert.match(code,/spBlockIncompleteProcess\(event,control\)/,'readiness gate is first');
 assert.match(code,/spJobDetailsReadiness\(\)/,'readiness rechecked at completion');
 assert.match(code,/spScareBypass=true/,'replay bypass prevents infinite loops');
+assert.match(code,/const SP_PROCESS_SCARE_CHANCE=0\.01/,'scare probability exactly one percent');
+assert.match(code,/Math\.random\(\)>=SP_PROCESS_SCARE_CHANCE/,'probability is checked for each eligible attempt');
+assert.match(code,/spScareRegularSubmitForm===event.target/,'paired click/submit does not roll twice');
 assert.match(code,/video\.volume=0\.6/);
 assert.match(code,/prefers-reduced-motion/);
 assert.match(code,/overlay\.requestFullscreen/,'real browser fullscreen requested');
@@ -64,14 +67,17 @@ const document={
     }
 };
 let complete=true,warnings=0,toasts=0,reviews=0;
+let chanceRoll=0,chanceCalls=0;
+const rng={random(){chanceCalls++;return chanceRoll;}};
+
 const native={count:0},control={isConnected:true,form:null,click(){native.count++;}};
 const form={requestSubmit(){native.count++;}};
 const block=e=>{if(!complete){e.preventDefault();return true;}return false;};
 const factory=new Function('document','window','spBlockIncompleteProcess','spJobDetailsReadiness',
-    'spProcessJobWarning','spShowProcessToast','spQueueRecipientOverview','setTimeout','clearTimeout',
+    'spProcessJobWarning','spShowProcessToast','spQueueRecipientOverview','setTimeout','clearTimeout','Math',
     code+';return {spProcessScareGuard,spScareClose,spScareProceed,media:SP_PROCESS_SCARE_MEDIA,getPending:()=>spScarePending,getBypass:()=>spScareBypass};');
 const api=factory(document,{},block,()=>({ready:complete,missing:complete?[]:['Saved return address']}),
-    ()=>warnings++,()=>toasts++,()=>reviews++,setTimeoutMock,clearTimeoutMock);
+    ()=>warnings++,()=>toasts++,()=>reviews++,setTimeoutMock,clearTimeoutMock,rng);
 const evt=(type='click',target=control)=>({
     type,target,prevented:0,stopped:0,immediate:0,
     preventDefault(){this.prevented++;},stopPropagation(){this.stopped++;},
@@ -89,6 +95,44 @@ assert.equal(native.count,0);
 console.log('PASS: incomplete jobs never show a scare or submit.');
 
 complete=true;
+// 99% path: no overlay, no click interception, no synthetic replay or delay.
+chanceRoll=0.5;
+const normal=evt();
+const attemptsBefore=chanceCalls,fullscreenBefore=requestCount;
+assert.equal(api.spProcessScareGuard(normal,control),false);
+assert.equal(normal.prevented,0,'ordinary native processing remains untouched');
+assert.equal(normal.stopped,0);
+assert.equal(normal.immediate,0);
+assert.equal(chanceCalls,attemptsBefore+1,'one draw per attempt');
+assert.equal(api.getPending(),null);
+assert.equal(requestCount,fullscreenBefore);
+chanceRoll=0.01;
+assert.equal(api.spProcessScareGuard(evt(),control),false,'exact 1% boundary does not trigger scare');
+chanceRoll=0.99;
+assert.equal(api.spProcessScareGuard(evt('submit',form),form),false,'normal standalone form submit proceeds');
+assert.equal(api.getPending(),null);
+console.log('PASS: 99% branch never prevents the native click or submit, opens no overlay and requires no timer.');
+
+// A click that submits a form must count as ONE attempt, not one roll for click
+// plus another roll for the ensuing submit event.
+control.form=form;
+chanceRoll=0.75;
+const beforePair=chanceCalls;
+const normalClick=evt();
+assert.equal(api.spProcessScareGuard(normalClick,control),false);
+assert.equal(normalClick.prevented,0);
+chanceRoll=0; // would force a scare if code incorrectly rolled on submit
+const pairedSubmit=evt('submit',form);
+assert.equal(api.spProcessScareGuard(pairedSubmit,control),false);
+assert.equal(pairedSubmit.prevented,0);
+assert.equal(chanceCalls,beforePair+1,'only one random draw for click+submit');
+assert.equal(api.getPending(),null);
+control.form=null;
+assert.equal(timers.size,0,'paired submit allowance cleaned up');
+console.log('PASS: a Process click and its resulting form submit share one random chance.');
+
+// Deterministically force the rare 1% branch to verify previous safeguards.
+chanceRoll=0.009;
 let pending=play();
 assert.ok(pending&&pending.overlay);
 assert.equal(requestCount,1,'fullscreen requested during user click');
