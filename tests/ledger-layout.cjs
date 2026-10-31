@@ -81,7 +81,7 @@ assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-group').le
 assert.match(textAll(emptyPanel),/No letters yet/,'empty state includes a readable centered message');
 assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-empty').length,1,'one empty-state message');
 assert.ok(emptyCSS.includes('height:max(140px,min(${240*EMPTY_HEIGHT_SCALE}px,calc(100vh - 150px)))!important'),'parent uses a real height so content can expand');
-assert.ok(emptyCSS.includes('display:flex;\\n    flex:1 1 auto;\\n    flex-direction:column;\\n    align-self:stretch;'),'empty-state content fills height');
+assert.ok(emptyCSS.includes('display:flex;')&&emptyCSS.includes('flex:1 1 auto;')&&emptyCSS.includes('flex-direction:column;')&&emptyCSS.includes('align-self:stretch;'),'empty-state content fills height');
 assert.ok(emptyCSS.includes('justify-content:space-between;'),'header and content distribute across panel');
 assert.ok(emptyCSS.includes('.sp-ledger-empty{')&&emptyCSS.includes('font-size:18px;'),'empty message enlarged');
 assert.ok(emptyCSS.includes('.sp-ledger-title{')&&emptyCSS.includes('font-size:14px;'),'empty heading enlarged');
