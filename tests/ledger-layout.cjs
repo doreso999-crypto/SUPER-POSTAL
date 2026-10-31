@@ -69,7 +69,7 @@ assert.equal(otherTotal.children[2].disabled,true,'unverified bureau cannot copy
 const panelSource=src.slice(src.indexOf('// FLOATING SIDE PANEL'),src.indexOf('// TEMPORARY, DEVICE-LOCAL CLIENT TOTALS'));
 assert.match(panelSource,/width:'320px'/,'original width restored');
 assert.match(panelSource,/minHeight:'240px'/,'original minimum height restored');
-assert.match(panelSource,/top:'170px'/,'panel starts 50px lower');
+assert.match(panelSource,/top:'145px'/,'panel raised by 25px');
 assert.doesNotMatch(panelSource,/top:'120px'/,'old position removed');
 assert.match(panelSource,/border:'2px solid #202a36'/,'dark outer frame');
 assert.ok(panelSource.includes("background:'#fff'"),'outer background is white');
@@ -82,16 +82,27 @@ assert.doesNotMatch(innerCSS,/border-radius:0!important/,'button rounding is not
 assert.ok(innerCSS.includes('.sp-ledger-title{display:none'),'old inner title is suppressed');
 assert.ok(innerCSS.includes('button{font:700 11px Arial,sans-serif;border:1px solid #314052;border-radius:8px'),'action buttons are slightly rounded');
 assert.ok(innerCSS.includes('.sp-ledger-totalrow button{background:#202a36'),'strong Copy contrast');
-assert.ok(innerCSS.includes('#spLedgerPanel > a{display:inline-block')&&innerCSS.includes('border-radius:8px'),'settings action link matches buttons');
+assert.ok(innerCSS.includes('.sp-ledger-onboard > a,')&&innerCSS.includes('border-radius:8px'),'empty-state settings link uses a rounded button treatment');
 assert.ok(src.includes("panel.style.cssText='position:relative;z-index:5;cursor:default;max-height:72vh;overflow:auto;border:0;border-radius:0;background:#fff"),'interior background is white');
 assert.doesNotMatch(src,/panel.append\(el\('div','CLIENT TOTALS'\)\)/,'old duplicate heading removed');
 assert.ok(innerCSS.includes('button:disabled{opacity:'),'disabled styles retained');
 assert.ok(innerCSS.includes('button:focus-visible'),'keyboard focus styles retained');
+assert.ok(innerCSS.includes('.sp-ledger-onboard{display:flex;flex-direction:column'),'empty state has a structured compact card');
+assert.ok(innerCSS.includes('.sp-ledger-onboard-index{display:inline-flex'),'empty state has a compact stage marker');
+assert.ok(innerCSS.includes('.sp-ledger-onboard-title{font-size:15px'),'empty state has clear typography');
+assert.ok(innerCSS.includes('.sp-ledger-onboard-desc{font-size:12px'),'empty state has secondary explanatory text');
+assert.ok(innerCSS.includes('.sp-ledger-onboard > a,')&&innerCSS.includes('.sp-ledger-onboard > button{'),'empty state has clear action controls');
+
 jobs=[];
 render({id:'101',name:'EX Dispute Letter',session:'client'});
 const emptyPanel=document.querySelector('#spLedgerPanel');
 assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-group').length,0);
 assert.match(textAll(emptyPanel),/No letters yet/,'empty client still has a concise message');
+assert.match(textAll(emptyPanel),/Add a named job and its recipient/,'client with an address sees the next practical step');
+assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-onboard').length,1,'no duplicated empty cards');
+assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-onboard-title').length,1);
+assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-onboard-index')[0].textContent,'02','letters is second step');
+assert.equal(flatten(emptyPanel).filter(el=>el.className==='sp-ledger-group').length,0,'empty state never fabricates bureau groups');
 assert.equal(root.dataset.empty,undefined,'no empty-state size flag remains');
 jobs=[{id:'101',name:'EX Dispute Letter',session:'client',bureau:'EX',cents:139,status:'Processed'}];
 render(jobs[0]);
