@@ -11,6 +11,7 @@ function page(id,html,savedHtml){
  w.fetch=async url=>({ok:true,url,text:async()=>savedHtml||''});
  w.spReturnFormField=(form,key)=>form.querySelector('[name="'+key+'"]');
  w.spPdfCurrentJobId=()=>id;w.spReturnIsSampleText=t=>/MY NAME HERE/.test(t);w.spReturnSavedReady=()=>false;
+ w.confirm=()=>true;w.alert=()=>{};
  w.spDetectBureauForRecipient=n=>/\bEX\b/.test(n||'')?'EX':'';w.spBureauDisplayName=c=>({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[c]||'Unknown bureau';
  w.SP_RECIPIENT_BUREAUS={EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}};
  w.eval(parser+'\n'+code);return w;
@@ -23,13 +24,14 @@ assert.match(p.document.querySelector('#spLedgerPanel').textContent,/Test Client
 assert.match(p.document.querySelector('#spLedgerPanel').textContent,/Experian.*\$1.39/);
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Total: \$1.39/);
 const another=page('1301773',second);assert.match(another.document.querySelector('#spLedgerPanel').textContent,/Total: \$1.39/);
-let end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='Clear');assert.equal(end.disabled,true);
+let end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='Clear');assert.equal(end.disabled,false);
+p.confirm=()=>false;end.click();assert.match(p.document.querySelector('#spLedgerPanel').textContent,/Total: \$1.39/);p.confirm=()=>true;
 p.document.querySelector('#jobState').textContent='Approved';p.testTick();a.testTick();
 end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='Clear');assert.equal(end.disabled,false);end.click();a.testTick();
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Session ended/);
 const start=[...a.document.querySelectorAll('button')].find(e=>e.textContent==='Start new session');start.click();a.testTick();
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Total: \$0.00/);
-a.close();p.close();another.close();console.log('PASS: before/after HTML fixtures, actual address parser, rendered bureau total, duplicate page, end/restart controls.');
+a.close();p.close();another.close();console.log('PASS: before/after HTML fixtures, actual address parser, rendered bureau total, duplicate page, confirmed Clear and end/restart controls.');
 
 const orphan=page('200',second,first);
 setTimeout(()=>{
@@ -39,3 +41,13 @@ setTimeout(()=>{
   orphan.close();console.log('PASS: processed job without local record recovers saved address using same-job read-only request.');
  }catch(e){console.error(e);orphan.close();process.exitCode=1;}
 },20);
+
+const onClose=page('404','<span id="settingsReturnAddressSource-Link">FROM JOB SETTINGS:<br>Closing Client<br>123 Main St<br>Denver CO 80201</span><input id="overview-jobName" value="Closing EX"><span id="jobState">New</span><button onclick="deleteJob()">Delete Job</button>');
+const native=onClose.document.querySelector('[onclick="deleteJob()"]');
+let nativeClicks=0;native.addEventListener('click',()=>nativeClicks++);
+const panelDelete=[...onClose.document.querySelectorAll('#spLedgerPanel button')].find(e=>e.textContent==='Delete job in Postalocity');
+assert.ok(panelDelete);panelDelete.click();assert.equal(nativeClicks,1,'Panel uses Postalocity native delete control');
+const leaving=new onClose.Event('beforeunload',{cancelable:true});onClose.dispatchEvent(leaving);
+assert.equal(leaving.defaultPrevented,true,'Unapproved tab close produces a browser confirmation');
+onClose.close();
+console.log('PASS: panel invokes native Delete Job; pending job warns before leaving.');
