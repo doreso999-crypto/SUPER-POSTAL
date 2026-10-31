@@ -35,6 +35,10 @@ console.log('PASS: shared client identity; client/profile isolation; processed p
 const gated=tab('999','Named Client');gated.state.name='';let record=gated.api.capture();assert.equal(gated.api.countable(record),false);
 gated.state.name='EX letter';record=gated.api.capture();assert.equal(gated.api.countable(record),true);
 gated.state.name='   ';record=gated.api.capture();assert.equal(gated.api.countable(record),false);
+for(const placeholder of ['Unnamed','Unnamed job','Untitled','UNTITLED JOB','Unassigned']){
+ gated.state.name=placeholder;record=gated.api.capture();assert.equal(gated.api.countable(record),false,'Placeholder name must never be displayed or counted: '+placeholder);
+}
+gated.state.name='Real EX letter';record=gated.api.capture();assert.equal(gated.api.countable(record),true,'Valid real name counts normally');
 const invalid=Object.assign({},record,{name:'EX letter',session:'missing'});assert.equal(gated.api.countable(invalid),false);
 console.log('PASS: blank-name jobs and missing-return-address jobs excluded; named linked jobs included; clearing name excludes job.');
 
@@ -62,14 +66,16 @@ unassigned.state.name='General correspondence';
 const unassignedRecord=unassigned.api.capture();
 assert.equal(unassigned.api.countable(unassignedRecord),false,'Unassigned creditor group is never counted');
 unassignedRecord.override='EX';unassigned.api.write('job:777',unassignedRecord);
-assert.equal(unassigned.api.countable(unassigned.api.read('job:777')),true,'Assigning a bureau starts counting it');
+assert.equal(unassigned.api.countable(unassigned.api.read('job:777')),false,'Old manual override must not resurrect unassigned jobs');
+unassigned.state.name='EX letter';const autoAssigned=unassigned.api.capture();
+assert.equal(unassigned.api.countable(autoAssigned),true,'Recognized bureau name is counted automatically');
 const early=tab('778','Early clear',storage());
 early.state.status='Processed - Ready for Approval';early.state.cost='$3.00';
 const earlyRecord=early.api.capture();
 assert.equal(early.api.canClear(earlyRecord.session),true);
 assert.equal(early.api.clearSession(earlyRecord.session),true,'Clear works without approving pending jobs');
 assert.equal(early.api.countable(earlyRecord),false,'Cleared session cannot be recounted');
-console.log('PASS: unassigned jobs excluded until assigned; pending sessions can be cleared safely.');
+console.log('PASS: unassigned jobs and old manual overrides excluded; automatic bureau detection works; pending sessions can be cleared.');
 
 const closeStore=storage();
 const closedJobs=[tab('980','Close case',closeStore),tab('981','Close case',closeStore),tab('982','Close case',closeStore)];
@@ -177,3 +183,20 @@ assert.equal(corrected.priceNeedsReview,true,'invalid current approved total mus
 approvalPrice.state.cost='$5.49';corrected=approvalPrice.api.capture();
 assert.equal(corrected.priceNeedsReview,false,'fresh verified approved total removes warning');
 console.log('PASS: approved-page total corrections and invalid-price safeguards.');
+
+const noDropdownStore=storage();
+const auto=tab('8801','No Manual Grouping',noDropdownStore);
+auto.state.name='Automatic EX';let autoRecord=auto.api.capture();
+autoRecord.override='OTHER';auto.api.write('job:8801',autoRecord);
+assert.equal(auto.api.group(auto.api.read('job:8801')).key,'EX','prior manual selections cannot override auto-detected bureau');
+auto.state.name='A direct creditor letter';
+autoRecord=auto.api.capture();
+assert.equal(auto.api.countable(autoRecord),false,'Without a recipient an unidentified letter remains hidden');
+autoRecord.override='EQU';auto.api.write('job:8801',autoRecord);
+assert.equal(auto.api.countable(auto.api.read('job:8801')),false,'manual override cannot force unclassified job into totals');
+const creditorRecord=auto.api.read('job:8801');
+creditorRecord.recipients=[{name:'THD/CBNA',address1:'PO Box 6497',city:'Sioux Falls',state:'SD',zip:'57117'}];
+auto.api.write('job:8801',creditorRecord);
+assert.equal(auto.api.group(creditorRecord).key,'OTHER','valid direct creditor recipient is classified automatically');
+assert.equal(auto.api.countable(creditorRecord),true);
+console.log('PASS: no manual bureau assignment; valid recipients auto-classify direct letters as Other.');
