@@ -2009,35 +2009,6 @@ document.body.appendChild(box);
     const isApproved=r=>!!r&&(r.approved===true||approvedState(r.status));
     function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted&&(isApproved(r)||active(r.id)));}
     function canClear(key){const s=read('session:'+key);return !!s&&!s.ended;}
-    function matchingSessions(a){
-        if(!complete(a))return [];
-        return keys().filter(k=>k.startsWith('session:')).map(k=>({key:k.slice(8),data:read(k)}))
-            .filter(x=>x.data&&!x.data.ended&&complete(x.data.address)&&addressKey(x.data.address)===addressKey(a))
-            .sort((a,b)=>String(a.data.label||'').localeCompare(String(b.data.label||'')));
-    }
-    function sessionLabel(key){
-        const s=read('session:'+key);
-        return s&&s.label?s.label:'Default client group';
-    }
-    function moveToClientGroup(jobId,key){
-        const r=read('job:'+jobId),dest=read('session:'+key);
-        if(!r||r.deleted||isApproved(r)||!dest||dest.ended||!complete(dest.address))return false;
-        const old=read('session:'+r.session);
-        if(!old||old.ended||addressKey(old.address)!==addressKey(dest.address))return false;
-        r.session=key;
-        if(!write('job:'+jobId,r))return false;
-        // Do not let the old draft's observed address reassign the job again.
-        observed.delete(String(jobId));lastView='';return true;
-    }
-    function separateClientGroup(jobId,label){
-        const r=read('job:'+jobId);
-        if(!r||r.deleted||isApproved(r)||!norm(label))return null;
-        const current=read('session:'+r.session);if(!current||current.ended)return null;
-        const key=addressKey(current.address)+'|client:'+Date.now().toString(36)+Math.random().toString(36).slice(2);
-        if(!write('session:'+key,{address:current.address,label:String(label).trim().slice(0,80),seen:Date.now()}))return null;
-        if(!moveToClientGroup(jobId,key)){remove('session:'+key);return null;}
-        return key;
-    }
     function duplicateNameMatches(r){
         if(!r||!countable(r))return [];
         return sessionJobs(r.session).filter(j=>String(j.id)!==String(r.id)&&norm(j.name)===norm(r.name)&&countable(j));
@@ -2111,17 +2082,33 @@ document.body.appendChild(box);
         });
     }
     function group(r){
-        if(r.override)return {key:r.override,label:({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[r.override]||r.override};
-        const rs=r.recipients||[], byName=spDetectBureauForRecipient(r.name);
-        if(rs.length){
-            const groups=rs.filter(complete).map(a=>({key:bureau(a)||addressKey(a),label:spBureauDisplayName(bureau(a))==='Unknown bureau'?a.name:spBureauDisplayName(bureau(a)),a:a}));
-            const unique=[...new Set(groups.map(g=>g.key))];
-            if(unique.length>1)return {key:'Mixed recipients',label:'Mixed recipients — review',warning:true};
-            if(groups.length===rs.length&&unique.length===1){
-                const g=groups[0];g.warning=!!byName&&g.key!==byName;return g;
-            }
+        const names={EX:'Experian',EQU:'Equifax',TU:'TransUnion',OTHER:'Other'};
+        if(r.override){
+            if(names[r.override])return {key:r.override,label:names[r.override]};
+            if(r.override==='Unassigned')return {key:'Unassigned',label:'Unassigned'};
         }
-        return byName?{key:byName,label:spBureauDisplayName(byName)}:{key:'Unassigned',label:'Unassigned'};
+        const recipients=r.recipients||[], inferred=spDetectBureauForRecipient(r.name);
+        if(recipients.length){
+            if(!recipients.every(complete))return {key:'Unassigned',label:'Unassigned',warning:true};
+            const codes=recipients.map(a=>bureau(a)||'OTHER');
+            const unique=[...new Set(codes)];
+            if(unique.length>1)return {key:'OTHER',label:'Other',warning:true};
+            const key=unique[0];
+            return {key,label:names[key],warning:!!inferred&&inferred!==key};
+        }
+        return inferred?{key:inferred,label:names[inferred]}:{key:'Unassigned',label:'Unassigned'};
+    }
+    function bureauSummary(jobs){
+        const groups=new Map();
+        ['EX','EQU','TU','OTHER'].forEach(key=>groups.set(key,{key,label:({EX:'Experian',EQU:'Equifax',TU:'TransUnion',OTHER:'Other'})[key],jobs:[],sum:0,pending:0}));
+        jobs.forEach(job=>{
+            const g=group(job),bucket=groups.get(g.key);
+            if(!bucket)return;
+            bucket.jobs.push({job,group:g});
+            if(Number.isInteger(job.cents)&&!job.priceNeedsReview)bucket.sum+=job.cents;
+            else bucket.pending++;
+        });
+        return [...groups.values()].filter(x=>x.jobs.length);
     }
     function capture(patch){
         const jobId=id();if(!jobId)return null;
@@ -2159,6 +2146,10 @@ document.body.appendChild(box);
         const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
         if(!name&&!r.name&&recovered.has(jobId))r.name=recovered.get(jobId).name;
         const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
+        // Keep uploaded letter filenames per Postalocity Job ID. Avoid
+        // replacing saved filenames when a processed view hides the upload list.
+        const uploaded=typeof spPdfNamesFromPage==='function'?spPdfNamesFromPage():[];
+        if(uploaded.length)r.letters=[...new Set(uploaded.filter(x=>typeof x==='string'&&/\.pdf$/i.test(x)).map(x=>x.trim()))];
         const state=document.querySelector('#jobState');if(!isApproved(r)&&state&&state.textContent.trim()!==prior.status&&(!r.status||!/^New$/i.test(state.textContent.trim())))r.status=state.textContent.trim();
         if(approvedState(r.status))r.approved=true;
         const price=priceSnapshot();
