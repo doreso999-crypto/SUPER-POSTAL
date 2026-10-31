@@ -1740,7 +1740,9 @@ function liqRenderLive(){
         entries.push({id:draft.id,jobName:draft.jobName,files:draft.files,
             shared:true});
     });
-    if(localFiles.length){
+    // Once Process has been clicked successfully, the job moves to the
+    // recorded list below. Do not show the same files as unprocessed uploads.
+    if(localFiles.length && !data.jobs[currentId]){
         entries.unshift({id:currentId,jobName:currentJobName,
             files:localFiles,shared:false});
     }
@@ -2343,6 +2345,8 @@ function liqConnectControls(){
     const panel=box.querySelector('#calculator');
     if(!panel||panel.dataset.liqControls==='true')return;
     panel.dataset.liqControls='true';
+    // Restore may rebuild this panel from saved HTML; refresh live contents.
+    liqLastLiveSignature='';
     // Keep the exact existing floating-panel drag behavior; prevent text
     // selection/expansion in the inner content from starting a panel drag.
     panel.addEventListener('mousedown',event=>{
