@@ -520,7 +520,71 @@ function spPdfRecall(){
         return found;
     }catch(_e){return [];}
 }
+// Native Postalocity "Uploaded Files" modal is the most reliable DOM source.
+// It is populated when the existing Files button is clicked; no custom API calls.
+let spPdfModalSnapshot=null;
+function spPdfNativeModalNames(){
+    const list=document.querySelector('#fileListModal #modalFileList');
+    if(!list)return [];
+    const names=[],seen=new Set();
+    list.querySelectorAll('tr td:first-child a').forEach(function(link){
+        const name=String(link.textContent||'').replace(/\u00a0/g,' ').trim();
+        const key=name.toLowerCase();
+        if(/\.pdf$/i.test(name)&&name.length<=260&&!seen.has(key)){
+            seen.add(key);names.push(name);
+        }
+    });
+    return names;
+}
+function spPdfForget(){
+    const key=spPdfMemoryKey();
+    if(!key)return;
+    try{window.sessionStorage.removeItem(key);}catch(_e){}
+}
+function spSyncNativeUploadedFiles(){
+    const modal=document.querySelector('#fileListModal');
+    if(!modal)return;
+    const rows=spPdfNativeModalNames();
+    const badge=modal.querySelector('.uploadedListSize');
+    const count=badge?Number.parseInt(badge.textContent,10):NaN;
+
+    // Only a *completed, opened* list is authoritative. Do not erase cached
+    // filenames when the table is simply empty during page load.
+    if(rows.length && (!Number.isFinite(count)||count===rows.length)){
+        spPdfModalSnapshot=rows;
+        spPdfRemember(rows);
+    }else if(!rows.length && count===0){
+        spPdfModalSnapshot=[];
+        spPdfForget();
+    }else{
+        return; // Incomplete table or loading state: preserve known names.
+    }
+    spQueueRecipientOverview();
+}
+function spWatchNativeUploadedFiles(){
+    const modal=document.querySelector('#fileListModal');
+    if(!modal||modal.dataset.spPdfSourceBound==='true')return;
+    const jq=window.jQuery||window.$;
+    if(!jq||!jq.fn)return;
+    modal.dataset.spPdfSourceBound='true';
+    jq(modal).on('shown.bs.modal.spPdfSource',spSyncNativeUploadedFiles);
+    // If opening occurred before the listener attached, capture any real rows.
+    if(modal.classList.contains('in')||modal.classList.contains('show')){
+        if(spPdfNativeModalNames().length)spSyncNativeUploadedFiles();
+    }
+}
+
 function spPdfNamesFromPage(){
+    if(spPdfModalSnapshot!==null){
+        spPdfNamesRestored=false;
+        return spPdfModalSnapshot.slice();
+    }
+    const rows=spPdfNativeModalNames();
+    if(rows.length){
+        spPdfRemember(rows);
+        spPdfNamesRestored=false;
+        return rows;
+    }
     const found=[];
     const seen=new Set();
     function collect(text){
@@ -546,10 +610,6 @@ function spPdfNamesFromPage(){
             collect(el.getAttribute('data-filename')||el.getAttribute('data-file-name')||el.getAttribute('title')||el.textContent);
         });
         collect(uploaded.innerText||uploaded.textContent);
-    }
-    const modalFiles=document.querySelector('#modalFileList');
-    if(modalFiles){
-        modalFiles.querySelectorAll('a').forEach(function(el){collect(el.textContent);});
     }
     if(found.length){
         spPdfNamesRestored=false;
@@ -669,6 +729,7 @@ function addRecipientPdfOverview(){
         spQueueRecipientOverview();
         return;
     }
+    spWatchNativeUploadedFiles();
     if(!document.querySelector('#spRecipientPdfStyles')){
         const styles=document.createElement('style');
         styles.id='spRecipientPdfStyles';
@@ -704,6 +765,7 @@ function addRecipientPdfOverview(){
       '<ul id="spOverviewRecipientNames" aria-label="Full recipient names"></ul></section>',
       '<section class="sp-overview-col"><div class="sp-overview-col-title">',
       '<span>Uploaded PDF filenames</span><span class="sp-count" id="spOverviewPdfCount"></span></div>',
+      '<button type="button" id="spOverviewViewFiles" title="Open Postalocity Uploaded Files to verify and update the names">View Files</button>',
       '<ul id="spOverviewPdfNames" aria-label="Uploaded PDF filenames"></ul></section>',
       '</div>'
     ].join('');
@@ -713,6 +775,16 @@ function addRecipientPdfOverview(){
     }else{
         step.appendChild(card);
     }
+    card.querySelector('#spOverviewViewFiles').addEventListener('click',function(){
+        // Use Postalocity's normal Files button, including its own loading,
+        // error handling, and read-only file-list request.
+        const nativeBtn=Array.from(document.querySelectorAll('button')).find(function(btn){
+            return /(?:^|\s)listUploadedFiles\s*\(/.test(btn.getAttribute('onclick')||'');
+        });
+        if(nativeBtn){nativeBtn.click();return;}
+        if(typeof window.listUploadedFiles==='function'){window.listUploadedFiles();return;}
+        window.alert('Postalocity Files button is not available on this page.');
+    });
     card.querySelector('#spOverviewOpenRecipients').addEventListener('click',function(){
         const modal=document.querySelector('#listShowModal');
         const jq=window.jQuery||window.$;
