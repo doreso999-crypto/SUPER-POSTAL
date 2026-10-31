@@ -274,6 +274,23 @@ function spReturnDefaultField(name,value){
 function spReturnFormField(form,name){
     return form&&form.querySelector('input[name="'+name+'"],textarea[name="'+name+'"],select[name="'+name+'"]');
 }
+// Postalocity sometimes puts its entire sample return address in a single
+// field instead of splitting it cleanly. Detect the distinctive template as a
+// complete address, regardless of line breaks or which address fields hold it.
+function spReturnIsSampleText(value){
+    const text=spReturnNormalize(value);
+    return /\bMY NAME HERE\b/.test(text) &&
+        /\b5325 S(?:OUTH)? FORT APACHE (?:RD|ROAD)\b/.test(text);
+}
+function spReturnIsSampleForm(form){
+    if(!form)return false;
+    const fields=['name','company1','company2','address1','address2','city','state','zip','country'];
+    const raw=fields.map(function(name){
+        const input=spReturnFormField(form,name);
+        return input?String(input.value||''):'';
+    }).join(' ');
+    return spReturnIsSampleText(raw);
+}
 function spReturnHasRealStreet(form){
     const address=spReturnFormField(form,'address1');
     const street=address?String(address.value||'').trim():'';
@@ -305,10 +322,11 @@ function spRefreshFilledReturnFields(){
     const modal=document.querySelector('#settingsReturnAddress-Modal');
     if(!modal)return;
     const form=modal.querySelector('#envelopeReturn-address');
+    const isSample=spReturnIsSampleForm(form);
     modal.querySelectorAll('#envelopeReturn-address input, #envelopeReturn-address textarea, #returnAddressPaste').forEach(function(field){
         const hasValue=field.id==='returnAddressPaste'
-            ? !!String(field.value||'').trim()&&!spReturnIsDefaultPaste(field.value)
-            : spReturnIsMeaningful(field,form,false);
+            ? !!String(field.value||'').trim()&&!spReturnIsDefaultPaste(field.value)&&!spReturnIsSampleText(field.value)
+            : !isSample&&!spReturnIsSampleText(field.value)&&spReturnIsMeaningful(field,form,false);
         field.classList.toggle('sp-return-populated',hasValue);
     });
 }
@@ -728,6 +746,7 @@ function spRecipientNamesFromPage(){
 function spReturnAddressLines(){
     const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
     if(!form)return null; // The native form has not been initialized.
+    if(spReturnIsSampleForm(form))return []; // Show "No return address" for Postalocity's sample.
     const read=function(name){
         const field=spReturnFormField(form,name);
         return field&&spReturnIsMeaningful(field,form,true)
@@ -739,8 +758,10 @@ function spReturnAddressLines(){
         state:read('state'),zip:read('zip'),country:read('country')
     };
     const location=[data.city,data.state].filter(Boolean).join(', ')+(data.zip?' '+data.zip:'');
-    return [data.name,data.company1,data.company2,data.address1,data.address2,
+    const lines=[data.name,data.company1,data.company2,data.address1,data.address2,
         location.trim(),data.country].filter(Boolean);
+    // Additional guard when the sample was stored as one combined field.
+    return spReturnIsSampleText(lines.join(' '))?[]:lines;
 }
 
 function spRefreshRecipientPdfOverview(){
@@ -794,7 +815,7 @@ function spRefreshRecipientPdfOverview(){
                 empty.className='sp-empty';
                 empty.textContent=returnLines===null
                     ? 'Return address not loaded yet. Open Return Address to view it.'
-                    : 'No return address entered.';
+                    : 'No return address';
                 preview.appendChild(empty);
             }
         }
