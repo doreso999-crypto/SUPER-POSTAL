@@ -2396,7 +2396,7 @@ document.body.appendChild(box);
         // Present the client identity prominently, without altering the saved
         // return address. A Postalocity example name is not a confirmed client.
         const sourceName=String(session.address.name||'').trim();
-        const demoName=/^(?:SAMPLA|SAMPLE)\\s+A\\.?\\s+SAMPLE$/i.test(sourceName.replace(/\\s+/g,' '));
+        const demoName=/^(?:SAMPLA|SAMPLE)\s+A\.?\s+SAMPLE$/i.test(sourceName.replace(/\s+/g,' '));
         const needsName=!sourceName||demoName;
         const client=el('div');client.className='sp-ledger-client';
         const clientName=el('span',needsName?'Client name':sourceName);
