@@ -82,7 +82,7 @@ assert.doesNotMatch(innerCSS,/border-radius:0!important/,'button rounding is not
 assert.ok(innerCSS.includes('.sp-ledger-title{display:none'),'old inner title is suppressed');
 assert.ok(innerCSS.includes('button{font:700 11px Arial,sans-serif;border:1px solid #314052;border-radius:8px'),'action buttons are slightly rounded');
 assert.ok(innerCSS.includes('.sp-ledger-totalrow button{background:#202a36'),'strong Copy contrast');
-assert.ok(innerCSS.includes('#spLedgerPanel > a{display:inline-block')&&innerCSS.includes('border-radius:8px'),'settings action link matches buttons');
+assert.ok(innerCSS.includes('.sp-ledger-onboard > a,')&&innerCSS.includes('border-radius:8px'),'empty-state settings link uses a rounded button treatment');
 assert.ok(src.includes("panel.style.cssText='position:relative;z-index:5;cursor:default;max-height:72vh;overflow:auto;border:0;border-radius:0;background:#fff"),'interior background is white');
 assert.doesNotMatch(src,/panel.append\(el\('div','CLIENT TOTALS'\)\)/,'old duplicate heading removed');
 assert.ok(innerCSS.includes('button:disabled{opacity:'),'disabled styles retained');
