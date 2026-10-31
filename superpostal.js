@@ -918,7 +918,7 @@ function spShowProcessToast(missing){
         const style=document.createElement('style');
         style.id='spProcessJobToastStyle';
         style.textContent=[
-            '#spProcessJobToast{position:fixed;top:20px;right:20px;width:min(390px,calc(100vw - 32px));max-height:min(65vh,450px);overflow:auto;z-index:2147483000;box-sizing:border-box;padding:15px 42px 15px 17px;border:1px solid #ef9898;border-left:5px solid #c52b2b;border-radius:12px;background:#fff8f8;color:#842323;box-shadow:0 12px 34px rgba(45,20,20,.23);font:13px/1.5 Arial,sans-serif}',
+            '#spProcessJobToast{position:fixed;top:20px;left:50%;transform:translateX(-50%);width:min(390px,calc(100vw - 32px));max-height:min(65vh,450px);overflow:auto;z-index:2147483000;box-sizing:border-box;padding:15px 42px 15px 17px;border:1px solid #ef9898;border-left:5px solid #c52b2b;border-radius:12px;background:#fff8f8;color:#842323;box-shadow:0 12px 34px rgba(45,20,20,.23);font:13px/1.5 Arial,sans-serif}',
             '#spProcessJobToast strong{display:block;margin-bottom:5px;font-size:14px;color:#852020}',
             '#spProcessJobToast p{margin:0 0 5px}',
             '#spProcessJobToast ul{margin:5px 0 0;padding-left:19px}',
@@ -926,7 +926,7 @@ function spShowProcessToast(missing){
             '#spProcessJobToast .sp-toast-dismiss{position:absolute;top:8px;right:10px;display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:7px;background:transparent;color:#852020;font-size:20px;cursor:pointer}',
             '#spProcessJobToast .sp-toast-dismiss:hover{background:#f8dfdf}',
             '#spProcessJobToast .sp-toast-dismiss:focus-visible{outline:2px solid #a12b2b;outline-offset:1px}',
-            '@media(max-width:520px){#spProcessJobToast{top:12px;right:12px;width:calc(100vw - 24px)}}'
+            '@media(max-width:520px){#spProcessJobToast{top:12px;width:calc(100vw - 24px)}}'
         ].join('\n');
         document.head.appendChild(style);
     }
