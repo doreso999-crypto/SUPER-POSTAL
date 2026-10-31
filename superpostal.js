@@ -167,6 +167,11 @@ function parseAddress(){
         Object.keys(values).forEach(function(key){try{spSetField(fields[key],values[key]);}catch(_e){}});
         spParserStatus('error','Form could not be filled: '+e.message);return;
     }
+    Object.keys(fields).forEach(function(name){
+        if(fields[name])fields[name].dataset.spReturnUserProvided='true';
+    });
+    spRefreshFilledReturnFields();
+    spQueueRecipientOverview();
     if(preview){
         preview.replaceChildren();
         [['Recipient',data.name],['Address',data.address1],['Unit / suite',data.address2||'None'],
@@ -226,6 +231,7 @@ function spClearEveryReturnAddressField(){
     }
     Array.from(form.querySelectorAll('input,textarea,select')).forEach(function(field){
         if(field.type==='hidden'||field.type==='button'||field.type==='submit')return;
+        delete field.dataset.spReturnUserProvided;
         if(field.type==='checkbox'||field.type==='radio'){
             if(field.checked){field.checked=false;field.dispatchEvent(new Event('change',{bubbles:true}));}
         }else{
@@ -243,11 +249,66 @@ function spClearEveryReturnAddressField(){
     if(paste)paste.focus();
 }
 
+// Postalocity may preload this example return address. Treat the sample as
+// placeholder, not a client address. Do not alter the underlying form values.
+function spReturnNormalize(value){
+    return String(value==null?'':value).replace(/\u00a0/g,' ')
+        .replace(/[.,#]/g,' ').replace(/\s+/g,' ').trim().toUpperCase();
+}
+function spReturnDefaultField(name,value){
+    const clean=spReturnNormalize(value);
+    if(!clean)return false;
+    switch(String(name||'').toLowerCase()){
+        case 'name':return clean==='MY NAME HERE';
+        case 'address1':
+            return /^5325 S(?:OUTH)? FORT APACHE (?:RD|ROAD)(?: (?:STE|SUITE) D[- ]?219)?$/.test(clean);
+        case 'address2':return /^(?:STE|SUITE) D[- ]?219$/.test(clean);
+        case 'city':return clean==='LAS VEGAS';
+        case 'state':return clean==='NV'||clean==='NEVADA';
+        case 'zip':return /^89148(?:[- ]?4665)?$/.test(clean);
+        case 'country':
+            return /^(?:US|USA|UNITED STATES|UNITED STATES OF AMERICA|U S A?)$/.test(clean);
+        default:return false;
+    }
+}
+function spReturnFormField(form,name){
+    return form&&form.querySelector('input[name="'+name+'"],textarea[name="'+name+'"],select[name="'+name+'"]');
+}
+function spReturnHasRealStreet(form){
+    const address=spReturnFormField(form,'address1');
+    const street=address?String(address.value||'').trim():'';
+    return !!street&&!spReturnDefaultField('address1',street);
+}
+function spReturnIsMeaningful(field,form,preview){
+    const value=String(field&&field.value||'').trim();
+    if(!value)return false;
+    const name=field.name||'';
+    // The default US destination is still valid, but it needs no visual badge.
+    if(name.toLowerCase()==='country'&&spReturnDefaultField('country',value))return false;
+    if(!spReturnDefaultField(name,value))return true;
+    // An explicitly parsed or typed value is intentional, even if it happens
+    // to coincide with a sample city/state/ZIP value.
+    if(field.dataset.spReturnUserProvided==='true')return true;
+    // For saved real streets in Las Vegas, retain the complete postal locality
+    // in the preview without coloring untouched sample-derived fields green.
+    if(preview&&['city','state','zip'].includes(name.toLowerCase())&&spReturnHasRealStreet(form))
+        return true;
+    return false;
+}
+function spReturnIsDefaultPaste(value){
+    const lines=String(value||'').split(/\r?\n/).map(function(v){return v.trim();}).filter(Boolean);
+    return lines.some(function(line){return spReturnDefaultField('name',line);}) &&
+        lines.some(function(line){return spReturnDefaultField('address1',line);});
+}
+
 function spRefreshFilledReturnFields(){
     const modal=document.querySelector('#settingsReturnAddress-Modal');
     if(!modal)return;
+    const form=modal.querySelector('#envelopeReturn-address');
     modal.querySelectorAll('#envelopeReturn-address input, #envelopeReturn-address textarea, #returnAddressPaste').forEach(function(field){
-        const hasValue=String(field.value||'').trim().length>0;
+        const hasValue=field.id==='returnAddressPaste'
+            ? !!String(field.value||'').trim()&&!spReturnIsDefaultPaste(field.value)
+            : spReturnIsMeaningful(field,form,false);
         field.classList.toggle('sp-return-populated',hasValue);
     });
 }
@@ -258,6 +319,9 @@ function spWatchFilledReturnFields(){
         ['input','change'].forEach(function(type){
             modal.addEventListener(type,function(event){
                 if(event.target.closest('#envelopeReturn-address, #returnAddressParser')){
+                    if(event.isTrusted&&event.target.closest('#envelopeReturn-address')){
+                        event.target.dataset.spReturnUserProvided='true';
+                    }
                     spRefreshFilledReturnFields();
                     spQueueRecipientOverview();
                 }
@@ -663,10 +727,11 @@ function spRecipientNamesFromPage(){
 // never from the unparsed paste box. No additional storage or API calls.
 function spReturnAddressLines(){
     const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
-    if(!form)return null; // The native return-address form has not loaded.
+    if(!form)return null; // The native form has not been initialized.
     const read=function(name){
-        const field=form.querySelector('input[name="'+name+'"],textarea[name="'+name+'"],select[name="'+name+'"]');
-        return field?String(field.value||'').trim():'';
+        const field=spReturnFormField(form,name);
+        return field&&spReturnIsMeaningful(field,form,true)
+            ? String(field.value||'').trim():'';
     };
     const data={
         name:read('name'),company1:read('company1'),company2:read('company2'),
