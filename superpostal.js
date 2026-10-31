@@ -1650,7 +1650,8 @@ function liqStageJob(){
     const id=liqJobId();
     if(!id)return;
     const data=liqRead();
-    if(data.excluded[id])return;
+    // An explicit fresh Process click may re-include a previously removed job.
+    if(data.excluded[id])delete data.excluded[id];
     const jobName=liqJobName();
     const names=spPdfNamesFromPage();
     const parsed=liqFromFiles(names,jobName);
@@ -1864,7 +1865,11 @@ function liqConnectControls(){
         if(event.target.closest('#liqClearAll')){
             if(!window.confirm('Clear this browser’s client liquidation records?'))return;
             liqPauseCapture=true;
-            liqSave({jobs:{},excluded:{}});
+            // Exclude the currently displayed processed job so refresh cannot
+            // immediately recreate the records the user just cleared.
+            const currentId=liqJobId();
+            const excluded=currentId?{[currentId]:true}:{};
+            liqSave({jobs:{},excluded:excluded});
             liqRender();
         }
     });
