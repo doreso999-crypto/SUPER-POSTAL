@@ -188,11 +188,66 @@ function spSizeReturnAddressDialog(form,parser){
     if(modal && modal.contains(parser)) modal.classList.add('sp-address-layout');
 }
 
+
+// Keep TOTALOCITY and its mascot above Postalocity's backdrop when this
+// specific Return Address modal opens. Leave their coordinates and behavior alone.
+function spKeepCalculatorVisibleForReturnModal(modal){
+    if(!modal)return;
+    if(!document.querySelector('#spReturnModalStackStyles')){
+        const style=document.createElement('style');
+        style.id='spReturnModalStackStyles';
+        style.textContent='body.sp-return-address-open #bureauTotals{z-index:2147483000!important;visibility:visible!important;opacity:1!important}';
+        document.head.appendChild(style);
+    }
+    const update=function(open){
+        document.body.classList.toggle('sp-return-address-open',!!open);
+    };
+    const jq=window.jQuery||window.$;
+    if(modal.dataset.spReturnStackBound!=='true' && jq && jq.fn){
+        jq(modal).on('show.bs.modal.spReturnStack shown.bs.modal.spReturnStack',function(){
+            update(true);
+        });
+        jq(modal).on('hide.bs.modal.spReturnStack hidden.bs.modal.spReturnStack',function(){
+            update(false);
+        });
+        modal.dataset.spReturnStackBound='true';
+    }
+    update(modal.classList.contains('in')||modal.classList.contains('show')||modal.style.display==='block');
+}
+
+// Clear the pasted text and every *address-form* field, without changing
+// the source/font/zone settings or saving automatically.
+function spClearEveryReturnAddressField(){
+    const modal=document.querySelector('#settingsReturnAddress-Modal');
+    const form=modal && modal.querySelector('#envelopeReturn-address');
+    if(!modal||!form){
+        spParserStatus('error','The Return Address fields are unavailable.');
+        return;
+    }
+    Array.from(form.querySelectorAll('input,textarea,select')).forEach(function(field){
+        if(field.type==='hidden'||field.type==='button'||field.type==='submit')return;
+        if(field.type==='checkbox'||field.type==='radio'){
+            if(field.checked){field.checked=false;field.dispatchEvent(new Event('change',{bubbles:true}));}
+        }else{
+            spSetField(field,'');
+        }
+    });
+    const paste=modal.querySelector('#returnAddressPaste');
+    if(paste){
+        paste.value='';
+        paste.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+    const preview=modal.querySelector('#spParserPreview');
+    if(preview){preview.replaceChildren();preview.hidden=true;}
+    spParserStatus('warning','All Return Address fields and pasted text cleared. Click Save changes to save this change.');
+    if(paste)paste.focus();
+}
+
 function addParser(){
     const form=document.querySelector('#envelopeReturn-address');
     if(!form)return;
     const existing=document.querySelector('#returnAddressParser');
-    if(existing){spSizeReturnAddressDialog(form,existing);return;}
+    if(existing){spSizeReturnAddressDialog(form,existing);spKeepCalculatorVisibleForReturnModal(form.closest('#settingsReturnAddress-Modal'));return;}
     if(!document.querySelector('#spParserStyle')){
         const style=document.createElement('style');
         style.id='spParserStyle';
@@ -212,6 +267,7 @@ function addParser(){
           '#returnAddressParser button:focus-visible{outline:2px solid #4388e1;outline-offset:2px}',
           '#returnAddressParser #parseReturnBtn{background:#215fbc;border-color:#215fbc;color:#fff}',
           '#returnAddressParser #parseReturnBtn:hover{background:#184b98}',
+          '#returnAddressParser #spClearAllReturnBtn{border-color:#ebc5c5;color:#9a3030}',
           '#returnAddressParser #spParserStatus{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid #b6dec7;background:#eaf8ef;color:#205b38;font-size:12px;line-height:1.5}',
           '#returnAddressParser #spParserStatus[data-type="error"]{border-color:#edb5b5;background:#fff0f0;color:#852929}',
           '#returnAddressParser #spParserStatus[data-type="warning"]{border-color:#e8d098;background:#fff7e6;color:#75501b}',
@@ -248,15 +304,18 @@ function addParser(){
       '<label for="returnAddressPaste">Client address</label>',
       '<textarea id="returnAddressPaste" rows="4" placeholder="Jane Doe&#10;123 Main Street, Apt 4&#10;Orlando, Florida 32801" spellcheck="false"></textarea>',
       '<div class="sp-actions"><button type="button" id="parseReturnBtn">Parse &amp; fill</button>',
-      '<button type="button" id="spClearPasteBtn">Clear paste</button></div>',
+      '<button type="button" id="spClearPasteBtn">Clear paste</button>',
+      '<button type="button" id="spClearAllReturnBtn">Clear all fields</button></div>',
       '<div id="spParserStatus" role="status" aria-live="polite" hidden></div>',
       '<div id="spParserPreview" aria-label="Parsed address preview" hidden></div>',
       '<p class="sp-hint">Review Postalocity fields before submitting. Ctrl+Enter to parse.</p>'
     ].join('');
     form.parentNode.insertBefore(box,form);
     spSizeReturnAddressDialog(form,box);
+    spKeepCalculatorVisibleForReturnModal(form.closest('#settingsReturnAddress-Modal'));
     const paste=box.querySelector('#returnAddressPaste');
     box.querySelector('#parseReturnBtn').addEventListener('click',parseAddress);
+    box.querySelector('#spClearAllReturnBtn').addEventListener('click',spClearEveryReturnAddressField);
     box.querySelector('#spClearPasteBtn').addEventListener('click',function(){
         paste.value='';box.querySelector('#spParserStatus').hidden=true;
         box.querySelector('#spParserPreview').hidden=true;paste.focus();
@@ -362,10 +421,15 @@ function addQuickReturnAddress(){
     const button=document.createElement('button');
     button.id='spQuickReturnButton';
     button.type='button';
-    button.className='btn btn-primary btn-outline';
+    button.className='btn btn-success';
     button.textContent='Return Address';
     button.title='Open Return Address settings';
     button.style.setProperty('width','100%');
+    button.style.setProperty('background-color','#15803d','important');
+    button.style.setProperty('border-color','#15803d','important');
+    button.style.setProperty('color','#fff','important');
+    button.style.setProperty('font-weight','700');
+    button.style.setProperty('min-height','39px');
     button.addEventListener('click',function(){
         const modal=document.querySelector('#settingsReturnAddress-Modal');
         const jq=window.jQuery||window.$;
@@ -377,6 +441,202 @@ function addQuickReturnAddress(){
         jq(modal).modal('show');
     });
     target.appendChild(button);
+}
+
+///////////////////////////////
+// RECIPIENT NAMES & UPLOADED PDF OVERVIEW
+///////////////////////////////
+// Read only what Postalocity has actually rendered. Never invent recipient
+// names or guess which PDF belongs to a particular recipient.
+function spCleanLabel(text){
+    return String(text||'').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
+}
+function spPdfNamesFromPage(){
+    const found=[];
+    const seen=new Set();
+    function collect(text){
+        if(!text)return;
+        const label=String(text).replace(/\u00a0/g,' ').trim();
+        const pieces=label.split(/\r?\n/);
+        pieces.forEach(function(piece){
+            // Uploaded-file elements sometimes append "Delete" or file counts.
+            let name=piece.trim().replace(/\s+(?:delete|remove|download|preview)\s*$/i,'');
+            if(!/\.pdf$/i.test(name)){
+                const match=name.match(/(?:^|[\s"'])([^"'<>]*?\.pdf)(?=\s|$|["'])/i);
+                name=match ? match[1].trim() : '';
+            }
+            if(name && name.length<=260 && /\.pdf$/i.test(name)){
+                const key=name.toLowerCase();
+                if(!seen.has(key)){seen.add(key);found.push(name);}
+            }
+        });
+    }
+    const uploaded=document.querySelector('#sourceUploadedList');
+    if(uploaded){
+        uploaded.querySelectorAll('[data-filename],[data-file-name],a[title],a').forEach(function(el){
+            collect(el.getAttribute('data-filename')||el.getAttribute('data-file-name')||el.getAttribute('title')||el.textContent);
+        });
+        collect(uploaded.innerText||uploaded.textContent);
+    }
+    const modalFiles=document.querySelector('#modalFileList');
+    if(modalFiles){
+        modalFiles.querySelectorAll('a').forEach(function(el){collect(el.textContent);});
+    }
+    return found;
+}
+function spRecipientNamesFromPage(){
+    const list=document.querySelector('#contactListRow');
+    if(!list)return [];
+    const names=[];
+    const inputs=list.querySelectorAll(
+        '[data-recipient-name],[data-contact-name],input[name="extractedAddress.name"],' +
+        'input[name$=".name"],input[name="name"],.recipient-name,.contact-name,.recipientName,.contactName'
+    );
+    inputs.forEach(function(el){
+        const value=spCleanLabel(
+            el.getAttribute('data-recipient-name')||el.getAttribute('data-contact-name')||
+            (('value' in el)?el.value:el.textContent)
+        );
+        if(value && value.length<200)names.push(value);
+    });
+    if(names.length)return names;
+
+    // Fallback for text-only cards rendered when Postalocity's recipient list
+    // is opened. Read one clearly identifiable name line from each card.
+    Array.from(list.children).forEach(function(card){
+        const lines=String(card.innerText||card.textContent||'').split(/\r?\n/)
+            .map(spCleanLabel).filter(Boolean);
+        let name='';
+        const labelled=lines.find(function(line){return /^(?:recipient|full name|name)\s*:\s*\S/i.test(line);});
+        if(labelled)name=labelled.replace(/^(?:recipient|full name|name)\s*:\s*/i,'');
+        else if(lines.length && lines[0].length<=120 &&
+           !/^(?:\d+[\s,]|p\.?\s*o\.?\s*box|address|city|state|zip|delete|edit|save|view|recipient list|recipients)/i.test(lines[0]) &&
+           !/\.(?:pdf|csv)\b/i.test(lines[0]) &&
+           !/^\d+\s+recipients?$/i.test(lines[0]))name=lines[0];
+        if(name)names.push(name);
+    });
+    return names;
+}
+
+function spRefreshRecipientPdfOverview(){
+    const panel=document.querySelector('#spRecipientPdfOverview');
+    if(!panel)return;
+    const recipientNames=spRecipientNamesFromPage();
+    const pdfNames=spPdfNamesFromPage();
+    const countElement=document.querySelector('#step3 .contactListSize');
+    const count=countElement?Number.parseInt(countElement.textContent,10):0;
+    const countLabel=Number.isFinite(count)&&count>0?count:recipientNames.length;
+    const recipientKey=JSON.stringify([countLabel,recipientNames]);
+    const fileKey=JSON.stringify(pdfNames);
+    if(panel.dataset.recipientKey!==recipientKey){
+        panel.dataset.recipientKey=recipientKey;
+        panel.querySelector('#spOverviewRecipientCount').textContent=countLabel+' recipients';
+        const list=panel.querySelector('#spOverviewRecipientNames');
+        list.replaceChildren();
+        if(recipientNames.length){
+            recipientNames.forEach(function(name,index){
+                const li=document.createElement('li');
+                const n=document.createElement('span');
+                n.className='sp-list-number';n.textContent=String(index+1).padStart(2,'0');
+                const value=document.createElement('span');
+                value.textContent=name;
+                li.append(n,value);
+                list.appendChild(li);
+            });
+        }else{
+            const li=document.createElement('li');
+            li.className='sp-empty';
+            li.textContent=countLabel>0?
+                'Open the recipient list to load the names.':
+                'No recipient names available yet.';
+            list.appendChild(li);
+        }
+    }
+    if(panel.dataset.fileKey!==fileKey){
+        panel.dataset.fileKey=fileKey;
+        panel.querySelector('#spOverviewPdfCount').textContent=pdfNames.length+' PDFs';
+        const list=panel.querySelector('#spOverviewPdfNames');
+        list.replaceChildren();
+        if(pdfNames.length){
+            pdfNames.forEach(function(name){
+                const li=document.createElement('li');
+                const file=document.createElement('span');
+                file.textContent=name;li.appendChild(file);
+                list.appendChild(li);
+            });
+        }else{
+            const li=document.createElement('li');li.className='sp-empty';
+            li.textContent='No uploaded PDF filenames available yet.';
+            list.appendChild(li);
+        }
+    }
+}
+let spOverviewQueued=false;
+function spQueueRecipientOverview(){
+    if(spOverviewQueued)return;
+    spOverviewQueued=true;
+    requestAnimationFrame(function(){
+        spOverviewQueued=false;
+        spRefreshRecipientPdfOverview();
+    });
+}
+function addRecipientPdfOverview(){
+    const step=document.querySelector('#step3');
+    if(!step||!document.querySelector('#sourceUploadedList'))return;
+    if(step.querySelector('#spRecipientPdfOverview')){
+        spQueueRecipientOverview();
+        return;
+    }
+    if(!document.querySelector('#spRecipientPdfStyles')){
+        const styles=document.createElement('style');
+        styles.id='spRecipientPdfStyles';
+        styles.textContent=[
+            '#step3 #spRecipientPdfOverview{width:100%;max-width:100%;margin:14px 0 12px;padding:13px 14px;border:1px solid #d9e3ee;border-radius:10px;background:#fff;box-sizing:border-box;font:13px Arial,sans-serif;color:#25374f}',
+            '#step3 #spRecipientPdfOverview *{box-sizing:border-box}',
+            '#step3 #spRecipientPdfOverview .sp-overview-header{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-bottom:10px}',
+            '#step3 #spRecipientPdfOverview .sp-overview-header strong{font-size:14px}',
+            '#step3 #spRecipientPdfOverview .sp-overview-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}',
+            '#step3 #spRecipientPdfOverview .sp-overview-col{min-width:0;border:1px solid #e6edf5;border-radius:8px;background:#fafcfe;padding:10px}',
+            '#step3 #spRecipientPdfOverview .sp-overview-col-title{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px;font-weight:700;font-size:12px}',
+            '#step3 #spRecipientPdfOverview .sp-count{color:#536c8a;font-size:11px;font-weight:500}',
+            '#step3 #spRecipientPdfOverview ul{list-style:none;padding:0;margin:0;max-height:230px;overflow-y:auto}',
+            '#step3 #spRecipientPdfOverview li{display:flex;gap:8px;align-items:baseline;border-bottom:1px solid #e8eef6;padding:7px 3px;font-size:12px;line-height:1.45;overflow-wrap:anywhere;word-break:break-word;white-space:normal}',
+            '#step3 #spRecipientPdfOverview li:last-child{border-bottom:0}',
+            '#step3 #spRecipientPdfOverview .sp-list-number{color:#7488a3;font-size:10px;flex-shrink:0;min-width:20px}',
+            '#step3 #spRecipientPdfOverview .sp-empty{color:#748399;font-style:italic}',
+            '#step3 #spRecipientPdfOverview button{font-size:11px;padding:5px 9px;border:1px solid #b8cee9;border-radius:6px;background:#eff5ff;color:#26558b;cursor:pointer}',
+            '#step3 #spRecipientPdfOverview button:focus-visible{outline:2px solid #4388e1;outline-offset:2px}',
+            '@media(max-width:520px){#step3 #spRecipientPdfOverview .sp-overview-grid{grid-template-columns:1fr}}'
+        ].join('\n');
+        document.head.appendChild(styles);
+    }
+    const card=document.createElement('section');
+    card.id='spRecipientPdfOverview';
+    card.setAttribute('aria-label','Recipient names and uploaded files');
+    card.innerHTML=[
+      '<div class="sp-overview-header"><strong>Recipients &amp; PDFs</strong>',
+      '<button type="button" id="spOverviewOpenRecipients">Open recipient list</button></div>',
+      '<div class="sp-overview-grid">',
+      '<section class="sp-overview-col"><div class="sp-overview-col-title">',
+      '<span>Recipient names</span><span class="sp-count" id="spOverviewRecipientCount"></span></div>',
+      '<ul id="spOverviewRecipientNames" aria-label="Full recipient names"></ul></section>',
+      '<section class="sp-overview-col"><div class="sp-overview-col-title">',
+      '<span>Uploaded PDF filenames</span><span class="sp-count" id="spOverviewPdfCount"></span></div>',
+      '<ul id="spOverviewPdfNames" aria-label="Uploaded PDF filenames"></ul></section>',
+      '</div>'
+    ].join('');
+    const originalRecipientArea=step.querySelector('.recipientList');
+    if(originalRecipientArea && originalRecipientArea.parentNode===step){
+        originalRecipientArea.insertAdjacentElement('afterend',card);
+    }else{
+        step.appendChild(card);
+    }
+    card.querySelector('#spOverviewOpenRecipients').addEventListener('click',function(){
+        const modal=document.querySelector('#listShowModal');
+        const jq=window.jQuery||window.$;
+        if(modal && jq && jq.fn && typeof jq.fn.modal==='function')jq(modal).modal('show');
+    });
+    spQueueRecipientOverview();
 }
 
 ///////////////////////////////
@@ -393,6 +653,8 @@ const observer = new MutationObserver(() => {
 
     addQuickReturnAddress();
 
+    addRecipientPdfOverview();
+
 });
 
 observer.observe(document.body, {
@@ -404,6 +666,7 @@ addParser();
 watchUploadedFiles();
 hidePostalocitySettingsButtons();
 addQuickReturnAddress();
+addRecipientPdfOverview();
 
 ///////////////////////////////
 // AUTO POPULATE RECIPIENT BASED ON JOB NAME
