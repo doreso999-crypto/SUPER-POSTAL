@@ -1715,10 +1715,9 @@ function liqPreviewFiles(files){
 }
 function liqIsNewJob(){
     const state=document.querySelector('#jobState');
-    // Postalocity may label an editable job New, Draft, or leave the status
-    // blank before asynchronously loading it. Only the processed view is excluded.
-    return !!document.querySelector('#newJobContent')&&
-        !(state&&/^(processed|approved|mailed)\b/i.test(state.textContent.trim()));
+    const status=String(state&&state.textContent||'').trim();
+    return !!document.querySelector('#newJobContent') &&
+        !/\b(processed|approved|mailed|completed|complete)\b/i.test(status);
 }
 function liqSyncDraft(){
     if(!liqIsNewJob())return;
@@ -2035,20 +2034,18 @@ function liqMigrateTabJobs(){
     }catch(_error){}
 }
 function liqNewJobTotal(){
-    // This value is displayed in Postalocity's first/new-job HTML before
-    // Process this job, sometimes inside elements hidden from the user.
     if(!liqIsNewJob())return null;
-    const selectors=[
-        '#newJobSteps .totalPriceRow .totalPrice',
-        '#newJobSteps .totalPrice',
+    // Prefer the actual new-job content over shared/hidden template rows.
+    for(const query of [
         '#newJobContent .totalPriceRow .totalPrice',
-        '#newJobContent .totalPrice'
-    ];
-    for(const query of selectors){
-        const node=document.querySelector(query);
-        if(!node)continue;
-        const value=liqParsePrice(node.textContent);
-        if(value!==null)return value;
+        '#newJobContent .totalPrice',
+        '#newJobSteps .totalPriceRow .totalPrice',
+        '#newJobSteps .totalPrice'
+    ]){
+        const el=document.querySelector(query);
+        if(!el)continue;
+        const cents=liqParsePrice(el.textContent);
+        if(cents!==null)return cents;
     }
     return null;
 }
@@ -2212,12 +2209,29 @@ function liqFromFiles(names,jobName){
     return null;
 }
 function liqActualPrice(){
-    const state=document.querySelector('#jobState');
+    const status=document.querySelector('#jobState');
+    const label=String(status&&status.textContent||'').trim();
     const approval=document.querySelector('#approveJobContent');
-    if(!state||!approval||!/^(processed|approved|mailed)\b/i.test(state.textContent.trim()))
-        return null;
-    const total=approval.querySelector('.totalPriceRow .totalPrice');
-    return total?liqParsePrice(total.textContent):null;
+    if(!approval)return null;
+    // The old ^(processed|approved|mailed) test missed status phrases
+    // such as "Job has been processed" or "Processing complete".
+    const finished=/\b(processed|approved|mailed|completed|complete)\b/i.test(label);
+    const newJob=/^(new|draft)\b/i.test(label);
+    const visible=typeof approval.getClientRects==='function'&&
+        approval.getClientRects().length>0;
+    // Don't read a hidden approval template while still editing a new job.
+    if(newJob||(!finished&&!visible))return null;
+    for(const selector of [
+        '.totalPriceRow .totalPrice',
+        '.totalPrice',
+        '.totalPriceRow [data-total-price]'
+    ]){
+        const node=approval.querySelector(selector);
+        if(!node)continue;
+        const cents=liqParsePrice(node.textContent||node.value||'');
+        if(cents!==null)return cents;
+    }
+    return null;
 }
 function liqStageJob(){
     const fail=function(reason){
@@ -2266,21 +2280,45 @@ function liqCaptureProcessed(){
     const active=liqActive();
     if(!active)return;
     liqMigrateTabJobs();
-    const previous=liqRead().jobs[id];
-    // Only previously staged jobs from the active shared session qualify.
+    const data=liqRead();
+    const identity=liqReturnIdentity()||liqReturnIdentity(false);
+    if(identity&&identity.key!==active.clientKey)return;
+    let previous=data.jobs[id];
+    const draft=data.drafts[id];
+    if(!previous&&draft&&draft.sessionId===active.id&&
+       draft.sessionKey===active.clientKey&&
+       liqValidAssignment(active.clientName,draft.target)){
+        // Recovery of an uploaded quote that was never staged by the script.
+        previous={
+            id:id,jobName:draft.jobName||'Job #'+id,
+            files:draft.files,client:active.clientName,
+            sessionId:active.id,sessionKey:active.clientKey,
+            target:draft.target,targetLabel:draft.targetLabel,
+            source:'uploaded PDF (automatically reconciled)',
+            quotedCents:Number.isSafeInteger(draft.quotedCents)?
+                draft.quotedCents:null,
+            priceCents:null,status:'processing',manual:false,
+            updatedAt:Date.now()
+        };
+    }
     if(!previous||previous.sessionId!==active.id||
        previous.sessionKey!==active.clientKey)return;
-    // Never let an unrelated processed-page tab write a price for this ID.
-    const identity=liqReturnIdentity();
-    if(identity&&identity.key!==active.clientKey)return;
-    const record={...previous};
-    const jobName=liqJobName();
-    if(jobName)record.jobName=jobName;
-    if(record.priceCents===cents&&record.status==='processed')return;
-    record.priceCents=cents;
-    record.status='processed';
-    record.updatedAt=Date.now();
-    if(liqSaveJob(record,active))liqRender();
+    const job={...previous};
+    const name=liqJobName();
+    if(name)job.jobName=name;
+    if(job.quotedCents===undefined){
+        job.quotedCents=Number.isSafeInteger(job.priceCents)?
+            job.priceCents:null;
+    }
+    if(job.priceCents===cents&&job.status==='processed')return;
+    // The verified final price replaces the pre-Process quote in all totals.
+    job.priceCents=cents;
+    job.status='processed';
+    job.updatedAt=Date.now();
+    if(liqSaveJob(job,active)){
+        liqRemoveDraft(id,active);
+        liqRender();
+    }
 }
 function liqValidAssignment(client,target){
     const name=liqKey(client);
