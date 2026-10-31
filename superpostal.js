@@ -1623,11 +1623,13 @@ function liqDraftRecords(session){
             if(!key||!key.startsWith(prefix))continue;
             const id=key.slice(prefix.length);
             if(!/^\d+$/.test(id))continue;
-            const candidate=JSON.parse(window.localStorage.getItem(key)||'null');
-            if(candidate&&candidate.id===id &&
-               candidate.sessionId===session.id &&
-               candidate.sessionKey===session.clientKey &&
-               Array.isArray(candidate.files))drafts[id]=candidate;
+            try{
+                const candidate=JSON.parse(window.localStorage.getItem(key)||'null');
+                if(candidate&&candidate.id===id &&
+                   candidate.sessionId===session.id &&
+                   candidate.sessionKey===session.clientKey &&
+                   Array.isArray(candidate.files))drafts[id]=candidate;
+            }catch(_error){/* A bad draft must not hide other jobs. */}
         }
     }catch(_error){}
     return drafts;
@@ -1683,8 +1685,10 @@ function liqPreviewFiles(files){
 }
 function liqIsNewJob(){
     const state=document.querySelector('#jobState');
-    return !!(state&&/^new\b/i.test(state.textContent.trim())&&
-        document.querySelector('#newJobContent'));
+    // Postalocity may label an editable job New, Draft, or leave the status
+    // blank before asynchronously loading it. Only the processed view is excluded.
+    return !!document.querySelector('#newJobContent')&&
+        !(state&&/^(processed|approved|mailed)\b/i.test(state.textContent.trim()));
 }
 function liqSyncDraft(){
     if(!liqIsNewJob())return;
