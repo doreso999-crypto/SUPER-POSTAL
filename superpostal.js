@@ -2179,9 +2179,12 @@ document.body.appendChild(box);
                 throw new Error('Saved settings require opening this job.');
             const doc=new DOMParser().parseFromString(await response.text(),'text/html');
             const address=savedAddressFrom(doc);
-            if(!address)throw new Error('Saved address was not included in the page response. If it does not load automatically, open Return Address settings to check the saved details.');
             const name=doc.querySelector('#overview-jobName');
-            recovered.set(jobId,{address:address,name:name?name.value:''});
+            // The server often renders the job name but fills its return
+            // address via a later request. Preserve the name for an explicit
+            // local client link even when the address is absent in fetched HTML.
+            recovered.set(jobId,{address:address||null,name:name?name.value:''});
+            if(!address)throw new Error('This saved address was not available in the fetched job page. If this job belongs to a tracked client, link it below.');
         }catch(e){recoveryMessage=e.message;}
         finally{recovering=false;lastView='';tick();}
     }
@@ -2542,8 +2545,10 @@ document.body.appendChild(box);
            !complete(client.address)||existing&&existing.deleted)return false;
         // An explicitly cleared client's job must not silently reactivate.
         if(existing&&read('session:'+existing.session)?.ended)return false;
-        const input=document.querySelector('#overview-jobName');
-        const name=String(input&&input.value||existing&&existing.name||'').trim();
+        const input=document.querySelector('#overview-jobName, #jobNameTop');
+        const fetched=recovered.get(jobId);
+        const name=String(input&&(input.value||input.textContent)||
+            existing&&existing.name||fetched&&fetched.name||'').trim();
         if(!named({name}))return false;
         const confirmed=window.confirm(
             'Link job #'+jobId+' ('+name+') to the existing client "'+
