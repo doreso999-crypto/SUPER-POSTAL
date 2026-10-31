@@ -2085,7 +2085,17 @@ document.body.appendChild(box);
         if(r&&isApproved(r)){
             const savedSession=read('session:'+r.session);
             if(savedSession&&savedSession.ended)return null;
-            // An old draft tab cannot erase an approved job's identity or price.
+            // Preserve approved identity, session and price from stale draft tabs.
+            // A fresh approved page may still correct its displayed total.
+            const state=document.querySelector('#jobState');
+            if(state&&/^(?:approved|mailed)\b/i.test(state.textContent||'')){
+                const price=priceSnapshot();
+                if(price.valid&&(r.cents!==price.cents||r.priceNeedsReview)){
+                    r.cents=price.cents;r.priceNeedsReview=false;write('job:'+jobId,r);
+                }else if(price.found&&!price.valid&&!r.priceNeedsReview){
+                    r.priceNeedsReview=true;write('job:'+jobId,r);
+                }
+            }
             if(savedSession&&Date.now()-lastHeartbeat>15000){savedSession.seen=Date.now();write('session:'+r.session,savedSession);lastHeartbeat=Date.now();}
             return r;
         }
