@@ -1582,16 +1582,17 @@ box.id='bureauTotals';
 box.dataset.minimized='false';
 Object.assign(box.style,{
     position:'fixed',
-    top:'120px',
+    top:'170px',
     right:'15px',
     width:'320px',
     minHeight:'240px',
-    background:'rgb(242,179,46)',
-    color:'black',
-    padding:'25px',
-    borderRadius:'12px',
+    background:'#f2b32e',
+    color:'#1c2632',
+    padding:'40px 12px 12px',
+    border:'2px solid #202a36',
+    borderRadius:'0',
     zIndex:'999999',
-    boxShadow:'0 0 15px rgba(0,0,0,.45)',
+    boxShadow:'5px 6px 0 rgba(28,38,50,.22),0 12px 24px rgba(18,28,42,.12)',
     cursor:'move',
     overflow:'visible',
     boxSizing:'border-box',
@@ -1613,14 +1614,14 @@ minimize.setAttribute('aria-label','Minimize client totals');
 
 Object.assign(minimize.style,{
     position:"absolute",
-    top:"5px",
-    right:"5px",
+    top:"7px",
+    right:"8px",
     width:"28px",
     height:"28px",
-    border:"none",
-    borderRadius:"50%",
-    background:"rgba(0,0,0,.15)",
-    color:"black",
+    border:"1px solid #202a36",
+    borderRadius:"0",
+    background:"#202a36",
+    color:"#fff",
     fontSize:"20px",
     fontWeight:"bold",
     cursor:"pointer",
@@ -1691,22 +1692,24 @@ function minimizeBox(){
         right:'0px',
         width:'60px',
         height:'60px',
-        borderRadius:'50%',
+        borderRadius:'0',
         fontSize:'12px',
         lineHeight:'1',
-        letterSpacing:'.01em',
-        background:'rgb(242,179,46)'
+        letterSpacing:'.05em',
+        background:'#f2b32e',
+        color:'#202a36',
+        border:'0'
     });
     Object.assign(box.style,{
         width:'60px',
         height:'60px',
         minHeight:'0px',
         padding:'0',
-        borderRadius:'50%',
-        background:'rgb(242,179,46)',
-        boxShadow:'0 0 12px rgba(0,0,0,.3)',
+        borderRadius:'0',
+        background:'#f2b32e',
+        boxShadow:'4px 5px 0 rgba(28,38,50,.2)',
         right:'15px',
-        top:'120px',
+        top:'170px',
         left:'auto',
         display:'flex',
         alignItems:'center',
@@ -1723,25 +1726,28 @@ function restoreBox(){
     minimize.title='Minimize client totals';
     minimize.setAttribute('aria-label','Minimize client totals');
     Object.assign(minimize.style,{
-        top:'5px',
-        right:'5px',
+        top:'7px',
+        right:'8px',
         width:'28px',
         height:'28px',
-        borderRadius:'50%',
+        borderRadius:'0',
         fontSize:'20px',
         lineHeight:'normal',
         letterSpacing:'normal',
-        background:'rgba(0,0,0,.15)'
+        background:'#202a36',
+        color:'#fff',
+        border:'1px solid #202a36'
     });
     Object.assign(box.style,{
         width:'320px',
         height:'auto',
         minHeight:'240px',
-        padding:'25px',
-        borderRadius:'12px',
-        background:'rgb(242,179,46)',
-        boxShadow:'0 0 15px rgba(0,0,0,.45)',
-        top:'120px',
+        padding:'40px 12px 12px',
+        borderRadius:'0',
+        border:'2px solid #202a36',
+        background:'#f2b32e',
+        boxShadow:'5px 6px 0 rgba(28,38,50,.22),0 12px 24px rgba(18,28,42,.12)',
+        top:'170px',
         right:'15px',
         left:'auto',
         display:'block',
@@ -2282,42 +2288,45 @@ document.body.appendChild(box);
         let panel=document.querySelector('#spLedgerPanel');
         if(!panel){
             panel=el('section');panel.id='spLedgerPanel';
-            panel.style.cssText='position:relative;z-index:5;cursor:default;max-height:72vh;overflow:auto;border-radius:12px;background:rgba(255,255,255,.98);padding:14px;color:#21344e;font:13px/1.5 Arial,sans-serif';
+            panel.style.cssText='position:relative;z-index:5;cursor:default;max-height:72vh;overflow:auto;border:1px solid #4c5967;border-radius:0;background:#fffefa;padding:14px;color:#202a36;font:13px/1.5 Arial,sans-serif';
             panel.addEventListener('mousedown',event=>event.stopPropagation());box.appendChild(panel);
         }
         if(!document.querySelector('#spLedgerV2Styles')){
             const style=el('style');style.id='spLedgerV2Styles';
             style.textContent=`
             #bureauTotals[data-minimized="true"] #spLedgerPanel{display:none}
-            #spLedgerPanel,#spLedgerPanel *{box-sizing:border-box}
-            #spLedgerPanel .sp-ledger-title{font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;color:#637995}
-            #spLedgerPanel .sp-ledger-client{font-size:20px;line-height:1.25;font-weight:800;overflow-wrap:anywhere;margin:6px 0}
-            #spLedgerPanel .sp-ledger-address{font-size:11px;color:#71839a;overflow-wrap:anywhere}
-            #spLedgerPanel .sp-ledger-divider{border:0;border-top:1px solid #e6edf4;margin:13px 0}
-            #spLedgerPanel .sp-ledger-heading{font-size:11px;letter-spacing:.10em;font-weight:800;color:#71839a;margin:12px 0 8px}
-            #spLedgerPanel .sp-ledger-group{border:1px solid #dfe7f1;border-radius:11px;margin:0 0 10px;background:#fff;overflow:hidden}
-            #spLedgerPanel .sp-ledger-grouphead{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f5f8fc;padding:10px 11px;font-weight:800}
-            #spLedgerPanel .sp-ledger-count{font-size:11px;font-weight:600;color:#71839a}
-            #spLedgerPanel .sp-ledger-letter{padding:9px 11px;border-top:1px solid #eef1f6}
+            #spLedgerPanel,#spLedgerPanel *,#minimizeTotals{box-sizing:border-box;border-radius:0!important}
+            #spLedgerPanel .sp-ledger-title{background:#202a36;color:#f5c34f;margin:-14px -14px 12px;padding:10px 13px;font-size:10px;letter-spacing:.14em;text-transform:uppercase;font-weight:800}
+            #spLedgerPanel .sp-ledger-client{font-size:19px;line-height:1.25;letter-spacing:-.02em;font-weight:800;overflow-wrap:anywhere;margin:3px 0 13px;color:#1d2732}
+            #spLedgerPanel .sp-ledger-address{font-size:11px;color:#718094;overflow-wrap:anywhere}
+            #spLedgerPanel .sp-ledger-divider{border:0;border-top:1px solid #cbd2db;margin:13px 0 11px}
+            #spLedgerPanel .sp-ledger-heading{font-size:10px;letter-spacing:.12em;font-weight:800;color:#536171;margin:10px 0 7px}
+            #spLedgerPanel .sp-ledger-group{border:1px solid #b4bdc8;margin:0 0 10px;background:#fff;overflow:hidden}
+            #spLedgerPanel .sp-ledger-grouphead{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f8edcd;padding:9px 10px;font-weight:800;color:#27313d;font-size:11px;letter-spacing:.04em}
+            #spLedgerPanel .sp-ledger-count{font-size:10px;font-weight:800;color:#27313d;background:#fffefa;border:1px solid #b4a777;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center}
+            #spLedgerPanel .sp-ledger-letter{padding:10px;border-top:1px solid #e2e6eb}
             #spLedgerPanel .sp-ledger-letterhead{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-            #spLedgerPanel .sp-ledger-lettername{font-weight:700;font-size:12px;overflow-wrap:anywhere;min-width:0}
-            #spLedgerPanel .sp-ledger-price{font-weight:750;white-space:nowrap;font-variant-numeric:tabular-nums;color:#263e5a}
-            #spLedgerPanel .sp-ledger-price[data-pending="true"]{font-weight:500;color:#8694a7;font-size:11px}
-            #spLedgerPanel .sp-ledger-meta{font-size:10px;color:#7a8ba0;overflow-wrap:anywhere;margin-top:2px}
-            #spLedgerPanel .sp-ledger-files{padding:0;margin:4px 0 0;list-style:none;color:#71839a;font-size:11px;overflow-wrap:anywhere}
+            #spLedgerPanel .sp-ledger-lettername{font-weight:700;font-size:12px;overflow-wrap:anywhere;min-width:0;line-height:1.4}
+            #spLedgerPanel .sp-ledger-price{font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums;color:#202a36}
+            #spLedgerPanel .sp-ledger-price[data-pending="true"]{font-weight:600;color:#788393;font-size:11px}
+            #spLedgerPanel .sp-ledger-meta{font-size:10px;color:#718094;overflow-wrap:anywhere;margin-top:2px}
+            #spLedgerPanel .sp-ledger-files{padding:0;margin:4px 0 0;list-style:none;color:#617086;font-size:11px;overflow-wrap:anywhere}
             #spLedgerPanel .sp-ledger-files li{margin:1px 0;line-height:1.45}
-            #spLedgerPanel .sp-ledger-warning{font-size:10px;color:#97602a;margin-top:3px}
-            #spLedgerPanel .sp-ledger-totals{display:grid;gap:7px}
-            #spLedgerPanel .sp-ledger-totalrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border:0;border-bottom:1px solid #edf1f5;border-radius:0;padding:7px 2px;background:transparent}
-            #spLedgerPanel .sp-ledger-totalrow strong{font-size:13px;font-variant-numeric:tabular-nums}
-            #spLedgerPanel button{font:600 11px Arial,sans-serif;border:1px solid #c6d4e4;border-radius:7px;padding:7px 9px;background:#fff;color:#2f517b;cursor:pointer;max-width:100%}
-            #spLedgerPanel button:disabled{opacity:.45;cursor:not-allowed}
-            #spLedgerPanel button:focus-visible{outline:2px solid #376cb2;outline-offset:2px}
-            #spLedgerPanel .sp-ledger-footer{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
-            #spLedgerPanel .sp-ledger-grand{font-size:15px;font-weight:800;margin-top:10px;font-variant-numeric:tabular-nums}
+            #spLedgerPanel .sp-ledger-warning{font-size:10px;color:#986029;margin-top:3px}
+            #spLedgerPanel .sp-ledger-totals{display:grid;gap:2px}
+            #spLedgerPanel .sp-ledger-totalrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:9px;align-items:center;border:0;border-bottom:1px solid #e5e8ec;padding:8px 0;background:transparent;color:#283646}
+            #spLedgerPanel .sp-ledger-totalrow strong{font-size:13px;font-variant-numeric:tabular-nums;color:#1e2b37}
+            #spLedgerPanel button{font:700 11px Arial,sans-serif;border:1px solid #314052;padding:7px 10px;background:#fff;color:#273748;cursor:pointer;max-width:100%;transition:background-color .15s ease,color .15s ease}
+            #spLedgerPanel .sp-ledger-totalrow button{background:#202a36;border-color:#202a36;color:#fff}
+            #spLedgerPanel .sp-ledger-totalrow button:hover:not(:disabled){background:#35465a}
+            #spLedgerPanel .sp-ledger-footer button:hover:not(:disabled){background:#f8edcd}
+            #spLedgerPanel button:disabled{opacity:.48;cursor:not-allowed}
+            #spLedgerPanel button:focus-visible,#minimizeTotals:focus-visible{outline:2px solid #b36e04;outline-offset:2px}
+            #spLedgerPanel .sp-ledger-footer{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px;padding-top:10px;border-top:1px solid #e5e8ec}
+            #spLedgerPanel .sp-ledger-grand{font-size:16px;font-weight:800;margin-top:10px;font-variant-numeric:tabular-nums;color:#17222e}
             #spLedgerPanel .sp-ledger-pending{color:#8794a5;font-size:10px;font-weight:500;margin-top:2px}
-            #spLedgerPanel .sp-ledger-status{padding:9px 10px;border-radius:8px;background:#fff7ed;color:#925124;font-size:11px;margin:10px 0}
-            #spLedgerPanel .sp-ledger-empty{font-size:12px;color:#71839a;padding:12px 0}
+            #spLedgerPanel .sp-ledger-status{padding:9px 10px;border-left:3px solid #ad7723;background:#fff7e8;color:#795326;font-size:11px;margin:10px 0}
+            #spLedgerPanel .sp-ledger-empty{font-size:12px;color:#65768a;padding:12px 0}
             @media(max-width:380px){#spLedgerPanel .sp-ledger-totalrow{grid-template-columns:minmax(0,1fr) auto}#spLedgerPanel .sp-ledger-totalrow button{grid-column:1/-1}}
             `;
             document.head.append(style);
