@@ -1082,6 +1082,183 @@ function spScheduleProcessControlUpdate(){
     if(spProcessVisualTimer!==null)return;
     spProcessVisualTimer=setTimeout(()=>{spProcessVisualTimer=null;spUpdateProcessControlState();},100);
 }
+// Optional media: a GIF cannot carry audio. Supply a user-owned MP4/WebM
+// for synchronized video + sound, or a GIF URL AND a separate MP3/WAV URL.
+// Leaving these blank uses the built-in original, asset-free scare and
+// synthesized shriek; it does not impersonate a copyrighted film clip.
+const SP_PROCESS_SCARE_MEDIA={
+    video:'',  // e.g. https://.../your-scare.mp4 (with audio)
+    gif:'',    // e.g. https://.../your-scare.gif
+    audio:'',  // e.g. https://.../your-scream.mp3
+    fallbackMs:1900
+};
+let spScarePending=null,spScareBypass=false;
+function spProcessScareStop(event){
+    if(!event)return;
+    event.preventDefault();
+    event.stopPropagation();
+    if(event.stopImmediatePropagation)event.stopImmediatePropagation();
+}
+function spScareFallbackSound(){
+    // Original synthesized effect. Keep the level moderate for shared offices.
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return function(){};
+    try{
+        const context=new AC(),gain=context.createGain(),now=context.currentTime;
+        gain.gain.setValueAtTime(0.0001,now);
+        gain.gain.exponentialRampToValueAtTime(0.14,now+0.08);
+        gain.gain.exponentialRampToValueAtTime(0.0001,now+1.45);
+        gain.connect(context.destination);
+        const voices=[];
+        [0,1].forEach(function(i){
+            const oscillator=context.createOscillator();
+            oscillator.type=i?'sawtooth':'triangle';
+            oscillator.frequency.setValueAtTime(i?420:710,now);
+            oscillator.frequency.exponentialRampToValueAtTime(i?890:1250,now+0.42);
+            oscillator.frequency.exponentialRampToValueAtTime(i?310:530,now+1.35);
+            oscillator.connect(gain);
+            oscillator.start(now);
+            oscillator.stop(now+1.5);
+            voices.push(oscillator);
+        });
+        if(context.state==='suspended')context.resume().catch(function(){});
+        return function(){voices.forEach(function(o){try{o.stop();}catch(_e){}});context.close().catch(function(){});};
+    }catch(_e){return function(){};}
+}
+function spScareClose(pending){
+    if(!pending||pending.done)return false;
+    pending.done=true;
+    if(pending.timer!==null)clearTimeout(pending.timer);
+    if(pending.media){try{pending.media.pause();}catch(_e){}}
+    if(pending.stopSound)pending.stopSound();
+    if(pending.overlay)pending.overlay.remove();
+    if(spScarePending===pending)spScarePending=null;
+    return true;
+}
+function spScareProceed(pending){
+    if(!spScareClose(pending))return;
+    // Never silently process if a recipient, PDF, name, or return address
+    // became incomplete while the preview was playing.
+    let readiness;
+    try{readiness=spJobDetailsReadiness();}
+    catch(_e){readiness={ready:false,missing:['Job details could not be verified']};}
+    if(!readiness.ready){
+        spProcessJobWarning(readiness.missing,pending.control);
+        spShowProcessToast(readiness.missing);
+        spQueueRecipientOverview();
+        return;
+    }
+    // Bypass only this replay and its synchronous submit event.
+    // The native handler remains the sole owner of actual job processing.
+    spScareBypass=true;
+    try{
+        if(pending.control&&pending.control.isConnected!==false&&typeof pending.control.click==='function'){
+            pending.control.click();
+        }else if(pending.form&&typeof pending.form.requestSubmit==='function'){
+            pending.form.requestSubmit();
+        }
+    }finally{
+        setTimeout(function(){spScareBypass=false;},0);
+    }
+}
+function spScarePreview(control,form){
+    if(spScarePending)return;
+    if(!document.body)return;
+    if(!document.querySelector('#spProcessScareStyles')){
+        const style=document.createElement('style');
+        style.id='spProcessScareStyles';
+        style.textContent=[
+            '#spProcessScare{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.96);padding:18px;box-sizing:border-box;color:#fff;font-family:Arial,sans-serif}',
+            '#spProcessScare .sp-scare-stage{position:relative;width:min(740px,100%);max-height:90vh;overflow:hidden;background:#090608;border:1px solid #54252b;text-align:center}',
+            '#spProcessScare video,#spProcessScare img{display:block;width:100%;height:min(65vh,480px);object-fit:contain;background:#000}',
+            '#spProcessScare .sp-scare-original{height:min(64vh,430px);min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 45%,#63131b 0%,#18080b 32%,#020203 78%)}',
+            '#spProcessScare .sp-scare-face{position:relative;width:190px;height:190px;background:#17070b;border:5px solid #450b14;border-radius:42% 42% 48% 48%;transform:scale(.5);animation:spScareReveal .5s cubic-bezier(.12,.9,.2,1) forwards}',
+            '#spProcessScare .sp-scare-face::before{content:"";position:absolute;left:25px;top:60px;width:33px;height:24px;border-radius:50%;background:#fce6d5;box-shadow:99px 0 #fce6d5,0 0 20px #dd1a25,99px 0 20px #dd1a25}',
+            '#spProcessScare .sp-scare-face::after{content:"";position:absolute;left:64px;bottom:22px;width:52px;height:61px;border-radius:10px 10px 48% 48%;background:#030206;border:3px solid #8e3036}',
+            '#spProcessScare .sp-scare-horror{margin:14px 0 0;color:#dcb9b9;font-size:clamp(17px,4vw,29px);font-weight:900;letter-spacing:.12em}',
+            '#spProcessScare .sp-scare-actions{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;padding:13px;background:#0f0e10}',
+            '#spProcessScare button{border:1px solid #b4a5a5;border-radius:8px;background:#262126;color:#fff;font:700 12px Arial,sans-serif;padding:10px 16px;cursor:pointer}',
+            '#spProcessScare button:hover{background:#473038}#spProcessScare button:focus-visible{outline:3px solid #f2b32e;outline-offset:2px}',
+            '@keyframes spScareReveal{to{transform:scale(1.12)}}',
+            '@media(prefers-reduced-motion:reduce){#spProcessScare .sp-scare-face{animation:none;transform:scale(1)}}'
+        ].join('\n');
+        document.head.appendChild(style);
+    }
+    const overlay=document.createElement('div');overlay.id='spProcessScare';
+    overlay.setAttribute('role','dialog');
+    overlay.setAttribute('aria-modal','true');
+    overlay.setAttribute('aria-label','Horror preview before processing job');
+    const stage=document.createElement('div');stage.className='sp-scare-stage';
+    const actions=document.createElement('div');actions.className='sp-scare-actions';
+    const skip=document.createElement('button');skip.type='button';skip.textContent='Skip and process';
+    const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';
+    const pending={control,form,overlay,media:null,visual:null,stopSound:null,timer:null,done:false,fallback:false};
+    spScarePending=pending;
+    skip.addEventListener('click',function(){spScareProceed(pending);});
+    cancel.addEventListener('click',function(){spScareClose(pending);});
+    overlay.addEventListener('keydown',function(e){
+        if(e.key==='Escape'){e.preventDefault();spScareClose(pending);}
+    });
+    actions.append(skip,cancel);
+    stage.append(actions);overlay.append(stage);document.body.appendChild(overlay);
+    skip.focus({preventScroll:true});
+    const videoURL=SP_PROCESS_SCARE_MEDIA.video.trim();
+    const gifURL=SP_PROCESS_SCARE_MEDIA.gif.trim();
+    const audioURL=SP_PROCESS_SCARE_MEDIA.audio.trim();
+    function original(){
+        if(pending.done||pending.fallback)return;
+        pending.fallback=true;
+        if(pending.timer!==null){clearTimeout(pending.timer);pending.timer=null;}
+        if(pending.media){try{pending.media.pause();}catch(_e){} pending.media=null;}
+        if(pending.visual)pending.visual.remove();
+        const art=document.createElement('div');art.className='sp-scare-original';
+        const face=document.createElement('div');face.className='sp-scare-face';
+        const headline=document.createElement('div');headline.className='sp-scare-horror';
+        headline.textContent='DON’T LOOK BACK';
+        art.append(face,headline);
+        stage.insertBefore(art,actions);
+        pending.stopSound=spScareFallbackSound();
+        pending.timer=setTimeout(function(){spScareProceed(pending);},SP_PROCESS_SCARE_MEDIA.fallbackMs);
+    }
+    if(videoURL){
+        const video=document.createElement('video');
+        video.src=videoURL;video.preload='auto';video.playsInline=true;video.muted=false;video.volume=0.6;
+        pending.media=video;pending.visual=video;
+        stage.insertBefore(video,actions);
+        video.addEventListener('ended',function(){spScareProceed(pending);},{once:true});
+        video.addEventListener('error',original,{once:true});
+        pending.timer=setTimeout(function(){spScareProceed(pending);},10000);
+        try{
+            const play=video.play();
+            if(play&&typeof play.catch==='function')play.catch(original);
+        }catch(_e){original();}
+    }else if(gifURL&&audioURL){
+        const picture=document.createElement('img');picture.src=gifURL;picture.alt='Horror preview';
+        const audio=document.createElement('audio');audio.src=audioURL;audio.volume=0.6;
+        pending.media=audio;pending.visual=picture;
+        stage.insertBefore(picture,actions);
+        pending.timer=setTimeout(function(){spScareProceed(pending);},SP_PROCESS_SCARE_MEDIA.fallbackMs+1200);
+        audio.addEventListener('error',original,{once:true});
+        try{
+            const play=audio.play();
+            if(play&&typeof play.catch==='function')play.catch(original);
+        }catch(_e){original();}
+    }else{
+        original();
+    }
+}
+function spProcessScareGuard(event,control){
+    if(spBlockIncompleteProcess(event,control))return true;
+    if(spScareBypass)return false;
+    spProcessScareStop(event);
+    if(!spScarePending){
+        const form=event.type==='submit'?event.target:
+            control&&control.form?control.form:null;
+        spScarePreview(control,form);
+    }
+    return true;
+}
+
 function spInstallProcessJobGuard(){
     if(document.documentElement.dataset.spProcessJobGuard==='true')return;
     document.documentElement.dataset.spProcessJobGuard='true';
@@ -1096,18 +1273,18 @@ function spInstallProcessJobGuard(){
             'button,input[type="submit"],input[type="button"],a,[role="button"]'
         );
         if(control&&spIsNativeProcessJobControl(control))
-            spBlockIncompleteProcess(event,control);
+            spProcessScareGuard(event,control);
     },true);
     document.addEventListener('submit',function(event){
         const form=event.target;
         if(!form||!form.closest||!form.closest('#step4'))return;
         const clicked=event.submitter||document.activeElement;
         if(clicked&&spIsNativeProcessJobControl(clicked)){
-            spBlockIncompleteProcess(event,clicked);
+            spProcessScareGuard(event,clicked);
         }else if(form.querySelector&&form.querySelector(
             'button[id*="processJob"],button[id*="processBtn"],button[onclick*="processJob"],button[onclick*="submitJob"]'
         )){
-            spBlockIncompleteProcess(event,form);
+            spProcessScareGuard(event,form);
         }
     },true);
 }
