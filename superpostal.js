@@ -257,12 +257,17 @@ function spWatchFilledReturnFields(){
     if(modal.dataset.spFilledWatcher!=='true'){
         ['input','change'].forEach(function(type){
             modal.addEventListener(type,function(event){
-                if(event.target.closest('#envelopeReturn-address, #returnAddressParser'))
+                if(event.target.closest('#envelopeReturn-address, #returnAddressParser')){
                     spRefreshFilledReturnFields();
+                    spQueueRecipientOverview();
+                }
             });
         });
         const jq=window.jQuery||window.$;
-        if(jq&&jq.fn)jq(modal).on('shown.bs.modal.spFilled',spRefreshFilledReturnFields);
+        if(jq&&jq.fn)jq(modal).on('shown.bs.modal.spFilled hidden.bs.modal.spFilled',function(){
+            spRefreshFilledReturnFields();
+            spQueueRecipientOverview();
+        });
         modal.dataset.spFilledWatcher='true';
     }
     spRefreshFilledReturnFields();
@@ -654,6 +659,25 @@ function spRecipientNamesFromPage(){
     return names;
 }
 
+// Build the return-address preview from Postalocity's actual address fields,
+// never from the unparsed paste box. No additional storage or API calls.
+function spReturnAddressLines(){
+    const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
+    if(!form)return null; // The native return-address form has not loaded.
+    const read=function(name){
+        const field=form.querySelector('input[name="'+name+'"],textarea[name="'+name+'"],select[name="'+name+'"]');
+        return field?String(field.value||'').trim():'';
+    };
+    const data={
+        name:read('name'),company1:read('company1'),company2:read('company2'),
+        address1:read('address1'),address2:read('address2'),city:read('city'),
+        state:read('state'),zip:read('zip'),country:read('country')
+    };
+    const location=[data.city,data.state].filter(Boolean).join(', ')+(data.zip?' '+data.zip:'');
+    return [data.name,data.company1,data.company2,data.address1,data.address2,
+        location.trim(),data.country].filter(Boolean);
+}
+
 function spRefreshRecipientPdfOverview(){
     const panel=document.querySelector('#spRecipientPdfOverview');
     if(!panel)return;
@@ -664,6 +688,8 @@ function spRefreshRecipientPdfOverview(){
     const countLabel=Number.isFinite(count)&&count>0?count:recipientNames.length;
     const recipientKey=JSON.stringify([countLabel,recipientNames]);
     const fileKey=JSON.stringify([pdfNames,spPdfNamesRestored]);
+    const returnLines=spReturnAddressLines();
+    const returnKey=JSON.stringify(returnLines);
     if(panel.dataset.recipientKey!==recipientKey){
         panel.dataset.recipientKey=recipientKey;
         panel.querySelector('#spOverviewRecipientCount').textContent=countLabel+' recipients';
@@ -688,6 +714,26 @@ function spRefreshRecipientPdfOverview(){
             list.appendChild(li);
         }
     }
+    if(panel.dataset.returnKey!==returnKey){
+        panel.dataset.returnKey=returnKey;
+        const preview=panel.querySelector('#spOverviewReturnAddress');
+        if(preview){
+            preview.replaceChildren();
+            if(returnLines && returnLines.length){
+                const block=document.createElement('address');
+                block.className='sp-return-address-block';
+                block.textContent=returnLines.join('\n');
+                preview.appendChild(block);
+            }else{
+                const empty=document.createElement('p');
+                empty.className='sp-empty';
+                empty.textContent=returnLines===null
+                    ? 'Return address not loaded yet. Open Return Address to view it.'
+                    : 'No return address entered.';
+                preview.appendChild(empty);
+            }
+        }
+    }
     if(panel.dataset.fileKey!==fileKey){
         panel.dataset.fileKey=fileKey;
         panel.querySelector('#spOverviewPdfCount').textContent=pdfNames.length+' PDFs';
@@ -700,12 +746,6 @@ function spRefreshRecipientPdfOverview(){
                 file.textContent=name;li.appendChild(file);
                 list.appendChild(li);
             });
-            if(spPdfNamesRestored){
-                const note=document.createElement('li');
-                note.className='sp-empty';
-                note.textContent='Remembered from before this page reloaded. Verify against Files if uploads changed.';
-                list.appendChild(note);
-            }
         }else{
             const li=document.createElement('li');li.className='sp-empty';
             li.textContent='No uploaded PDF filenames available yet.';
@@ -738,7 +778,7 @@ function addRecipientPdfOverview(){
             '#step3 #spRecipientPdfOverview *{box-sizing:border-box}',
             '#step3 #spRecipientPdfOverview .sp-overview-header{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-bottom:10px}',
             '#step3 #spRecipientPdfOverview .sp-overview-header strong{font-size:14px}',
-            '#step3 #spRecipientPdfOverview .sp-overview-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}',
+            '#step3 #spRecipientPdfOverview .sp-overview-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}',
             '#step3 #spRecipientPdfOverview .sp-overview-col{min-width:0;border:1px solid #e6edf5;border-radius:8px;background:#fafcfe;padding:10px}',
             '#step3 #spRecipientPdfOverview .sp-overview-col-title{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px;font-weight:700;font-size:12px}',
             '#step3 #spRecipientPdfOverview .sp-count{color:#536c8a;font-size:11px;font-weight:500}',
@@ -747,17 +787,19 @@ function addRecipientPdfOverview(){
             '#step3 #spRecipientPdfOverview li:last-child{border-bottom:0}',
             '#step3 #spRecipientPdfOverview .sp-list-number{color:#7488a3;font-size:10px;flex-shrink:0;min-width:20px}',
             '#step3 #spRecipientPdfOverview .sp-empty{color:#748399;font-style:italic}',
+            '#step3 #spRecipientPdfOverview .sp-return-address-block{margin:0;font-size:12px;font-style:normal;white-space:pre-line;line-height:1.65;color:#283d56;overflow-wrap:anywhere}',
             '#step3 #spRecipientPdfOverview button{font-size:11px;padding:5px 9px;border:1px solid #b8cee9;border-radius:6px;background:#eff5ff;color:#26558b;cursor:pointer}',
             '#step3 #spRecipientPdfOverview button:focus-visible{outline:2px solid #4388e1;outline-offset:2px}',
-            '@media(max-width:520px){#step3 #spRecipientPdfOverview .sp-overview-grid{grid-template-columns:1fr}}'
+            '@media(max-width:850px){#step3 #spRecipientPdfOverview .sp-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#step3 #spRecipientPdfOverview .sp-overview-col:last-child{grid-column:1/-1}}',
+            '@media(max-width:520px){#step3 #spRecipientPdfOverview .sp-overview-grid{grid-template-columns:1fr}#step3 #spRecipientPdfOverview .sp-overview-col:last-child{grid-column:auto}}'
         ].join('\n');
         document.head.appendChild(styles);
     }
     const card=document.createElement('section');
     card.id='spRecipientPdfOverview';
-    card.setAttribute('aria-label','Recipient names and uploaded files');
+    card.setAttribute('aria-label','Recipient names, uploaded PDF filenames and return address');
     card.innerHTML=[
-      '<div class="sp-overview-header"><strong>Recipients &amp; PDFs</strong>',
+      '<div class="sp-overview-header"><strong>Job Details</strong>',
       '<button type="button" id="spOverviewOpenRecipients">Open recipient list</button></div>',
       '<div class="sp-overview-grid">',
       '<section class="sp-overview-col"><div class="sp-overview-col-title">',
@@ -765,8 +807,10 @@ function addRecipientPdfOverview(){
       '<ul id="spOverviewRecipientNames" aria-label="Full recipient names"></ul></section>',
       '<section class="sp-overview-col"><div class="sp-overview-col-title">',
       '<span>Uploaded PDF filenames</span><span class="sp-count" id="spOverviewPdfCount"></span></div>',
-      '<button type="button" id="spOverviewViewFiles" title="Open Postalocity Uploaded Files to verify and update the names">View Files</button>',
       '<ul id="spOverviewPdfNames" aria-label="Uploaded PDF filenames"></ul></section>',
+      '<section class="sp-overview-col"><div class="sp-overview-col-title">',
+      '<span>Return address</span></div>',
+      '<div id="spOverviewReturnAddress" aria-label="Current return address"></div></section>',
       '</div>'
     ].join('');
     const originalRecipientArea=step.querySelector('.recipientList');
@@ -775,16 +819,6 @@ function addRecipientPdfOverview(){
     }else{
         step.appendChild(card);
     }
-    card.querySelector('#spOverviewViewFiles').addEventListener('click',function(){
-        // Use Postalocity's normal Files button, including its own loading,
-        // error handling, and read-only file-list request.
-        const nativeBtn=Array.from(document.querySelectorAll('button')).find(function(btn){
-            return /(?:^|\s)listUploadedFiles\s*\(/.test(btn.getAttribute('onclick')||'');
-        });
-        if(nativeBtn){nativeBtn.click();return;}
-        if(typeof window.listUploadedFiles==='function'){window.listUploadedFiles();return;}
-        window.alert('Postalocity Files button is not available on this page.');
-    });
     card.querySelector('#spOverviewOpenRecipients').addEventListener('click',function(){
         const modal=document.querySelector('#listShowModal');
         const jq=window.jQuery||window.$;
