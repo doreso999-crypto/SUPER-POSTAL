@@ -853,9 +853,6 @@ function spReturnMarkSaved(form){
         catch(_e){}
     }
     spQueueRecipientOverview();
-    // Send an event only after the existing saved-address verification succeeds.
-    // Liquidation can use this to start/join one shared cross-tab working session.
-    window.dispatchEvent(new Event('sp:verifiedReturnAddressSaved'));
 }
 function spReturnSavedReady(){
     const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
@@ -1024,52 +1021,13 @@ function spProcessJobWarning(missing,control){
     try{box.focus({preventScroll:true});}catch(_e){box.focus();}
     if(box.scrollIntoView)box.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
-// This bridge lives in the outer userscript scope. The LIQUIDATION module
-// below has its own nested scope and registers its tracking function here.
-let spLiquidationStageJob=null;
-function spLiquidationTrackingNotice(message){
-    // LIQUIDATION is an independent expense calculator. Failure to record a
-    // price must be visible, but must never prevent Postalocity processing.
-    const text=String(message||'Unable to track this job.');
-    console.warn('[SUPER-POSTAL LIQUIDATION]',text);
-    if(!document.body)return;
-    let note=document.querySelector('#spLiquidationTrackingNotice');
-    if(!note){
-        note=document.createElement('div');
-        note.id='spLiquidationTrackingNotice';
-        note.setAttribute('role','alert');
-        note.style.cssText='position:fixed;top:18px;right:18px;z-index:2147483100;max-width:380px;padding:13px 36px 13px 15px;border:2px solid #b56b13;border-radius:10px;background:#fff5df;color:#533600;font:600 12px/1.5 Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.22)';
-        document.body.appendChild(note);
-    }
-    note.replaceChildren();
-    const label=document.createElement('span');
-    label.textContent='LIQUIDATION warning: '+text+' Postalocity processing is not blocked by LIQUIDATION.';
-    const close=document.createElement('button');
-    close.type='button';
-    close.textContent='×';
-    close.setAttribute('aria-label','Dismiss LIQUIDATION warning');
-    close.style.cssText='position:absolute;top:5px;right:7px;font-size:20px;border:0;background:none;cursor:pointer';
-    close.addEventListener('click',function(){note.remove();});
-    note.append(label,close);
-}
 function spBlockIncompleteProcess(event,control){
     let result;
     try{result=spJobDetailsReadiness();}
-    catch(_error){result={ready:false,missing:['Job details could not be verified']};}
-    // Postalocity's own required job details are the only blocking checks.
-    // LIQUIDATION already calculates the displayed pre-Process price from
-    // uploaded jobs, so it must never hold the native Process button hostage.
+    catch(_error){
+        result={ready:false,missing:['Job details could not be verified']};
+    }
     if(result.ready){
-        try{
-            const tracking=typeof spLiquidationStageJob==='function'?
-                spLiquidationStageJob():{ready:false,reason:'LIQUIDATION has not loaded.'};
-            if(!tracking||tracking.ready!==true)
-                spLiquidationTrackingNotice(tracking&&tracking.reason||
-                    'Could not record the uploaded job price.');
-        }catch(_error){
-            console.error('[SUPER-POSTAL] LIQUIDATION stage error:',_error);
-            spLiquidationTrackingNotice('The expense tracker encountered an error.');
-        }
         const previous=document.querySelector('#spProcessJobBlocked');
         if(previous)previous.remove();
         spDismissProcessToast();
@@ -1562,1102 +1520,35 @@ watchJobName();
 spAddRecipientBureauDropdown();
 
 ///////////////////////////////
-// POSTAL CALCULATOR
+// FLOATING SIDE PANEL
 ///////////////////////////////
 (function(){
 
-const box = document.createElement("div");
+// Keep the original yellow panel, mascot position and draggable layout.
+// No accounting, price tracking, filenames, or client-session logic.
+document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
 
-box.id = "bureauTotals";
+const box=document.createElement('div');
+box.id='bureauTotals';
+box.dataset.minimized='false';
 
 Object.assign(box.style,{
-    position:"fixed",
-    top:"120px",
-    right:"15px",
-    width:"320px",
-    background:"rgb(242,179,46)",
-    color:"black",
-    padding:"25px",
-    borderRadius:"12px",
-    zIndex:"999999",
-    boxShadow:"0 0 15px rgba(0,0,0,.45)",
-    cursor:"move",
-    overflow:"visible",
-    boxSizing:"border-box",
-    fontFamily:"Arial, sans-serif"
+    position:'fixed',
+    top:'120px',
+    right:'15px',
+    width:'320px',
+    minHeight:'240px',
+    background:'rgb(242,179,46)',
+    color:'black',
+    padding:'25px',
+    borderRadius:'12px',
+    zIndex:'999999',
+    boxShadow:'0 0 15px rgba(0,0,0,.45)',
+    cursor:'move',
+    overflow:'visible',
+    boxSizing:'border-box',
+    fontFamily:'Arial, sans-serif'
 });
-
-box.innerHTML = `
-<div id="calculator" style="width:100%;position:relative;z-index:10;font-family:Arial,sans-serif;">
-    <div style="font-size:20px;font-weight:800;text-align:center;margin-bottom:10px;letter-spacing:1px;">LIQUIDATION</div>
-    <section id="liqReturnPreview" style="border-radius:8px;background:#fff9e9;padding:10px 11px;margin-bottom:10px;border:1px solid #b98a23;">
-        <div id="liqReturnStatus" style="font-size:10px;color:#76581a;font-weight:700;margin-bottom:4px;">RETURN ADDRESS</div>
-        <strong id="liqReturnName" style="display:block;font-size:13px;overflow-wrap:anywhere;">No return address entered</strong>
-        <div id="liqReturnAddress" style="font-size:11px;white-space:pre-line;line-height:1.5;overflow-wrap:anywhere;"></div>
-    </section>
-    <div style="border-radius:9px;background:#222;color:#fff;padding:11px 12px;margin-bottom:11px;">
-        <div style="font-size:11px;font-weight:700;opacity:.82;letter-spacing:.5px;">TOTAL TRACKED MAILING COST</div>
-        <div id="liqGrandTotal" style="font-size:28px;font-weight:800;text-align:right;">$0.00</div>
-        <div id="liqJobCount" style="font-size:11px;text-align:right;opacity:.78;">0 processed · 0 quoted · 0 awaiting price</div>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">
-        <strong id="liqSessionLabel" style="font-size:12px;">No active client</strong>
-        <button id="liqClearAll" type="button" style="font-size:11px;padding:4px 8px;border:1px solid #7e5b18;border-radius:5px;background:transparent;color:#261900;cursor:pointer;">Reset session</button>
-    </div>
-    <section id="liqDraftArea" style="margin-bottom:10px;">
-        <strong style="font-size:12px;">Uploaded files · live</strong>
-        <div id="liqDraftFiles" style="max-height:170px;overflow:auto;margin-top:6px;"></div>
-    </section>
-    <div id="liqClientGroups" style="max-height:245px;overflow:auto;"></div>
-    <button id="liqRecoverCurrent" type="button" hidden style="margin-top:6px;width:100%;border:1px solid #7e5b18;border-radius:5px;padding:6px;background:#fff;color:#261900;cursor:pointer;font-size:11px;">Recover this processed job</button>
-    <div id="liqHint" style="font-size:10px;line-height:1.5;color:#49340c;margin-top:9px;">
-        LIQUIDATION totals Postalocity's Total Price before Process this job and updates it if the processed price changes. Shared across tabs.
-    </div>
-</div>
-`;
-
-///////////////////////////////
-// CLIENT LIQUIDATION — STAGE JOB, THEN ATTACH ACTUAL PROCESSED PRICE
-///////////////////////////////
-// Local, per-browser working container. Never add the hidden new-job estimate.
-// Same-origin localStorage is shared by all Postalocity tabs in this browser
-// profile. Each job has a separate record to avoid last-writer-wins data loss.
-const LIQ_PREFIX='sp-liq-temporary-v6:';
-const LIQ_LEGACY_PREFIX='sp-liq-temporary-v5:';
-const LIQ_LEGACY_ACTIVE_KEY=LIQ_LEGACY_PREFIX+'active';
-const LIQ_LEGACY_JOB_PREFIX=LIQ_LEGACY_PREFIX+'job:';
-const LIQ_LEGACY_DRAFT_PREFIX=LIQ_LEGACY_PREFIX+'draft:';
-const LIQ_SESSION_PREFIX=LIQ_PREFIX+'session:';
-const LIQ_TAB_BIND_PREFIX=LIQ_PREFIX+'tab-job-client:';
-const LIQ_MIGRATED_PREFIX=LIQ_PREFIX+'migrated:';
-const LIQ_RESET_PREFIX=LIQ_PREFIX+'reset:';
-const LIQ_ACTIVE_KEY=LIQ_SESSION_PREFIX;
-const LIQ_JOB_PREFIX=LIQ_PREFIX+'job:';
-const LIQ_OLD_TAB_KEY='sp-return-identity-liquidation-v4';
-const LIQ_MIGRATION_CLOSED=LIQ_PREFIX+'legacyImportClosed';
-const LIQ_MAX_IDLE=24*60*60*1000;
-const LIQ_ACTIVITY_PREFIX=LIQ_PREFIX+'activity:';
-const LIQ_DRAFT_PREFIX=LIQ_PREFIX+'draft:';
-const LIQ_TARGETS={EQU:'Equifax',EX:'Experian',TU:'TransUnion'};
-let liqLastView='',liqLastNotice='',liqLastLiveSignature='';
-function liqEmptySession(){
-    return {clientKey:'',clientName:'',sessionId:'',jobs:{},drafts:{}};
-}
-function liqSessionStorageKey(key){return LIQ_SESSION_PREFIX+key;}
-function liqBindingKey(id){return LIQ_TAB_BIND_PREFIX+id;}
-function liqBindTab(session){
-    const id=liqJobId();
-    if(!id||!session)return;
-    try{window.sessionStorage.setItem(liqBindingKey(id),session.clientKey);}
-    catch(_error){}
-}
-function liqBoundClient(){
-    const id=liqJobId();
-    if(!id)return '';
-    try{return window.sessionStorage.getItem(liqBindingKey(id))||'';}
-    catch(_error){return '';}
-}
-function liqGetClientSession(clientKey){
-    if(!clientKey)return null;
-    try{
-        const name=liqSessionStorageKey(clientKey);
-        const raw=window.localStorage.getItem(name);
-        if(!raw)return null;
-        const data=JSON.parse(raw);
-        if(!data||data.clientKey!==clientKey||!data.id||!data.clientName)return null;
-        const last=Number(window.localStorage.getItem(
-            LIQ_ACTIVITY_PREFIX+data.id))||data.createdAt;
-        if(!Number.isFinite(last)||last>Date.now()+60000||
-           Date.now()-last>LIQ_MAX_IDLE){
-            window.localStorage.removeItem(name);
-            liqPurgeSession(data);
-            return null;
-        }
-        return data;
-    }catch(_error){return null;}
-}
-function liqNewSessionId(){
-    if(window.crypto&&typeof window.crypto.randomUUID==='function')
-        return window.crypto.randomUUID();
-    return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,14);
-}
-function liqActive(){
-    const identity=liqReturnIdentity(false);
-    if(identity){
-        const session=liqGetClientSession(identity.key);
-        if(session)liqBindTab(session);
-        return session;
-    }
-    const bound=liqBoundClient();
-    return bound?liqGetClientSession(bound):null;
-}
-function liqJobKey(session,id){
-    return LIQ_JOB_PREFIX+session.id+':'+id;
-}
-function liqDraftKey(session,id){
-    return LIQ_DRAFT_PREFIX+session.id+':'+id;
-}
-function liqDraftRecords(session){
-    const drafts={};
-    if(!session)return drafts;
-    const prefix=LIQ_DRAFT_PREFIX+session.id+':';
-    try{
-        for(let i=0;i<window.localStorage.length;i++){
-            const key=window.localStorage.key(i);
-            if(!key||!key.startsWith(prefix))continue;
-            const id=key.slice(prefix.length);
-            if(!/^\d+$/.test(id))continue;
-            try{
-                const candidate=JSON.parse(window.localStorage.getItem(key)||'null');
-                if(candidate&&candidate.id===id &&
-                   candidate.sessionId===session.id &&
-                   candidate.sessionKey===session.clientKey &&
-                   Array.isArray(candidate.files))drafts[id]=candidate;
-            }catch(_error){/* A bad draft must not hide other jobs. */}
-        }
-    }catch(_error){}
-    return drafts;
-}
-function liqRemoveDraft(id,session){
-    if(!session||!/^\d+$/.test(String(id)))return;
-    try{window.localStorage.removeItem(liqDraftKey(session,String(id)));}
-    catch(_error){}
-}
-function liqCurrentReturnDisplay(){
-    const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
-    if(!form||spReturnIsSampleForm(form))return null;
-    const nameField=spReturnFormField(form,'name');
-    const name=String(nameField&&nameField.value||'').trim();
-    const lines=spReturnAddressLines();
-    if(!Array.isArray(lines)||!lines.length)return null;
-    const address=lines.slice(name&&lines[0]===name?1:0).join('\n').trim();
-    if(!name&&!address)return null;
-    const identity=liqReturnIdentity();
-    const previewIdentity=identity||liqReturnIdentity(false);
-    return {name:name,address:address,identity:identity,
-        previewIdentity:previewIdentity,saved:!!identity};
-}
-function liqSharedReturnDisplay(session){
-    if(!session)return null;
-    const display=session.returnDisplay;
-    // Every tab must have at least the same shared client label. The postal
-    // address appears after its original tab publishes a verified save.
-    return {name:String(display&&display.name||session.clientName),
-        address:String(display&&display.address||''),
-        saved:true,identity:null};
-}
-function liqRememberReturnDisplay(identity){
-    const current=liqActive();
-    if(!current||!identity||current.clientKey!==identity.key)return;
-    const display=liqCurrentReturnDisplay();
-    if(!display||!display.saved)return;
-    const next={name:display.name,address:display.address};
-    const old=current.returnDisplay||null;
-    if(old&&old.name===next.name&&old.address===next.address)return;
-    const updated={...current,returnDisplay:next};
-    try{
-        // Temporary local shared display; removed on reset or expiry.
-        const key=liqSessionStorageKey(current.clientKey);
-        const raw=window.localStorage.getItem(key);
-        const stored=raw&&JSON.parse(raw);
-        if(!stored||stored.id!==current.id)return;
-        window.localStorage.setItem(key,JSON.stringify(updated));
-    }catch(_error){}
-}
-function liqPreviewFiles(files){
-    return files.map(function(name){
-        const parsed=liqParseFileLabel(name);
-        return {name:String(name),target:parsed?parsed.target:null,
-            label:parsed?parsed.targetLabel:'Check destination'};
-    });
-}
-function liqIsNewJob(){
-    const state=document.querySelector('#jobState');
-    const status=String(state&&state.textContent||'').trim();
-    return !!document.querySelector('#newJobContent') &&
-        !/\b(processed|approved|mailed|completed|complete)\b/i.test(status);
-}
-function liqSyncDraft(){
-    if(!liqIsNewJob())return;
-    const id=liqJobId();
-    if(!id)return;
-    const active=liqActive();
-    if(!active)return;
-    // A second tab may have a fully preloaded Return Address but not the
-    // sessionStorage save receipt created in the original tab.
-    // Matching the already-verified shared client is safe for an uploaded
-    // *preview*; it never creates a client session or counts a price.
-    const identity=liqReturnIdentity()||liqReturnIdentity(false);
-    const existing=liqDraftRecords(active)[id];
-    if(!identity||identity.key!==active.clientKey){
-        // If the user replaces a saved return address with a different
-        // draft on this job, stop advertising its stale uploads as belonging
-        // to the previous client. An unloaded form (null identity) is left
-        // untouched because it might simply be loading asynchronously.
-        if(identity&&existing)liqRemoveDraft(id,active);
-        return;
-    }
-    const names=spPdfNamesFromPage().filter(name=>/\.pdf$/i.test(String(name)));
-    const key=liqDraftKey(active,id);
-    const tracked=liqJobRecords(active)[id];
-    if(tracked){
-        if(existing)liqRemoveDraft(id,active);
-        return;
-    }
-    if(!names.length){
-        if(existing)liqRemoveDraft(id,active);
-        return;
-    }
-    const name=liqJobName()||'Job #'+id;
-    const parsed=liqFromFiles(names,name);
-    const quotedCents=liqNewJobTotal();
-    if(existing&&existing.jobName===name &&
-       JSON.stringify(existing.files)===JSON.stringify(names) &&
-       existing.quotedCents===quotedCents &&
-       existing.target===(parsed&&parsed.target||null))return;
-    const draft={id:id,sessionId:active.id,sessionKey:active.clientKey,
-        jobName:name,files:names,quotedCents:quotedCents,
-        target:parsed?parsed.target:null,
-        targetLabel:parsed?parsed.targetLabel:null,updatedAt:Date.now()};
-    try{
-        // One independent Postalocity price per job; all tabs sum these records.
-        window.localStorage.setItem(key,JSON.stringify(draft));
-        liqRender();
-    }catch(_error){}
-}
-function liqRenderLive(){
-    const panel=box.querySelector('#calculator');
-    if(!panel)return;
-    const active=liqActive(),local=liqCurrentReturnDisplay();
-    const shared=liqSharedReturnDisplay(active);
-    const localKey=local&&local.previewIdentity&&local.previewIdentity.key;
-    const same=!!(active&&localKey===active.clientKey);
-    const different=!!(active&&localKey&&localKey!==active.clientKey);
-    // Prefer the common saved client on every tab. The one exception is
-    // a different, unsaved Return Address being entered in THIS tab: show
-    // that draft with an explicit warning, without changing shared storage.
-    const display=different&&local?local:(shared||local);
-    const status=!display?'RETURN ADDRESS':
-        different?'DIFFERENT CLIENT ON THIS TAB · NOT SHARED':
-        shared&&same&&local.saved?'SAVED RETURN ADDRESS · ACTIVE SESSION':
-        shared&&same?'ACTIVE CLIENT · LINKED ACROSS TABS':
-        shared?'ACTIVE CLIENT · SHARED ACROSS TABS':
-        local&&!local.saved?'DRAFT RETURN ADDRESS · NOT SAVED':
-        'SAVED RETURN ADDRESS';
-    const localFiles=liqIsNewJob()?spPdfNamesFromPage().filter(
-        name=>/\.pdf$/i.test(String(name))):[];
-    const currentId=liqJobId();
-    const currentJobName=liqJobName();
-    const data=liqRead();
-    const entries=[];
-    const drafts=active?liqDraftRecords(active):{};
-    Object.values(drafts).forEach(function(draft){
-        if(data.jobs[draft.id])return;
-        if(draft.id===currentId&&liqIsNewJob())return;
-        entries.push({id:draft.id,jobName:draft.jobName,files:draft.files,
-            quotedCents:draft.quotedCents,shared:true});
-    });
-    // Once Process has been clicked successfully, the job moves to the
-    // recorded list below. Do not show the same files as unprocessed uploads.
-    if(localFiles.length && !data.jobs[currentId]){
-        entries.unshift({id:currentId,jobName:currentJobName,
-            files:localFiles,quotedCents:liqNewJobTotal(),shared:false});
-    }
-    const unlinked=!!(active&&localFiles.length&&liqIsNewJob()&&!same);
-    const warning=unlinked?(different?
-        'This tab belongs to a different client. These uploads are NOT included in the shared session.':
-        'This tab is not linked yet. Open Return Address to load and verify the client before sharing uploads.'):
-        '';
-    const signature=JSON.stringify([
-        active&&active.id,display&&display.name,display&&display.address,
-        status,warning,entries.map(x=>[x.id,x.jobName,x.files,x.quotedCents,x.shared])
-    ]);
-    if(signature===liqLastLiveSignature)return;
-    liqLastLiveSignature=signature;
-    const elStatus=panel.querySelector('#liqReturnStatus');
-    const elName=panel.querySelector('#liqReturnName');
-    const elAddress=panel.querySelector('#liqReturnAddress');
-    const elFiles=panel.querySelector('#liqDraftFiles');
-    if(elStatus)elStatus.textContent=status;
-    if(elName)elName.textContent=display&&display.name||'No return address entered';
-    if(elAddress)elAddress.textContent=(display&&display.address||'')+
-        (warning?'\n'+warning:'');
-    if(!elFiles)return;
-    elFiles.replaceChildren();
-    if(!entries.length){
-        elFiles.appendChild(liqElement('div','No uploaded files in the active draft.',{
-            fontSize:'11px',padding:'7px 3px',opacity:'.75'
-        }));
-        return;
-    }
-    entries.forEach(function(entry){
-        const card=liqElement('div',null,{
-            background:'rgba(255,255,255,.6)',borderRadius:'6px',
-            padding:'6px 8px',marginBottom:'5px'
-        });
-        const source=entry.shared?'Other tab · uploaded, not processed':
-            'Current job · uploaded, not processed';
-        card.appendChild(liqElement('div',
-            source+(entry.id?' · Job #'+entry.id:'')+
-            (Number.isSafeInteger(entry.quotedCents)?
-                ' · '+liqMoney(entry.quotedCents):' · Price unavailable'),{
-                fontSize:'10px',fontWeight:'700',opacity:'.76',
-                marginBottom:'4px'
-            }));
-        liqPreviewFiles(entry.files).forEach(function(file){
-            const row=liqElement('div',null,{
-                display:'flex',justifyContent:'space-between',gap:'5px',
-                alignItems:'flex-start',margin:'5px 0'
-            });
-            row.append(
-                liqElement('span',file.name,{
-                    minWidth:'0',flex:'1',fontSize:'11px',overflowWrap:'anywhere'
-                }),
-                liqElement('strong',file.label,{
-                    fontSize:'10px',whiteSpace:'nowrap'
-                })
-            );
-            card.appendChild(row);
-        });
-        elFiles.appendChild(card);
-    });
-}
-
-function liqJobRecords(session){
-    const jobs={};
-    if(!session)return jobs;
-    const prefix=LIQ_JOB_PREFIX+session.id+':';
-    try{
-        for(let i=0;i<window.localStorage.length;i++){
-            const key=window.localStorage.key(i);
-            if(!key||!key.startsWith(prefix))continue;
-            const id=key.slice(prefix.length);
-            if(!/^\d+$/.test(id))continue;
-            try{
-                const item=JSON.parse(window.localStorage.getItem(key)||'null');
-                if(item&&item.id===id&&item.sessionKey===session.clientKey &&
-                   item.sessionId===session.id)jobs[id]=item;
-            }catch(_error){}
-        }
-    }catch(_error){liqLastNotice='Could not read shared liquidation records.';}
-    return jobs;
-}
-function liqRead(){
-    const active=liqActive();
-    if(!active)return liqEmptySession();
-    return {clientKey:active.clientKey,clientName:active.clientName,
-            sessionId:active.id,jobs:liqJobRecords(active),drafts:liqDraftRecords(active)};
-}
-function liqSaveJob(record,session){
-    if(!session||!record||!/^\d+$/.test(String(record.id)))return false;
-    const current=liqActive();
-    // Verify this job belongs to the session selected by its Return Address.
-    if(!current||current.id!==session.id ||current.clientKey!==session.clientKey)return false;
-    const item={...record,id:String(record.id),sessionKey:session.clientKey,
-                sessionId:session.id,client:current.clientName};
-    const jobKey=liqJobKey(session,item.id);
-    const value=JSON.stringify(item);
-    try{
-        window.localStorage.setItem(jobKey,value);
-        // Verify the write and session pointer before native processing.
-        if(window.localStorage.getItem(jobKey)!==value ||
-           !liqTouchSession(session)){
-            liqLastNotice='Shared liquidation record could not be verified.';
-            return false;
-        }
-    }catch(_error){liqLastNotice='Cannot save shared liquidation job.';return false;}
-    return true;
-}
-function liqRemoveJob(id){
-    const active=liqActive();
-    if(!active||!/^\d+$/.test(String(id)))return;
-    try{
-        window.localStorage.removeItem(liqJobKey(active,String(id)));
-        liqTouchSession(active);
-    }catch(_error){liqLastNotice='Cannot remove job from shared records.';}
-}
-function liqPurgeSession(session){
-    if(!session)return;
-    const prefix=LIQ_JOB_PREFIX+session.id+':';
-    try{
-        const keys=[];
-        for(let i=0;i<window.localStorage.length;i++){
-            const key=window.localStorage.key(i);
-            if(key&&key.startsWith(prefix))keys.push(key);
-        }
-        keys.forEach(key=>window.localStorage.removeItem(key));
-        const draftPrefix=LIQ_DRAFT_PREFIX+session.id+':';
-        const draftKeys=[];
-        for(let i=0;i<window.localStorage.length;i++){
-            const key=window.localStorage.key(i);
-            if(key&&key.startsWith(draftPrefix))draftKeys.push(key);
-        }
-        draftKeys.forEach(key=>window.localStorage.removeItem(key));
-        window.localStorage.removeItem(LIQ_ACTIVITY_PREFIX+session.id);
-    }catch(_error){}
-}
-function liqTouchSession(session){
-    const active=liqActive();
-    if(!active||active.id!==session.id)return false;
-    try{
-        window.localStorage.setItem(LIQ_ACTIVITY_PREFIX+session.id,String(Date.now()));
-        return true;
-    }catch(_error){return false;}
-}
-function liqStartSession(identity,explicit){
-    if(!identity||!identity.key||!identity.name)return null;
-    const existing=liqGetClientSession(identity.key);
-    if(existing){
-        liqBindTab(existing);
-        if(explicit)liqTouchSession(existing);
-        return existing;
-    }
-    if(!explicit&&!spReturnSavedReady())return null;
-    const key=liqSessionStorageKey(identity.key);
-    try{
-        // Reset is intentionally persistent until a new verified Save.
-        if(!explicit&&window.localStorage.getItem(LIQ_RESET_PREFIX+identity.key))
-            return null;
-    }catch(_error){return null;}
-    const newSession={id:liqNewSessionId(),clientKey:identity.key,
-        clientName:identity.name,createdAt:Date.now()};
-    try{
-        // Recheck to reduce the chance of a simultaneous-tab overwrite.
-        const found=liqGetClientSession(identity.key);
-        if(found){liqBindTab(found);return found;}
-        window.localStorage.setItem(key,JSON.stringify(newSession));
-        if(explicit)window.localStorage.removeItem(LIQ_RESET_PREFIX+identity.key);
-        const saved=liqGetClientSession(identity.key);
-        if(!saved)return null;
-        liqBindTab(saved);
-        liqTouchSession(saved);
-        liqLastNotice='';
-        liqLastLiveSignature='';
-        liqRender();
-        return saved;
-    }catch(_error){
-        liqLastNotice='Cannot create this client session.';
-        return null;
-    }
-}
-function liqResetSession(){
-    const current=liqActive();
-    if(!current)return;
-    try{
-        // Mark before removal to stop old tabs from recreating this client.
-        window.localStorage.setItem(LIQ_RESET_PREFIX+current.clientKey,String(Date.now()));
-        window.localStorage.removeItem(liqSessionStorageKey(current.clientKey));
-        liqPurgeSession(current);
-        const id=liqJobId();
-        if(id)window.sessionStorage.removeItem(liqBindingKey(id));
-    }catch(_error){liqLastNotice='Could not reset this client session.';}
-    liqLastLiveSignature='';
-    liqRender();
-}
-function liqMigrateTabJobs(){
-    const active=liqActive();
-    if(!active)return;
-    const flag=LIQ_MIGRATED_PREFIX+active.clientKey;
-    try{
-        if(window.localStorage.getItem(flag))return;
-        const oldRaw=window.localStorage.getItem(LIQ_LEGACY_ACTIVE_KEY);
-        const old=oldRaw&&JSON.parse(oldRaw);
-        if(old&&old.id&&old.clientKey===active.clientKey){
-            const oldJobPrefix=LIQ_LEGACY_JOB_PREFIX+old.id+':';
-            const oldDraftPrefix=LIQ_LEGACY_DRAFT_PREFIX+old.id+':';
-            const keys=[];
-            for(let i=0;i<window.localStorage.length;i++){
-                const key=window.localStorage.key(i);
-                if(key&&(key.startsWith(oldJobPrefix)||key.startsWith(oldDraftPrefix)))
-                    keys.push(key);
-            }
-            keys.forEach(function(key){
-                try{
-                    const item=JSON.parse(window.localStorage.getItem(key)||'null');
-                    if(!item||!/^\d+$/.test(String(item.id))||
-                        item.sessionKey!==active.clientKey)return;
-                    if(key.startsWith(oldJobPrefix)){
-                        const dest=liqJobKey(active,String(item.id));
-                        if(!window.localStorage.getItem(dest))
-                            liqSaveJob({...item,sessionId:active.id},active);
-                    }else{
-                        const dest=liqDraftKey(active,String(item.id));
-                        if(!window.localStorage.getItem(dest))
-                            window.localStorage.setItem(dest,JSON.stringify({
-                                ...item,sessionId:active.id
-                            }));
-                    }
-                }catch(_error){}
-            });
-        }
-        window.localStorage.setItem(flag,'true');
-    }catch(_error){}
-}
-function liqNewJobTotal(){
-    if(!liqIsNewJob())return null;
-    // Prefer the actual new-job content over shared/hidden template rows.
-    for(const query of [
-        '#newJobContent .totalPriceRow .totalPrice',
-        '#newJobContent .totalPrice',
-        '#newJobSteps .totalPriceRow .totalPrice',
-        '#newJobSteps .totalPrice'
-    ]){
-        const el=document.querySelector(query);
-        if(!el)continue;
-        const cents=liqParsePrice(el.textContent);
-        if(cents!==null)return cents;
-    }
-    return null;
-}
-function liqMoney(cents){
-    return '$'+(cents/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-}
-function liqParsePrice(value){
-    const text=String(value||'').trim();
-    const m=text.match(/^\$?\s*((?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.(\d{1,2}))?\s*$/);
-    if(!m)return null;
-    const amount=Number(m[1].replace(/,/g,''))*100+Number((m[2]||'').padEnd(2,'0'));
-    return Number.isSafeInteger(amount)&&amount>=0?amount:null;
-}
-function liqJobId(){
-    return spPdfCurrentJobId();
-}
-
-function liqJobName(){
-    const title=document.querySelector('#jobName');
-    const input=document.querySelector('#overview-jobName');
-    return String((title&&title.textContent.trim())||(input&&input.value)||'').trim();
-}
-function liqKey(value){
-    return String(value||'').trim().replace(/\s+/g,' ').toUpperCase();
-}
-function liqReturnIdentity(requireSaved){
-    const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
-    // The strict default remains authoritative for processing and switching.
-    // Read-only previews may match a filled address against an ALREADY active
-    // saved client, even when this tab lacks its own per-tab save receipt.
-    if(!form || spReturnIsSampleForm(form) ||
-       (requireSaved!==false && !spReturnSavedReady()))return null;
-    const read=function(key){
-        const field=spReturnFormField(form,key);
-        return String(field&&field.value||'');
-    };
-    const clean=function(value){
-        return liqKey(value).replace(/[.,'’]/g,'').replace(/\s+/g,' ').trim();
-    };
-    const street=function(value){
-        // Common USPS suffix, direction and unit spelling variations.
-        const words=liqKey(value).replace(/#/g,' UNIT ').replace(/[.,'’]/g,' ')
-            .replace(/\s+/g,' ').trim().split(' ');
-        const aliases={
-            STREET:'ST',ROAD:'RD',AVENUE:'AVE',BOULEVARD:'BLVD',
-            DRIVE:'DR',LANE:'LN',COURT:'CT',PLACE:'PL',
-            PARKWAY:'PKWY',HIGHWAY:'HWY',CIRCLE:'CIR',
-            NORTH:'N',SOUTH:'S',EAST:'E',WEST:'W',
-            APARTMENT:'UNIT',APT:'UNIT',SUITE:'UNIT',STE:'UNIT',
-            FLOOR:'FL'
-        };
-        return words.map(word=>aliases[word]||word).join(' ').trim();
-    };
-    const state=spStateCode(read('state'))||clean(read('state'));
-    const zipcode=clean(read('zip')).replace(/^(\d{5})[- ]\d{4}$/,'$1');
-    const country=clean(read('country')).replace(
-        /^(UNITED STATES(?: OF AMERICA)?|USA|U S A)$/,'US')||'US';
-    const parts=[
-        clean(read('name')),
-        street([read('address1'),read('address2')].filter(Boolean).join(' ')),
-        clean(read('city')),state,zipcode,country
-    ];
-    if(!parts[0]||!parts[1]||!parts[2]||!parts[3]||!parts[4])return null;
-    // Two independent compact checksums avoid storing the raw address.
-    // These identify the same saved name+address across separate jobs.
-    const value=JSON.stringify(parts);
-    let hashA=2166136261,hashB=2246822519;
-    for(let i=0;i<value.length;i++){
-        const code=value.charCodeAt(i);
-        hashA=Math.imul(hashA^code,16777619);
-        hashB=Math.imul(hashB^code,2246822519);
-    }
-    const key='RA:'+([hashA,hashB].map(function(n){
-        return (n>>>0).toString(16).padStart(8,'0');
-    }).join(''))+':'+value.length;
-    const display=spReturnFormField(form,'name');
-    return {key:key,name:String(display.value||'').trim()};
-}
-function liqDetectNewClient(){
-    const status=document.querySelector('#jobState');
-    if(!status||!/^new\b/i.test(status.textContent.trim())||
-       !document.querySelector('#newJobContent'))return;
-    const identity=liqReturnIdentity();
-    if(!identity)return;
-    liqStartSession(identity,false);
-    liqMigrateTabJobs();
-}
-function liqVerifiedReturnSaved(){
-    const identity=liqReturnIdentity();
-    if(!identity)return;
-    const active=liqStartSession(identity,true);
-    if(active&&active.clientKey===identity.key){
-        liqRememberReturnDisplay(identity);
-        liqMigrateTabJobs();
-        liqSyncDraft();
-    }
-    liqLastLiveSignature='';
-    liqRender();
-}
-function liqTarget(raw){
-    const key=liqKey(raw);
-    if(['EQU','EQ','EQUIFAX'].includes(key))return {key:'EQU',label:'Equifax'};
-    if(['EX','EXP','EXPERIAN'].includes(key))return {key:'EX',label:'Experian'};
-    if(['TU','TRANSUNION','TRANS UNION'].includes(key))return {key:'TU',label:'TransUnion'};
-    // Other destinations are creditors; do not silently count them as bureaus.
-    if(key && key.length<=48 && /^[A-Z0-9][A-Z0-9 .&/']*$/.test(key) &&
-       /[A-Z]/.test(key))return {key:'CR:'+key,label:key};
-    return null;
-}
-const LIQ_TYPES=new Set([
-    'LP','LATE','BK','BANKRUPTCY','CO','CHARGEOFF','CHARGE OFF','COL','COLL',
-    'COLLECTION','INQ','INQUIRY','INQUIRIES','REPO','FORECLOSURE',
-    'DELETE','DELETED','UPDATE','UPDATED','FRAUD','IDT','PA','PERSONAL INFO',
-    'ROUND1','ROUND2','RD1','RD2','RD3','RD4','RD5','RD6','RD7','RD8','RD9'
-]);
-function liqParseFileLabel(raw){
-    const original=String(raw||'').trim().split(/[\\/]/).pop()
-        .replace(/\.pdf$/i,'').replace(/[–—]/g,'-').trim();
-    const parts=original.split(/\s*-\s*/).map(x=>x.trim()).filter(Boolean);
-    if(parts.length<2)return null;
-    let hadType=false;
-    if(parts.length>=3 && LIQ_TYPES.has(liqKey(parts[parts.length-1]))){
-        parts.pop();hadType=true;
-    }
-    const destRaw=parts.pop();
-    const client=parts.join('-').replace(/\s+/g,' ').trim();
-    const dest=liqTarget(destRaw);
-    // "Mary-Anne" is probably a hyphenated name, not creditor "Anne".
-    if(!hadType && dest && dest.key.startsWith('CR:') &&
-       destRaw!==destRaw.toUpperCase() && !/\s/.test(destRaw)){
-        return null;
-    }
-    if(!client||!dest)return null;
-    return {client:client,target:dest.key,targetLabel:dest.label,label:original};
-}
-function liqFromFiles(names,jobName){
-    const files=names.filter(name=>/\.pdf$/i.test(String(name))).map(name=>String(name).trim());
-    if(!files.length){
-        const parsed=liqParseFileLabel(jobName);
-        return parsed?{...parsed,files:[],source:'job name'}:null;
-    }
-    const parsed=files.map(liqParseFileLabel);
-    const first=parsed[0];
-    const consistent=!!first && parsed.every(item=>item &&
-        liqKey(item.client)===liqKey(first.client) && item.target===first.target);
-    if(consistent)return {...first,files:files,source:'PDF filename'};
-    // One processed job has one total; never invent a client/destination
-    // or apply the same cost to multiple names when filenames conflict.
-    return null;
-}
-function liqActualPrice(){
-    const status=document.querySelector('#jobState');
-    const label=String(status&&status.textContent||'').trim();
-    const approval=document.querySelector('#approveJobContent');
-    if(!approval)return null;
-    // The old ^(processed|approved|mailed) test missed status phrases
-    // such as "Job has been processed" or "Processing complete".
-    const finished=/\b(processed|approved|mailed|completed|complete)\b/i.test(label);
-    const newJob=/^(new|draft)\b/i.test(label);
-    const visible=typeof approval.getClientRects==='function'&&
-        approval.getClientRects().length>0;
-    // Don't read a hidden approval template while still editing a new job.
-    if(newJob||(!finished&&!visible))return null;
-    for(const selector of [
-        '.totalPriceRow .totalPrice',
-        '.totalPrice',
-        '.totalPriceRow [data-total-price]'
-    ]){
-        const node=approval.querySelector(selector);
-        if(!node)continue;
-        const cents=liqParsePrice(node.textContent||node.value||'');
-        if(cents!==null)return cents;
-    }
-    return null;
-}
-function liqStageJob(){
-    const fail=function(reason){
-        liqLastNotice=reason;
-        try{liqRender();}catch(_error){}
-        return {ready:false,reason:reason};
-    };
-    const id=liqJobId();
-    if(!id)return fail('LIQUIDATION cannot identify the job number.');
-    const identity=liqReturnIdentity();
-    if(!identity)return fail('LIQUIDATION needs a confirmed saved Return Address.');
-    const jobName=liqJobName(),names=spPdfNamesFromPage();
-    const parsed=liqFromFiles(names,jobName);
-    if(!parsed||!parsed.target)return fail('LIQUIDATION cannot assign this job to one bureau or creditor.');
-    const active=liqActive()||liqStartSession(identity,false);
-    if(!active||active.clientKey!==identity.key)return fail(
-        'LIQUIDATION cannot match this job to its saved Return Address.');
-    liqMigrateTabJobs();
-    const previous=liqRead().jobs[id];
-    if(previous&&previous.status==='processed'&&Number.isSafeInteger(previous.priceCents))
-        return {ready:true};
-    const draft=liqDraftRecords(active)[id];
-    const freshQuote=liqNewJobTotal();
-    const quote=freshQuote!==null?freshQuote:
-        draft&&Number.isSafeInteger(draft.quotedCents)?draft.quotedCents:null;
-    const record={
-        id:id,jobName:jobName||'Job #'+id,files:parsed.files,
-        client:active.clientName,sessionKey:active.clientKey,sessionId:active.id,
-        target:parsed.target,targetLabel:parsed.targetLabel,source:parsed.source,
-        quotedCents:quote,priceCents:quote,status:'processing',
-        manual:false,updatedAt:Date.now()
-    };
-    if(previous&&previous.manual){
-        record.target=previous.target;
-        record.targetLabel=previous.targetLabel;
-        record.manual=true;
-    }
-    if(!liqSaveJob(record,active))return fail('LIQUIDATION could not store this job.');
-    try{liqRemoveDraft(id,active);liqLastNotice='';liqRender();}
-    catch(_error){console.warn('[SUPER-POSTAL] Quote saved, preview failed:',_error);}
-    return {ready:true};
-}
-function liqCaptureProcessed(){
-    const id=liqJobId(),cents=liqActualPrice();
-    if(!id||cents===null)return;
-    const active=liqActive();
-    if(!active)return;
-    liqMigrateTabJobs();
-    const data=liqRead();
-    const identity=liqReturnIdentity()||liqReturnIdentity(false);
-    if(identity&&identity.key!==active.clientKey)return;
-    let previous=data.jobs[id];
-    const draft=data.drafts[id];
-    if(!previous&&draft&&draft.sessionId===active.id&&
-       draft.sessionKey===active.clientKey&&
-       liqValidAssignment(active.clientName,draft.target)){
-        // Recovery of an uploaded quote that was never staged by the script.
-        previous={
-            id:id,jobName:draft.jobName||'Job #'+id,
-            files:draft.files,client:active.clientName,
-            sessionId:active.id,sessionKey:active.clientKey,
-            target:draft.target,targetLabel:draft.targetLabel,
-            source:'uploaded PDF (automatically reconciled)',
-            quotedCents:Number.isSafeInteger(draft.quotedCents)?
-                draft.quotedCents:null,
-            priceCents:null,status:'processing',manual:false,
-            updatedAt:Date.now()
-        };
-    }
-    if(!previous||previous.sessionId!==active.id||
-       previous.sessionKey!==active.clientKey)return;
-    const job={...previous};
-    const name=liqJobName();
-    if(name)job.jobName=name;
-    if(job.quotedCents===undefined){
-        job.quotedCents=Number.isSafeInteger(job.priceCents)?
-            job.priceCents:null;
-    }
-    if(job.priceCents===cents&&job.status==='processed')return;
-    // The verified final price replaces the pre-Process quote in all totals.
-    job.priceCents=cents;
-    job.status='processed';
-    job.updatedAt=Date.now();
-    if(liqSaveJob(job,active)){
-        liqRemoveDraft(id,active);
-        liqRender();
-    }
-}
-function liqValidAssignment(client,target){
-    const name=liqKey(client);
-    const dest=String(target||'');
-    return !!name && name!=='UNSORTED' && name!=='UNASSIGNED' &&
-        (dest==='EX'||dest==='EQU'||dest==='TU'||
-         (dest.startsWith('CR:') && !!liqTarget(dest.slice(3))));
-}
-function liqElement(tag,text,style){
-    const el=document.createElement(tag);
-    if(text!==undefined&&text!==null)el.textContent=String(text);
-    if(style)Object.assign(el.style,style);
-    return el;
-}
-function liqGroupData(data){
-    const clients=new Map();
-    const jobs=Object.values(data.jobs).filter(job=>job&&
-        /^\d+$/.test(String(job.id))&&
-        liqValidAssignment(job.client,job.target)&&
-        job.sessionKey===data.clientKey&&job.sessionId===data.sessionId);
-    // Show quoted uploads immediately. A processed/staged record supersedes
-    // the draft for the same job, so the amount is never counted twice.
-    Object.values(data.drafts||{}).forEach(draft=>{
-        if(!draft||! /^\d+$/.test(String(draft.id))||data.jobs[draft.id]||
-           draft.sessionKey!==data.clientKey||draft.sessionId!==data.sessionId||
-           !liqValidAssignment(data.clientName,draft.target))return;
-        jobs.push({id:draft.id,client:data.clientName,target:draft.target,
-            targetLabel:draft.targetLabel,files:draft.files,jobName:draft.jobName,
-            status:'uploaded',virtual:true,quotedCents:draft.quotedCents,
-            priceCents:draft.quotedCents});
-    });
-    jobs.forEach(job=>{
-        if(!clients.has(data.clientKey))clients.set(data.clientKey,{
-            client:data.clientName,key:data.clientKey,total:0,
-            processed:0,quoted:0,pending:0,targets:new Map()
-        });
-        const client=clients.get(data.clientKey),target=job.target;
-        if(!client.targets.has(target))client.targets.set(target,{
-            key:target,label:job.targetLabel||target.replace(/^CR:/,''),
-            total:0,processed:0,quoted:0,pending:0,jobs:[]
-        });
-        const group=client.targets.get(target);
-        group.jobs.push(job);
-        if(Number.isSafeInteger(job.priceCents)&&job.priceCents>=0){
-            client.total+=job.priceCents;group.total+=job.priceCents;
-            if(job.status==='processed'){client.processed++;group.processed++;}
-            else{client.quoted++;group.quoted++;}
-        }else{client.pending++;group.pending++;}
-    });
-    return Array.from(clients.values()).sort((a,b)=>a.client.localeCompare(b.client));
-}
-function liqRender(){
-    const panel=box.querySelector('#calculator');
-    if(!panel)return;
-    const data=liqRead();
-    const clients=liqGroupData(data);
-    const grand=clients.reduce((sum,cl)=>sum+cl.total,0);
-    const processed=clients.reduce((sum,cl)=>sum+cl.processed,0);
-    const quoted=clients.reduce((sum,cl)=>sum+cl.quoted,0);
-    const pending=clients.reduce((sum,cl)=>sum+cl.pending,0);
-    const total=panel.querySelector('#liqGrandTotal');
-    const count=panel.querySelector('#liqJobCount');
-    const list=panel.querySelector('#liqClientGroups');
-    const label=panel.querySelector('#liqSessionLabel');
-    if(!total||!count||!list)return;
-    if(label)label.textContent=data.clientName||'No active client';
-    const recover=panel.querySelector('#liqRecoverCurrent');
-    if(recover){
-        const id=liqJobId(),price=liqActualPrice();
-        const identity=liqReturnIdentity(),active=liqActive();
-        recover.hidden=!(active&&id&&price!==null&&!data.jobs[id]&&
-            (!identity||identity.key===active.clientKey));
-    }
-    const hint=panel.querySelector('#liqHint');
-    if(hint)hint.textContent=liqLastNotice||
-        'Separate temporary session per saved Return Address; matching jobs share totals across tabs.';
-    total.textContent=liqMoney(grand);
-    count.textContent=processed+' processed · '+quoted+' quoted · '+pending+' awaiting price';
-    list.replaceChildren();
-    if(!clients.length){
-        list.appendChild(liqElement('p',data.clientName?'No quoted jobs yet. Upload PDFs to calculate.':'Save a Return Address and upload PDFs to begin.',{
-            fontSize:'11px',padding:'8px 0',margin:'0'
-        }));
-        liqRenderLive();
-        return;
-    }
-    clients.forEach(cl=>{
-        const card=liqElement('section',null,{
-            border:'1px solid #b58723',borderRadius:'8px',
-            background:'rgba(255,255,255,.68)',marginBottom:'9px',
-            overflow:'hidden'
-        });
-        const header=liqElement('div',null,{
-            display:'flex',justifyContent:'space-between',alignItems:'center',
-            gap:'5px',padding:'9px 10px',background:'rgba(255,255,255,.55)'
-        });
-        const title=liqElement('strong',cl.client,{fontSize:'13px',overflowWrap:'anywhere'});
-        const amount=liqElement('strong',liqMoney(cl.total),{fontSize:'13px',whiteSpace:'nowrap'});
-        header.append(title,amount);
-        card.appendChild(header);
-        const groups=Array.from(cl.targets.values()).sort((a,b)=>{
-            const ord=['EQU','EX','TU'];const ia=ord.indexOf(a.key),ib=ord.indexOf(b.key);
-            if(ia!==-1||ib!==-1)return (ia===-1?99:ia)-(ib===-1?99:ib);
-            return a.label.localeCompare(b.label);
-        });
-        groups.forEach(g=>{
-            const details=liqElement('details',null,{
-                padding:'0 10px',borderTop:'1px solid rgba(0,0,0,.12)'
-            });
-            const summary=liqElement('summary',null,{
-                cursor:'pointer',padding:'8px 0',fontSize:'12px',fontWeight:'700'
-            });
-            const subtitle=liqElement('span',g.label+' · '+g.jobs.length,{
-                overflowWrap:'anywhere'
-            });
-            const sum=liqElement('span',liqMoney(g.total),{
-                float:'right',whiteSpace:'nowrap'
-            });
-            summary.append(subtitle,sum);
-            details.appendChild(summary);
-            g.jobs.sort((a,b)=>Number(b.id)-Number(a.id)).forEach(job=>{
-                const row=liqElement('div',null,{
-                    padding:'7px 0 9px',borderTop:'1px dashed rgba(0,0,0,.16)',
-                    fontSize:'11px',lineHeight:'1.5'
-                });
-                const top=liqElement('div',null,{
-                    display:'flex',justifyContent:'space-between',gap:'5px'
-                });
-                top.append(liqElement('strong','Job #'+job.id+' · '+
-                    (job.status==='processed'?'Processed':
-                     job.status==='processing'?'Processing':'Uploaded')),
-                    liqElement('strong',Number.isSafeInteger(job.priceCents)?
-                        liqMoney(job.priceCents):'Price unavailable'));
-                row.appendChild(top);
-                if(job.status==='processed'&&Number.isSafeInteger(job.quotedCents)&&
-                   job.quotedCents!==job.priceCents)row.appendChild(
-                    liqElement('div','Before processing: '+liqMoney(job.quotedCents),{
-                        fontSize:'10px',opacity:'.76'
-                    }));
-                const original=(Array.isArray(job.files)&&job.files.length)?
-                    job.files.join(', '):'PDF name not captured';
-                row.appendChild(liqElement('div',original,{
-                    overflowWrap:'anywhere',color:'#49320b'
-                }));
-                if(job.jobName&&job.jobName!==original)row.appendChild(
-                    liqElement('div','Job name: '+job.jobName,{
-                        overflowWrap:'anywhere',opacity:'.76'
-                    })
-                );
-                const actions=liqElement('div',null,{
-                    display:'flex',justifyContent:'flex-end',gap:'7px',marginTop:'4px'
-                });
-                const edit=liqElement('button','Edit sorting',{
-                    fontSize:'10px',border:'1px solid #ae8c39',borderRadius:'5px',
-                    background:'#fff',padding:'3px 6px',cursor:'pointer'
-                });
-                edit.type='button';edit.dataset.liqEdit=job.id;
-                const remove=liqElement('button','Remove',{
-                    fontSize:'10px',border:'1px solid #d4aa75',borderRadius:'5px',
-                    background:'#fff7ec',padding:'3px 6px',cursor:'pointer'
-                });
-                remove.type='button';remove.dataset.liqRemove=job.id;
-                actions.append(edit,remove);
-                row.appendChild(actions);
-                details.appendChild(row);
-            });
-            card.appendChild(details);
-        });
-        list.appendChild(card);
-    });
-    liqRenderLive();
-}
-function liqConnectControls(){
-    const panel=box.querySelector('#calculator');
-    if(!panel||panel.dataset.liqControls==='true')return;
-    panel.dataset.liqControls='true';
-    // Restore may rebuild this panel from saved HTML; refresh live contents.
-    liqLastLiveSignature='';
-    // Keep the exact existing floating-panel drag behavior; prevent text
-    // selection/expansion in the inner content from starting a panel drag.
-    panel.addEventListener('mousedown',event=>{
-        if(event.target.closest('button,summary,details,input,select'))
-            event.stopPropagation();
-    });
-    panel.addEventListener('click',function(event){
-        const edit=event.target.closest('button[data-liq-edit]');
-        const remove=event.target.closest('button[data-liq-remove]');
-        if(edit){
-            const active=liqActive();
-            if(!active)return;
-            const record=liqRead().jobs[edit.dataset.liqEdit];
-            if(!record)return;
-            const label=window.prompt('Bureau or creditor for Job #'+record.id,
-                record.targetLabel);
-            if(label===null)return;
-            const target=liqTarget(label);
-            if(!target){window.alert('Enter a valid bureau or creditor.');return;}
-            record.target=target.key;
-            record.targetLabel=target.label;
-            record.manual=true;
-            record.updatedAt=Date.now();
-            if(liqSaveJob(record,active))liqRender();
-            return;
-        }
-        if(remove){
-            liqRemoveJob(remove.dataset.liqRemove);
-            liqRender();return;
-        }
-        if(event.target.closest('#liqRecoverCurrent')){
-            liqRecoverCurrentJob();
-            return;
-        }
-        if(event.target.closest('#liqClearAll')){
-            if(!window.confirm('Reset this client liquidation session?'))return;
-            liqResetSession();
-        }
-
-    });
-    liqRender();
-}
-function liqRecoverCurrentJob(){
-    const active=liqActive(),id=liqJobId(),cents=liqActualPrice();
-    if(!active||!id||cents===null)return;
-    const identity=liqReturnIdentity();
-    if(identity&&identity.key!==active.clientKey){
-        window.alert('This processed job has a different saved Return Address. It cannot be recovered into the current client.');
-        return;
-    }
-    if(liqRead().jobs[id])return;
-    const name=liqJobName();
-    const parsed=liqFromFiles([],name);
-    const fallback=parsed?null:window.prompt('Enter the bureau or creditor for this job (TU, EQ, EX, AMEX, etc.):','');
-    if(fallback===null && !parsed)return;
-    const target=parsed?{key:parsed.target,label:parsed.targetLabel}:liqTarget(fallback);
-    if(!target){
-        window.alert('Choose a valid bureau or creditor.');
-        return;
-    }
-    if(!window.confirm('Recover processed Job #'+id+' ('+liqMoney(cents)+
-        ') into '+active.clientName+'? Confirm the job belongs to this client.'))return;
-    if(liqRead().jobs[id])return;
-    const job={id:id,jobName:name||'Job #'+id,files:[],
-        client:active.clientName,sessionKey:active.clientKey,sessionId:active.id,
-        target:target.key,targetLabel:target.label,
-        source:'manual recovery (original PDF filename unavailable)',
-        priceCents:cents,status:'processed',manual:true,updatedAt:Date.now()};
-    if(liqSaveJob(job,active)){liqLastNotice='';liqRender();}
-    else window.alert('Recovery could not be saved. The active client may have changed.');
-}
-// Register with the outer Process-this-job safety guard.
-spLiquidationStageJob=liqStageJob;
-liqConnectControls();
-window.addEventListener('sp:verifiedReturnAddressSaved',liqVerifiedReturnSaved);
-window.addEventListener('storage',function(event){
-    if(event.key&&(event.key.startsWith(LIQ_SESSION_PREFIX)||
-                   event.key.startsWith(LIQ_JOB_PREFIX))){
-        liqLastLiveSignature='';
-        liqRender();
-    }else if(event.key&&event.key.startsWith(LIQ_DRAFT_PREFIX)){
-        liqLastLiveSignature='';
-        liqRender();
-    }
-});
-document.addEventListener('input',function(event){
-    if(event.target&&event.target.closest&&
-       event.target.closest('#settingsReturnAddress-Modal'))liqRenderLive();
-},true);
-document.addEventListener('change',function(event){
-    if(event.target&&event.target.closest&&
-       event.target.closest('#settingsReturnAddress-Modal'))liqRenderLive();
-},true);
-liqDetectNewClient();
-liqMigrateTabJobs();
-liqCaptureProcessed();
-liqSyncDraft();
-liqRenderLive();
-setInterval(function(){
-    liqSyncDraft();
-    liqRenderLive();
-},800);
-setInterval(function(){
-    liqDetectNewClient();
-    liqCaptureProcessed();
-    // Fallback for tabs that miss a storage event.
-    const data=liqRead();
-    const signature=data.sessionId+JSON.stringify(Object.values(data.jobs)
-        .map(j=>[j.id,j.priceCents,j.target,j.status]).sort())+
-        JSON.stringify(Object.values(data.drafts).map(d=>[
-            d.id,d.quotedCents,d.target,d.files]).sort());
-    if(signature!==liqLastView){liqLastView=signature;liqRender();}
-},2200);
 
 ///////////////////////////////
 // MASCOT SETTINGS
@@ -2787,10 +1678,9 @@ let offsetY=0;
 
 box.addEventListener("mousedown",function(e){
 
-    if(
-        e.target.tagName==="BUTTON" || 
-        e.target.tagName==="INPUT"
-    )
+    if(box.dataset.minimized==="true" ||
+       e.target.tagName==="BUTTON" ||
+       e.target.tagName==="INPUT")
         return;
 
     dragging=true;
@@ -2823,116 +1713,84 @@ document.addEventListener("mouseup",function(){
 });
 
 ///////////////////////////////
-// MINIMIZE
+// MINIMIZE / RESTORE
 ///////////////////////////////
 
-let savedHTML="";
+// An actual child is kept for each state, so restoring the panel does not
+// detach its mascot, duplicate buttons, or call undefined functions.
+const miniMascot=document.createElement('img');
+miniMascot.src='https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts='+Date.now();
+Object.assign(miniMascot.style,{
+    width:'60px',
+    height:'60px',
+    objectFit:'contain',
+    pointerEvents:'none',
+    userSelect:'none',
+    display:'none'
+});
+box.appendChild(miniMascot);
 
 function minimizeBox(){
-
-    savedHTML =
-        box.innerHTML;
-
-    box.dataset.minimized="true";
-
-    box.innerHTML=`
-        <img
-            src="https://raw.githubusercontent.com/doreso999-crypto/SUPER-POSTAL/main/awts.png?ts=${Date.now()}"
-            style="
-                width:60px;
-                height:60px;
-                object-fit:contain;
-                display:block;
-                pointer-events:none;
-                user-select:none;
-            "
-        >
-    `;
-
+    if(box.dataset.minimized==='true')return;
+    box.dataset.minimized='true';
+    dragging=false;
+    mascot.style.display='none';
+    minimize.style.display='none';
+    miniMascot.style.display='block';
     Object.assign(box.style,{
-        width:"60px",
-        height:"60px",
-        padding:"0",
-        borderRadius:"50%",
-        background:"transparent",
-        boxShadow:"none",
-        right:"15px",
-        top:"120px",
-        left:"auto",
-        display:"flex",
-        alignItems:"center",
-        justifyContent:"center",
-        cursor:"pointer",
-        overflow:"hidden"
+        width:'60px',
+        height:'60px',
+        minHeight:'0px',
+        padding:'0',
+        borderRadius:'50%',
+        background:'transparent',
+        boxShadow:'none',
+        right:'15px',
+        top:'120px',
+        left:'auto',
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        cursor:'pointer',
+        overflow:'hidden'
     });
-
-    box.onmousedown=null;
-
-    box.onclick=function(){
-        restoreBox();
-    };
-
 }
 
 function restoreBox(){
-
-    box.dataset.minimized="false";
-
-    box.innerHTML =
-        savedHTML;
-
+    if(box.dataset.minimized!=='true')return;
+    box.dataset.minimized='false';
+    miniMascot.style.display='none';
+    mascot.style.display='block';
+    minimize.style.display='block';
     Object.assign(box.style,{
-        width:"320px",
-        height:"auto",
-        padding:"25px",
-        borderRadius:"12px",
-        background:"rgb(242,179,46)",
-        boxShadow:"0 0 15px rgba(0,0,0,.45)",
-        top:"120px",
-        right:"15px",
-        left:"auto",
-        display:"block",
-        cursor:"move",
-        overflow:"visible"
+        width:'320px',
+        height:'auto',
+        minHeight:'240px',
+        padding:'25px',
+        borderRadius:'12px',
+        background:'rgb(242,179,46)',
+        boxShadow:'0 0 15px rgba(0,0,0,.45)',
+        top:'120px',
+        right:'15px',
+        left:'auto',
+        display:'block',
+        cursor:'move',
+        overflow:'visible'
     });
-
-    mascot.style.display = "block";
-
-    box.onclick=null;
-
-    box.querySelector(
-        "#minimizeTotals"
-    ).onclick=function(e){
-
-        e.stopPropagation();
-
-        minimizeBox();
-
-    };
-
-    reconnectLiquidation();
-
-    enableDrag();
-
 }
 
-function reconnectLiquidation(){
-    const panel=box.querySelector('#calculator');
-    if(panel)panel.removeAttribute('data-liq-controls');
-    liqConnectControls();
-}
-
-minimize.onclick=function(e){
-
+minimize.addEventListener('click',function(e){
     e.stopPropagation();
-
     minimizeBox();
-
-};
+});
+box.addEventListener('click',function(e){
+    if(box.dataset.minimized==='true'){
+        e.stopPropagation();
+        restoreBox();
+    }
+});
 
 document.body.appendChild(box);
-
-// Liquidation is ready; no input needs focus.
 
 })();
 
