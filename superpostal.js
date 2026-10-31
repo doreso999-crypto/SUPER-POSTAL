@@ -2084,7 +2084,6 @@ document.body.appendChild(box);
     const fields=['name','company1','company2','address1','address2','city','state','zip','country'];
     let error='', lastView='', lastHeartbeat=0;
     const observed=new Map(), recovered=new Map(), recoveryAttempts=new Set();
-    let recovering=false, recoveryMessage='';
     const norm=v=>String(v||'').normalize('NFKC').trim().replace(/\s+/g,' ').toUpperCase();
     function canonical(a){
         return fields.map(k=>k==='state'?(spStateCode(a[k])||norm(a[k])):
@@ -2166,27 +2165,25 @@ document.body.appendChild(box);
         }
         const recovery=recovered.get(id());return recovery?recovery.address:null;
     }
+    // Best-effort discovery only. A job with no confirmed saved address stays
+    // untracked, without displaying an error or asking for a manual link.
     async function recoverSavedJob(){
         const jobId=id();
         if(!jobId||recoveryAttempts.has(jobId)||read('job:'+jobId))return;
-        recoveryAttempts.add(jobId);recovering=true;recoveryMessage='';
+        recoveryAttempts.add(jobId);
         try{
             const url=new URL('/jobui',location.origin);url.searchParams.set('edit','true');url.searchParams.set('id',jobId);
             const response=await fetch(url.href,{credentials:'same-origin'});
-            if(!response.ok)throw new Error('Saved settings could not be loaded.');
+            if(!response.ok)return;
             const destination=new URL(response.url||url.href);
-            if(destination.origin!==location.origin||destination.pathname!=='/jobui'||destination.searchParams.get('id')!==jobId)
-                throw new Error('Saved settings require opening this job.');
+            if(destination.origin!==location.origin||destination.pathname!=='/jobui'||destination.searchParams.get('id')!==jobId)return;
             const doc=new DOMParser().parseFromString(await response.text(),'text/html');
             const address=savedAddressFrom(doc);
             const name=doc.querySelector('#overview-jobName');
-            // The server often renders the job name but fills its return
-            // address via a later request. Preserve the name for an explicit
-            // local client link even when the address is absent in fetched HTML.
             recovered.set(jobId,{address:address||null,name:name?name.value:''});
-            if(!address)throw new Error('This saved address was not available in the fetched job page. If this job belongs to a tracked client, link it below.');
-        }catch(e){recoveryMessage=e.message;}
-        finally{recovering=false;lastView='';tick();}
+        }catch(_error){
+            // Missing or inaccessible job settings must not interrupt tracking.
+        }finally{lastView='';tick();}
     }
     function recipientForm(){
         const a={};fields.forEach(k=>{const f=document.querySelector('#contactModal [name="extractedAddress.'+k+'"]');a[k]=f?f.value.trim():'';});return a;
@@ -2522,63 +2519,6 @@ document.body.appendChild(box);
         if(session&&Date.now()-lastHeartbeat>15000){session.seen=Date.now();write('session:'+key,session);lastHeartbeat=Date.now();}
         return r;
     }
-    // The server-side job editor sometimes fetches the return address with
-    // JavaScript. Its read-only HTML response then has no saved address at all.
-    // Offer an explicit local link to an already tracked sender rather than
-    // guessing, silently pooling different clients, or asking for re-entry.
-    function linkableSessions(){
-        return keys().filter(k=>k.startsWith('session:')).map(k=>({
-            key:k.slice(8),record:read(k)
-        })).filter(x=>x.record&&!x.record.ended&&!x.record.mergedInto&&
-            complete(x.record.address)&&
-            keys().some(k=>{
-                if(!k.startsWith('job:'))return false;
-                const j=read(k);
-                return j&&!j.deleted&&j.session===x.key&&named(j)&&visibleJob(j);
-            })).sort((a,b)=>norm(a.record.address.name).localeCompare(norm(b.record.address.name)))
-            .map(x=>({key:x.key,label:x.record.address.name+' — '+
-                x.record.address.city+', '+x.record.address.state+' '+x.record.address.zip}));
-    }
-    function linkJobToClient(key){
-        const jobId=id(),client=read('session:'+key),existing=read('job:'+jobId);
-        if(!/^\d+$/.test(String(jobId||''))||!client||client.ended||client.mergedInto||
-           !complete(client.address)||existing&&existing.deleted)return false;
-        // An explicitly cleared client's job must not silently reactivate.
-        if(existing&&read('session:'+existing.session)?.ended)return false;
-        const input=document.querySelector('#overview-jobName')||document.querySelector('#jobNameTop');
-        const fetched=recovered.get(jobId);
-        const name=String(input&&(input.value||input.textContent)||
-            existing&&existing.name||fetched&&fetched.name||'').trim();
-        if(!named({name}))return false;
-        const confirmed=window.confirm(
-            'Link job #'+jobId+' ('+name+') to the existing client "'+
-            client.address.name+'"?\n\nOnly choose this if the job really uses that saved return address in Postalocity. '+
-            'This links local Client Totals records; it does not change the job or address on Postalocity.'
-        );
-        if(!confirmed)return false;
-        const state=document.querySelector('#jobState');
-        const status=String(state&&state.textContent||existing&&existing.status||'').trim();
-        const price=priceSnapshot();
-        const job=Object.assign({id:String(jobId),recipients:[],cents:null},existing||{},{
-            id:String(jobId),session:key,name
-        });
-        if(status)job.status=status;
-        if(approvedState(status))job.approved=true;
-        if(price.valid&&/(?:processed|approved|mailed|ready for approval|awaiting approval|pending approval)/i.test(status)){
-            job.cents=price.cents;job.priceNeedsReview=false;
-        }else if(price.found&&!price.valid&&isProcessed(job)){
-            job.priceNeedsReview=true;
-        }
-        const recipientList=recipientsOnPage();
-        if(recipientList)job.recipients=recipientList;
-        const uploaded=typeof spPdfNamesFromPage==='function'?spPdfNamesFromPage():[];
-        if(uploaded.length)job.letters=[...new Set(uploaded.filter(v=>typeof v==='string'&&/\.pdf$/i.test(v)))];
-        if(!write('job:'+jobId,job))return false;
-        // No altered sender, no invented recipient, and no synthetic approval.
-        if(!isApproved(job)&&!isProcessed(job))markActive(jobId);
-        recoveryMessage='';recovering=false;lastView='';tick();
-        return true;
-    }
     // Capture recipient only after Postalocity reports a successful add.
     function hookRecipientSave(){
         let api;try{api=typeof apiAction!=='undefined'?apiAction:window.apiAction;}catch(e){}
@@ -2714,7 +2654,7 @@ document.body.appendChild(box);
         const tracked=session&&!session.ended?sessionJobs(r.session):[];
         const jobs=tracked.filter(countable);
         const groups=bureauSummary(jobs);
-        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error,recovering,recoveryMessage]);
+        const view=JSON.stringify([r,session&&session.address,session&&session.ended,jobs,error]);
         if(view===lastView)return;lastView=view;
         panel.replaceChildren();
         // The single CLIENT TOTALS heading lives in the yellow outer header.
@@ -2731,44 +2671,17 @@ document.body.appendChild(box);
         }
         if(!r||!session||session.ended){
             const ended=!!(session&&session.ended);
-            const card=ended
-                ?emptyCard('↺','Session ended','Start a new session to track more jobs.')
-                :recovering
-                    ?emptyCard('…','Checking saved settings','Looking for this job’s saved return address.')
-                    :recoveryMessage
-                        ?emptyCard('!','Return address unavailable',recoveryMessage)
-                        :emptyCard('01','Add a return address','Save it in Job Settings to start tracking this client.');
             const existing=read('job:'+id()),old=existing&&read('session:'+existing.session);
-            if(old&&old.ended){
-                const start=el('button','Start new session');
-                start.onclick=()=>{remove('session:'+existing.session);observed.clear();keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===existing.session)remove(k);});lastView='';tick();};
-                card.append(start);
-            }else if(!recovering&&id()){
-                const link=el('a','Open job settings');
-                const url=new URL('/jobui',location.origin);url.searchParams.set('edit','true');url.searchParams.set('id',id());
-                link.href=url.href;card.append(link);
-                if(!recoveryAttempts.has(id()))recoverSavedJob();
-            }
-            // This choice uses an existing saved sender in the local ledger.
-            // It is never automatic; Postalocity's address is not edited.
-            if(!ended&&!recovering&&id()&&recoveryMessage){
-                const candidates=linkableSessions();
-                if(candidates.length){
-                    const chooser=el('select');
-                    chooser.id='spLedgerLinkClient';
-                    chooser.style.cssText='width:100%;max-width:100%;min-height:36px;padding:7px;border:1px solid #bdc8d5;border-radius:8px;background:#fff;color:#24364a;font:12px Arial,sans-serif';
-                    const first=el('option','Choose existing client');first.value='';chooser.append(first);
-                    candidates.forEach(client=>{
-                        const option=el('option',client.label);option.value=client.key;chooser.append(option);
-                    });
-                    if(candidates.length===1)chooser.value=candidates[0].key;
-                    const linkButton=el('button','Link to tracked client');
-                    linkButton.type='button';
-                    linkButton.onclick=()=>{if(chooser.value)linkJobToClient(chooser.value);};
-                    const explanation=el('p','If this job uses the same saved sender as another tracked job, select that client. This does not modify Postalocity.');
-                    explanation.className='sp-ledger-onboard-desc';
-                    card.append(explanation,chooser,linkButton);
+            if(ended){
+                const card=emptyCard('↺','Session ended','Start a new session to track more jobs.');
+                if(old&&old.ended){
+                    const start=el('button','Start new session');
+                    start.onclick=()=>{remove('session:'+existing.session);observed.clear();keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===existing.session)remove(k);});lastView='';tick();};
+                    card.append(start);
                 }
+            }else{
+                emptyCard(null,'No tracked jobs yet','Only named jobs with a saved return address are counted.');
+                if(id()&&!recoveryAttempts.has(id()))recoverSavedJob();
             }
             return;
         }
