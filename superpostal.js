@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3.9
+// @version      1.4.0
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -1263,9 +1263,9 @@ const SP_PROCESS_SCARE_MEDIA={
     audio:'',
     fallbackMs:1900
 };
-// Normal setting: 1% chance per eligible Process Job attempt.
+// Normal setting: 1% chance per eligible Process Job attempt; never block processing.
 const SP_PROCESS_SCARE_CHANCE=0.01;
-let spScarePending=null,spScareBypass=false;
+let spScarePending=null;
 // A button click may trigger a form submit in the same browser event cycle.
 // Use the SAME chance for that click/submit pair, never a second 1% roll.
 let spScareRegularSubmitForm=null,spScareRegularSubmitTimer=null;
@@ -1336,30 +1336,11 @@ function spScareClose(pending){
     return true;
 }
 function spScareProceed(pending){
-    if(!spScareClose(pending))return;
-    // Never silently process if a recipient, PDF, name, or return address
-    // became incomplete while the preview was playing.
-    let readiness;
-    try{readiness=spJobDetailsReadiness();}
-    catch(_e){readiness={ready:false,missing:['Job details could not be verified']};}
-    if(!readiness.ready){
-        spProcessJobWarning(readiness.missing,pending.control);
-        spShowProcessToast(readiness.missing);
-        spQueueRecipientOverview();
-        return;
-    }
-    // Bypass only this replay and its synchronous submit event.
-    // The native handler remains the sole owner of actual job processing.
-    spScareBypass=true;
-    try{
-        if(pending.control&&pending.control.isConnected!==false&&typeof pending.control.click==='function'){
-            pending.control.click();
-        }else if(pending.form&&typeof pending.form.requestSubmit==='function'){
-            pending.form.requestSubmit();
-        }
-    }finally{
-        setTimeout(function(){spScareBypass=false;},0);
-    }
+    // The original trusted Process Job action already ran when the user
+    // clicked. Only dismiss the ornament; NEVER click/submit again.
+    // Replaying a synthetic click after playback can silently fail or
+    // accidentally process the same job twice.
+    spScareClose(pending);
 }
 function spScarePreview(control,form){
     if(spScarePending)return;
@@ -1386,7 +1367,7 @@ function spScarePreview(control,form){
     const overlay=document.createElement('div');overlay.id='spProcessScare';
     overlay.setAttribute('role','dialog');
     overlay.setAttribute('aria-modal','true');
-    overlay.setAttribute('aria-label','Fullscreen horror clip before processing job; press Escape to cancel');
+    overlay.setAttribute('aria-label','Fullscreen horror clip while processing job; press Escape to close');
     overlay.tabIndex=-1;
     const stage=document.createElement('div');stage.className='sp-scare-stage';
     const pending={control,form,overlay,media:null,visual:null,stopSound:null,timer:null,done:false,fallback:false,
@@ -1483,27 +1464,21 @@ function spScarePreview(control,form){
 }
 function spProcessScareGuard(event,control){
     if(spBlockIncompleteProcess(event,control))return true;
-    if(spScareBypass)return false;
     // When an ordinary Process click submits its form, don't re-roll on submit.
     if(event.type==='submit'&&spScareRegularSubmitForm===event.target){
         spScareMarkRegularSubmit(null);
         return false;
     }
-    if(!spScarePending&&Math.random()>=SP_PROCESS_SCARE_CHANCE){
-        if(event.type==='click'){
-            const form=control&&(control.form||
-                (typeof control.closest==='function'?control.closest('form'):null));
-            spScareMarkRegularSubmit(form);
-        }
-        return false; // no interruption; original processing continues
-    }
-    spProcessScareStop(event);
-    if(!spScarePending){
-        const form=event.type==='submit'?event.target:
-            control&&control.form?control.form:null;
-        spScarePreview(control,form);
-    }
-    return true;
+    // If the overlay is already active, do not restart it.
+    if(spScarePending)return false;
+    const form=event.type==='submit'?event.target:
+        control&&(control.form||
+            (typeof control.closest==='function'?control.closest('form'):null));
+    if(event.type==='click')spScareMarkRegularSubmit(form);
+    if(Math.random()<SP_PROCESS_SCARE_CHANCE)spScarePreview(control,form);
+    // CRITICAL: Do not preventDefault/stopPropagation. The real, trusted
+    // browser click/submit must reach Postalocity exactly once.
+    return false;
 }
 
 function spInstallProcessJobGuard(){
