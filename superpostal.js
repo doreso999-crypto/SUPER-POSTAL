@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3.4
+// @version      1.3.5
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -1896,6 +1896,13 @@ spAddRecipientBureauDropdown();
 // FLOATING SIDE PANEL
 ///////////////////////////////
 (function(){
+// The site-wide loader must show this panel only for a specific job.
+const spJobPath=location.pathname.replace(/\/+$/, '');
+const spJobId=new URLSearchParams(location.search).get('id')||'';
+if(spJobPath!=='/jobui'||!/^\d+$/.test(spJobId)){
+    document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
+    return;
+}
 
 // White totals panel with a yellow header and a decorative peeking image.
 // No accounting, price tracking, filenames, or client-session logic.
