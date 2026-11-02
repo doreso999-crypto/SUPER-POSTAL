@@ -2023,9 +2023,40 @@ function ensureThirdColumn(anchor){
     }
     return slot;
 }
+// Approved and unapproved jobs have different DOM structures.
+// Select the top, substantial center column containing the job form,
+// rather than assuming the approval-only section exists.
+function findDockAnchor(){
+    const root=document.querySelector('#jobPageContent')||
+        document.querySelector('.jobPageContent');
+    if(!root)return null;
+    const approved=root.querySelector('#approvedJobContent .approveBox');
+    if(approved&&approved.getBoundingClientRect().width>0&&
+       approved.getBoundingClientRect().height>0)return approved;
+    const candidates=Array.from(root.querySelectorAll(
+        '.row > .col-md-6, .row > .col-lg-6'
+    )).filter(node=>{
+        const row=node.parentElement;
+        if(!row||!row.classList.contains('row'))return false;
+        const r=node.getBoundingClientRect();
+        return r.width>=120&&r.height>=35;
+    });
+    const upload=document.querySelector('#sourceUploadedList');
+    const related=upload&&candidates.find(node=>node.contains(upload));
+    if(related)return related;
+    const form=candidates.find(node=>
+        node.querySelector('#sourceUploadedList, [id*="uploadPdf"], [id*="uploadPDF"], [id*="sourceUpload"]'));
+    if(form)return form;
+    // At unapproved jobs the large first center column is the step form;
+    // a short job-state heading row is not the correct anchor.
+    const substantial=candidates.filter(node=>node.getBoundingClientRect().height>=140);
+    const group=substantial.length?substantial:candidates;
+    return group.sort((a,b)=>
+        a.getBoundingClientRect().top-b.getBoundingClientRect().top)[0]||null;
+}
 function dockToApproval(){
     queuedDock=false;
-    const target=document.querySelector('#approvedJobContent .approveBox');
+    const target=findDockAnchor();
     if(target!==watchedAnchor){
         watchedAnchor=target;
         if(dockResizeObserver){
@@ -2036,7 +2067,8 @@ function dockToApproval(){
         }
     }
     const slot=target?ensureThirdColumn(target):null;
-    const home=slot||document.querySelector('#jobPageContent')||document.body;
+    const home=slot||document.querySelector('#jobPageContent')||
+        document.querySelector('.jobPageContent')||document.body;
     if(box.parentElement!==home)home.appendChild(box);
 
     const viewportWidth=window.innerWidth||document.documentElement.clientWidth;
@@ -2062,17 +2094,32 @@ function dockToApproval(){
         Math.abs(slotRect.top-rect.top)<40);
     const mascotOverhang=Math.max(0,mascotHeight-mascotOverlap+10);
     box.dataset.dockSide=sideBySide?'third':slot?'stacked':'fallback';
-    // On desktop the panel starts 3px below the top of the third column.
-    // When columns stack, leave space for the mascot above the panel.
-    // Never use position:fixed or position:sticky, even on scroll.
-    Object.assign(box.style,{
-        position:'relative',
-        top:PANEL_TOP_OFFSET+'px',
-        left:'auto',
-        right:'auto',
-        bottom:'auto',
-        margin:(sideBySide?'0':mascotOverhang+'px')+' auto 15px'
-    });
+    if(!slot){
+        // If the editor is still loading, display near the TOP-RIGHT of
+        // the job area rather than adding an in-flow box at the bottom.
+        if(home!==document.body&&window.getComputedStyle(home).position==='static'){
+            home.style.position='relative';
+        }
+        Object.assign(box.style,{
+            position:'absolute',
+            top:'3px',
+            left:'auto',
+            right:'12px',
+            bottom:'auto',
+            margin:'0'
+        });
+    }else{
+        // Real third-column placement: scrolls with the page, never sticky.
+        // On stacked mobile layout reserve room for the mascot.
+        Object.assign(box.style,{
+            position:'relative',
+            top:PANEL_TOP_OFFSET+'px',
+            left:'auto',
+            right:'auto',
+            bottom:'auto',
+            margin:(sideBySide?'0':mascotOverhang+'px')+' auto 15px'
+        });
+    }
     // Restore the ledger's existing CSS max-height (72vh) rather than a
     // viewport-scroll-dependent inline height.
     const ledger=box.querySelector('#spLedgerPanel');
@@ -2084,7 +2131,7 @@ if(window.visualViewport){
     window.visualViewport.addEventListener('resize',scheduleDock,{passive:true});
 }
 const approvalObserver=new MutationObserver(function(){
-    const current=document.querySelector('#approvedJobContent .approveBox');
+    const current=findDockAnchor();
     if(current!==watchedAnchor||
        (thirdColumn&&!thirdColumn.isConnected))scheduleDock();
 });
