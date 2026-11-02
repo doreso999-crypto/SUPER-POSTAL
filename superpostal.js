@@ -1939,7 +1939,7 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    transform:'translate(-50%, 100px)',
+    transform:'translate(-50%, 40px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
@@ -1984,15 +1984,16 @@ header.appendChild(heading);
 box.appendChild(header);
 
 ///////////////////////////////
-// RESPONSIVE FIXED DOCKING
+// THIRD-COLUMN RESPONSIVE DOCKING
 ///////////////////////////////
-// Dock to Postalocity's own approval column rather than a fixed screen
-// coordinate. Coordinates come from the actual rendered element, so browser
-// zoom, Bootstrap breakpoints, scrolling and window resizing are supported.
-const DOCK_GAP=10;
+// The approved job page has a 3 + 6 Bootstrap row. Give its rightmost
+// 3-column slot a real DOM element, instead of treating viewport whitespace
+// as a column. The panel is never draggable or minimized.
 const EDGE_GAP=12;
+const PANEL_TOP_OFFSET=3;
 let queuedDock=false;
 let watchedAnchor=null;
+let thirdColumn=null;
 const dockResizeObserver=typeof ResizeObserver==='function'
     ?new ResizeObserver(scheduleDock):null;
 
@@ -2012,99 +2013,123 @@ function scheduleDock(){
     queuedDock=true;
     requestAnimationFrame(dockToApproval);
 }
+function ensureThirdColumn(anchor){
+    const row=anchor&&anchor.parentElement;
+    if(!row||!row.classList.contains('row'))return null;
+    let slot=row.querySelector(':scope > #spTotalsThirdColumn');
+    if(!slot){
+        // Reuse the existing third column when it is empty; otherwise
+        // create one after the approved content (3 + 6 + 3 = 12).
+        const next=anchor.nextElementSibling;
+        if(next&&next.classList.contains('col-md-3')&&!next.children.length){
+            slot=next;
+            slot.id='spTotalsThirdColumn';
+        }else{
+            slot=document.createElement('div');
+            slot.id='spTotalsThirdColumn';
+            slot.className='col-md-3';
+            anchor.insertAdjacentElement('afterend',slot);
+        }
+    }
+    if(slot!==thirdColumn){
+        thirdColumn=slot;
+        if(dockResizeObserver)dockResizeObserver.observe(slot);
+    }
+    return slot;
+}
 function dockToApproval(){
     queuedDock=false;
-    if(!box.isConnected)return;
     const vp=visibleViewport();
-    const target=document.querySelector('.approveBox');
+    const target=document.querySelector('#approvedJobContent .approveBox');
+    const rect=target&&target.getBoundingClientRect();
+    const anchor=rect&&rect.width>0&&rect.height>0?rect:null;
     if(target!==watchedAnchor){
         watchedAnchor=target;
         if(dockResizeObserver){
             dockResizeObserver.disconnect();
             dockResizeObserver.observe(box);
             if(target)dockResizeObserver.observe(target);
+            if(thirdColumn)dockResizeObserver.observe(thirdColumn);
         }
     }
-    const raw=target&&target.getBoundingClientRect();
-    const anchor=raw&&raw.width>0&&raw.height>0?raw:null;
-    const usableViewportWidth=Math.max(60,vp.width-EDGE_GAP*2);
-    const desiredWidth=Math.min(320,usableViewportWidth,
-        Math.max(220,anchor?Math.round(anchor.width*.55):320));
-    let dockSide='right';
-    let panelWidth=desiredWidth;
-    let x=vp.right-panelWidth-EDGE_GAP;
+    const slot=anchor?ensureThirdColumn(target):null;
+    const slotRect=slot&&slot.getBoundingClientRect();
+    const inThirdColumn=!!(anchor&&slotRect&&
+        slotRect.width>=180&&
+        slotRect.left>=anchor.right-3&&
+        Math.abs(slotRect.top-anchor.top)<40&&
+        slotRect.left<vp.right-EDGE_GAP&&
+        slotRect.right>vp.left+EDGE_GAP);
+    if(slot&&box.parentElement!==slot)slot.appendChild(box);
+    if(!slot&&box.parentElement!==document.body)document.body.appendChild(box);
 
-    if(anchor){
-        // Prefer adjacent columns, WITHOUT ever clamping a full-width
-        // panel back across the approval column at high browser zoom.
-        const rightSpace=Math.max(0,vp.right-EDGE_GAP-(anchor.right+DOCK_GAP));
-        const leftSpace=Math.max(0,(anchor.left-DOCK_GAP)-(vp.left+EDGE_GAP));
-        const sideChoices=[
-            {side:'right',available:rightSpace},
-            {side:'left',available:leftSpace}
-        ];
-        // Keep the same side when both can accommodate the ideal width;
-        // otherwise use the larger gap and shrink the panel to fit.
-        const fitting=sideChoices.filter(v=>v.available>=desiredWidth);
-        const best=fitting[0]||sideChoices.sort((a,b)=>b.available-a.available)[0];
-        if(best.available>=Math.min(160,usableViewportWidth)){
-            dockSide=best.side;
-            panelWidth=Math.max(60,Math.min(desiredWidth,best.available));
-            x=dockSide==='right'?anchor.right+DOCK_GAP:
-                anchor.left-DOCK_GAP-panelWidth;
-        }else{
-            // At mobile widths neither side is usable. Try a completely
-            // separate vertical slot before considering a reduced-size tab.
-            const topSpace=anchor.top-vp.top-EDGE_GAP-DOCK_GAP;
-            const bottomSpace=vp.bottom-anchor.bottom-EDGE_GAP-DOCK_GAP;
-            if(bottomSpace>=180||topSpace>=180){
-                dockSide=bottomSpace>=topSpace?'below':'above';
-                x=clampDock(anchor.left,vp.left+EDGE_GAP,
-                    vp.right-panelWidth-EDGE_GAP);
-            }else{
-                // No fully clear space is available. Retain an expanded
-                // responsive panel; overlay only as a last resort.
-                dockSide='overlay';
-                panelWidth=desiredWidth;
-                x=vp.right-panelWidth-EDGE_GAP;
-            }
-        }
-    }
-    box.style.width=panelWidth+'px';
-    box.dataset.dockSide=dockSide;
+    const panelWidth=inThirdColumn
+        ?Math.min(320,Math.max(120,slotRect.width-30),vp.width-2*EDGE_GAP)
+        :slot
+            ?Math.min(320,Math.max(120,slotRect.width-30),vp.width-2*EDGE_GAP)
+            :Math.min(320,Math.max(120,vp.width-2*EDGE_GAP));
+    box.style.width=Math.max(60,panelWidth)+'px';
+    box.dataset.dockSide=inThirdColumn?'third':slot?'stacked':'fallback';
     box.dataset.narrow=panelWidth<200?'true':'false';
-    // The image is never allowed to extend horizontally beyond the panel.
-    // Size and overlap stay proportional to the real panel dimensions.
-    const mascotHeight=Math.min(panelWidth,
-        Math.max(84,Math.round(vp.height*.42)));
+
+    // Keep the mascot proportional to panel width; its new vertical offset
+    // is set above on the mascot itself (100px -> 40px raises it 60px).
+    const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(vp.height*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
     mascot.style.width='100%';
     mascot.style.maxWidth='100%';
     mascot.style.height=mascotHeight+'px';
     mascot.style.bottom='calc(100% - '+mascotOverlap+'px)';
-    const panelHeight=box.getBoundingClientRect().height;
-    const minTop=vp.top+EDGE_GAP;
-    const maxTop=Math.max(minTop,vp.bottom-panelHeight-EDGE_GAP);
-    const peekAbove=Math.max(0,mascotHeight-mascotOverlap);
-    const safeTop=Math.min(maxTop,minTop+peekAbove);
-    let y=anchor?anchor.top:150;
-    if(anchor&&dockSide==='below')y=anchor.bottom+DOCK_GAP;
-    else if(anchor&&dockSide==='above')y=anchor.top-panelHeight-DOCK_GAP;
-    dockLeft=clampDock(x,vp.left+EDGE_GAP,
-        vp.right-panelWidth-EDGE_GAP);
-    // Move the whole dock 3px downward, bounded by the viewport.
-    dockTop=clampDock(
-        clampDock(y,dockSide==='above'||dockSide==='below'?minTop:safeTop,maxTop)+3,
-        minTop,maxTop
-    );
-    // Always use the anchor-derived dock; the user cannot drag the panel.
-    box.style.left=dockLeft+'px';
-    box.style.top=dockTop+'px';
-    box.style.right='auto';
-    // Reduce content clipping when available space is extremely small.
+    const mascotOverhang=Math.max(0,mascotHeight-mascotOverlap-40);
+
+    if(inThirdColumn){
+        // Keep the panel in the actual 3rd grid column, floating with the
+        // viewport on desktop and centered in that column.
+        const innerWidth=slotRect.width-30;
+        const x=slotRect.left+15+Math.max(0,(innerWidth-panelWidth)/2);
+        const minTop=vp.top+EDGE_GAP;
+        const panelHeight=box.getBoundingClientRect().height;
+        const maxTop=Math.max(minTop,vp.bottom-panelHeight-EDGE_GAP);
+        const safeTop=Math.min(maxTop,minTop+mascotOverhang);
+        const y=clampDock(anchor.top+PANEL_TOP_OFFSET,safeTop,maxTop);
+        Object.assign(box.style,{
+            position:'fixed',
+            left:clampDock(x,vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP)+'px',
+            top:y+'px',
+            right:'auto',
+            margin:'0'
+        });
+    }else if(slot){
+        // At narrow widths Bootstrap stacks the 3rd column below the
+        // approval block. Put the panel in normal flow so there is NO
+        // overlap with Postalocity's form/buttons or horizontal scrolling.
+        Object.assign(box.style,{
+            position:'relative',
+            left:'auto',
+            right:'auto',
+            top:PANEL_TOP_OFFSET+'px',
+            margin:mascotOverhang+'px auto 15px'
+        });
+    }else{
+        // On job pages without the approved layout, preserve a usable
+        // standalone panel rather than silently removing the totals.
+        const minTop=vp.top+EDGE_GAP;
+        const panelHeight=box.getBoundingClientRect().height;
+        const maxTop=Math.max(minTop,vp.bottom-panelHeight-EDGE_GAP);
+        Object.assign(box.style,{
+            position:'fixed',
+            left:clampDock(vp.right-panelWidth-EDGE_GAP,
+                vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP)+'px',
+            top:clampDock(153,minTop,maxTop)+'px',
+            right:'auto',
+            margin:'0'
+        });
+    }
     const ledger=box.querySelector('#spLedgerPanel');
-    if(ledger)ledger.style.maxHeight=Math.max(100,
-        vp.height-(box.getBoundingClientRect().top-vp.top)-70)+'px';
+    if(ledger){
+        const max=vp.height-(box.getBoundingClientRect().top-vp.top)-76;
+        ledger.style.maxHeight=Math.max(100,max)+'px';
+    }
 }
 document.body.appendChild(box);
 window.addEventListener('resize',scheduleDock,{passive:true});
@@ -2113,9 +2138,10 @@ if(window.visualViewport){
     window.visualViewport.addEventListener('resize',scheduleDock,{passive:true});
     window.visualViewport.addEventListener('scroll',scheduleDock,{passive:true});
 }
-// The approval section may be injected after the userscript first runs.
 const approvalObserver=new MutationObserver(function(){
-    if(document.querySelector('.approveBox')!==watchedAnchor)scheduleDock();
+    const current=document.querySelector('#approvedJobContent .approveBox');
+    if(current!==watchedAnchor||
+       (thirdColumn&&!thirdColumn.isConnected))scheduleDock();
 });
 approvalObserver.observe(document.body,{childList:true,subtree:true});
 scheduleDock();
