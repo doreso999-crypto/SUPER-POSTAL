@@ -2063,60 +2063,90 @@ function dockToApproval(){
     const raw=target&&target.getBoundingClientRect();
     const anchor=raw&&raw.width>0&&raw.height>0?raw:null;
     const minimized=box.dataset.minimized==='true';
-    // Use the approval column's measured width, constrained by viewport.
-    // On narrow/zoomed layouts the panel overlays its right edge instead of
-    // getting stranded off-screen.
-    const ideal=anchor?Math.round(anchor.width*.55):320;
-    const panelWidth=minimized?60:Math.min(
-        Math.max(100,vp.width-2*EDGE_GAP),
-        Math.max(236,Math.min(320,ideal))
-    );
+    const usableViewportWidth=Math.max(60,vp.width-EDGE_GAP*2);
+    const desiredWidth=Math.min(320,usableViewportWidth,
+        Math.max(220,anchor?Math.round(anchor.width*.55):320));
+    let dockSide='right';
+    let panelWidth=minimized?60:desiredWidth;
+    let x=vp.right-panelWidth-EDGE_GAP;
+
+    if(anchor){
+        // Prefer adjacent columns, WITHOUT ever clamping a full-width
+        // panel back across the approval column at high browser zoom.
+        const rightSpace=Math.max(0,vp.right-EDGE_GAP-(anchor.right+DOCK_GAP));
+        const leftSpace=Math.max(0,(anchor.left-DOCK_GAP)-(vp.left+EDGE_GAP));
+        const sideChoices=[
+            {side:'right',available:rightSpace},
+            {side:'left',available:leftSpace}
+        ];
+        // Keep the same side when both can accommodate the ideal width;
+        // otherwise use the larger gap and shrink the panel to fit.
+        const fitting=sideChoices.filter(v=>v.available>=desiredWidth);
+        const best=fitting[0]||sideChoices.sort((a,b)=>b.available-a.available)[0];
+        if(best.available>=Math.min(160,usableViewportWidth)){
+            dockSide=best.side;
+            if(!minimized)panelWidth=Math.max(60,Math.min(desiredWidth,best.available));
+            x=dockSide==='right'?anchor.right+DOCK_GAP:
+                anchor.left-DOCK_GAP-panelWidth;
+        }else{
+            // At mobile widths neither side is usable. Try a completely
+            // separate vertical slot before considering a reduced-size tab.
+            const topSpace=anchor.top-vp.top-EDGE_GAP-DOCK_GAP;
+            const bottomSpace=vp.bottom-anchor.bottom-EDGE_GAP-DOCK_GAP;
+            if(bottomSpace>=180||topSpace>=180){
+                dockSide=bottomSpace>=topSpace?'below':'above';
+                x=clampDock(anchor.left,vp.left+EDGE_GAP,
+                    vp.right-panelWidth-EDGE_GAP);
+            }else{
+                // Impossible to fit an expanded panel without covering the
+                // site's approval controls: shrink to a compact docked tab.
+                // Users can still restore/expand on wider screens.
+                dockSide=leftSpace>=rightSpace?'left':'right';
+                panelWidth=Math.min(usableViewportWidth,
+                    Math.max(60,Math.max(leftSpace,rightSpace)));
+                x=dockSide==='right'?anchor.right+DOCK_GAP:
+                    anchor.left-panelWidth-DOCK_GAP;
+            }
+        }
+    }
     if(!minimized)box.style.width=panelWidth+'px';
-    const mascotHeight=minimized?0:Math.min(panelWidth,Math.max(108,Math.round(vp.height*.42)));
+    box.dataset.dockSide=dockSide;
+    box.dataset.narrow=panelWidth<200?'true':'false';
+    // The image is never allowed to extend horizontally beyond the panel.
+    // Size and overlap stay proportional to the real panel dimensions.
+    const mascotHeight=minimized?0:Math.min(panelWidth,
+        Math.max(84,Math.round(vp.height*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
     if(!minimized){
-        // Mascot stays a child of the panel, and all of its dimensions and
-        // overlap are proportional to the panel instead of fixed pixels.
+        mascot.style.width='100%';
+        mascot.style.maxWidth='100%';
         mascot.style.height=mascotHeight+'px';
         mascot.style.bottom='calc(100% - '+mascotOverlap+'px)';
     }
     const panelHeight=box.getBoundingClientRect().height;
-    if(anchor){
-        const freeRight=vp.right-anchor.right-DOCK_GAP-EDGE_GAP;
-        const freeLeft=anchor.left-vp.left-DOCK_GAP-EDGE_GAP;
-        if(freeRight>=panelWidth){
-            dockLeft=anchor.right+DOCK_GAP;
-        }else if(freeLeft>=panelWidth){
-            dockLeft=anchor.left-panelWidth-DOCK_GAP;
-        }else{
-            // Bootstrap stacks the approval column at high zoom: remain
-            // adjacent to its right edge even if side-by-side no longer fits.
-            dockLeft=anchor.right-panelWidth;
-        }
-    }else{
-        dockLeft=vp.right-panelWidth-EDGE_GAP;
-    }
-    dockLeft=clampDock(dockLeft,vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP);
     const minTop=vp.top+EDGE_GAP;
     const maxTop=Math.max(minTop,vp.bottom-panelHeight-EDGE_GAP);
     const peekAbove=Math.max(0,mascotHeight-mascotOverlap);
-    const visiblePeekTop=minimized?minTop:Math.min(maxTop,minTop+peekAbove);
-    dockTop=clampDock(anchor?anchor.top:150,visiblePeekTop,maxTop);
+    const safeTop=minimized?minTop:Math.min(maxTop,minTop+peekAbove);
+    let y=anchor?anchor.top:150;
+    if(anchor&&dockSide==='below')y=anchor.bottom+DOCK_GAP;
+    else if(anchor&&dockSide==='above')y=anchor.top-panelHeight-DOCK_GAP;
+    dockLeft=clampDock(x,vp.left+EDGE_GAP,
+        vp.right-panelWidth-EDGE_GAP);
+    dockTop=clampDock(y,dockSide==='above'||dockSide==='below'?minTop:safeTop,maxTop);
     if(!dragging){
-        const left=clampDock(dockLeft+manualX*panelWidth,vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP);
+        const left=clampDock(dockLeft+manualX*panelWidth,
+            vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP);
         const top=clampDock(dockTop+manualY*panelWidth,minTop,maxTop);
         box.style.left=left+'px';
         box.style.top=top+'px';
         box.style.right='auto';
     }
-    if(!minimized){
-        // Limit overhang of the peeking image near viewport edges.
-        const center=box.getBoundingClientRect().left+panelWidth/2;
-        const room=Math.max(80,2*Math.min(center-vp.left-EDGE_GAP,vp.right-EDGE_GAP-center));
-        mascot.style.maxWidth=Math.min(panelWidth*750/320,room)+'px';
-    }
+    // Reduce content clipping when available space is extremely small.
+    const ledger=box.querySelector('#spLedgerPanel');
+    if(ledger)ledger.style.maxHeight=Math.max(100,
+        vp.height-(box.getBoundingClientRect().top-vp.top)-70)+'px';
 }
-
 box.addEventListener('mousedown',function(e){
     if(e.button!==0||box.dataset.minimized==='true'||
        e.target.closest('button,input,textarea,select,a'))return;
@@ -2227,10 +2257,15 @@ minimize.addEventListener('click',function(e){
     else minimizeBox();
 });
 document.body.appendChild(box);
-window.addEventListener('resize',scheduleDock,{passive:true});
+function resetResponsiveDock(){
+    manualX=0;
+    manualY=0;
+    scheduleDock();
+}
+window.addEventListener('resize',resetResponsiveDock,{passive:true});
 window.addEventListener('scroll',scheduleDock,{passive:true,capture:true});
 if(window.visualViewport){
-    window.visualViewport.addEventListener('resize',scheduleDock,{passive:true});
+    window.visualViewport.addEventListener('resize',resetResponsiveDock,{passive:true});
     window.visualViewport.addEventListener('scroll',scheduleDock,{passive:true});
 }
 // The approval section may be injected after the userscript first runs.
@@ -2905,6 +2940,10 @@ scheduleDock();
             #spLedgerPanel .sp-ledger-onboard > a,#spLedgerPanel .sp-ledger-onboard > button{display:inline-block;margin-top:7px;padding:8px 12px;border:1px solid #202a36;border-radius:8px;background:#202a36;color:#fff;text-decoration:none;font:700 11px/1.4 Arial,sans-serif;cursor:pointer}
             #spLedgerPanel .sp-ledger-onboard > a:hover,#spLedgerPanel .sp-ledger-onboard > button:hover{background:#35465a;color:#fff}
             #spLedgerPanel .sp-ledger-onboard > a:focus-visible,#spLedgerPanel .sp-ledger-onboard > button:focus-visible{outline:2px solid #b36e04;outline-offset:2px}
+            #bureauTotals[data-narrow="true"] #spLedgerPanel .sp-ledger-totalrow{grid-template-columns:minmax(0,1fr) auto}
+            #bureauTotals[data-narrow="true"] #spLedgerPanel .sp-ledger-totalrow button{grid-column:1/-1}
+            #bureauTotals[data-narrow="true"] #spLedgerPanel .sp-ledger-client-chip{font-size:14px}
+            #bureauTotals[data-narrow="true"] #spLedgerPanel .sp-ledger-grouphead{padding:7px}
             @media(max-width:380px){#spLedgerPanel .sp-ledger-totalrow{grid-template-columns:minmax(0,1fr) auto}#spLedgerPanel .sp-ledger-totalrow button{grid-column:1/-1}}
             `;
             document.head.append(style);
