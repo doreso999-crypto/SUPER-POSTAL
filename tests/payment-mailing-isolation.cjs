@@ -52,7 +52,7 @@ function click(btn){
     for(const fn of events.click)fn(e);
 }
 function submit(btn){
-    doc.activeElement=btn;
+    if(btn)doc.activeElement=btn;
     const e={target:form,submitter:btn,type:'submit'};
     for(const fn of events.submit)fn(e);
 }
