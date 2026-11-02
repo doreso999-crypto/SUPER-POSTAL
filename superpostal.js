@@ -1939,7 +1939,7 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    transform:'translate(-50%, -2px)',
+    transform:'translateX(-50%)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
@@ -2099,10 +2099,15 @@ function dockToApproval(){
     // The -5px transform is 5px lower than the prior -10px offset.
     const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(viewportHeight*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
+    // The source artwork has transparent margin around the hands.
+    // Move the visible ornament 12px lower than the previous setting
+    // (10px from the bottom anchor and 2px from the prior transform).
+    // This only changes the image, never the CLIENT TOTALS panel position.
+    const mascotClipDrop=10;
     mascot.style.width='100%';
     mascot.style.maxWidth='100%';
     mascot.style.height=mascotHeight+'px';
-    mascot.style.bottom='calc(100% - '+mascotOverlap+'px)';
+    mascot.style.bottom='calc(100% - '+(mascotOverlap+mascotClipDrop)+'px)';
 
     const rect=target&&target.getBoundingClientRect();
     const slotRect=slot&&slot.getBoundingClientRect();
