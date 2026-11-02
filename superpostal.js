@@ -1903,10 +1903,9 @@ document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
 
 const box=document.createElement('div');
 box.id='bureauTotals';
-box.dataset.minimized='false';
 Object.assign(box.style,{
     position:'fixed',
-    top:'150px',
+    top:'153px',
     right:'15px',
     width:'320px',
     minHeight:'240px',
@@ -1940,7 +1939,7 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    transform:'translate(-50%, -100px)',
+    transform:'translate(-50%, 100px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
@@ -1971,45 +1970,18 @@ mascot.src='https://drive.google.com/thumbnail?id='+mascotFileId+'&sz=w1000';
 box.appendChild(mascot);
 
 ///////////////////////////////
-// YELLOW HEADER / MINIMIZE BUTTON
+// YELLOW HEADER
 ///////////////////////////////
 
 const header=document.createElement('div');
 header.id='spTotalsHeader';
-header.style.cssText='position:absolute;top:0;left:0;right:0;height:44px;box-sizing:border-box;display:flex;align-items:center;padding:0 48px 0 12px;background:#f2b32e;border-bottom:2px solid #202a36;z-index:10;cursor:default;user-select:none';
+header.style.cssText='position:absolute;top:0;left:0;right:0;height:44px;box-sizing:border-box;display:flex;align-items:center;padding:0 12px;background:#f2b32e;border-bottom:2px solid #202a36;z-index:10;cursor:default;user-select:none';
 const heading=document.createElement('span');
 heading.id='spTotalsHeading';
 heading.textContent='CLIENT TOTALS';
 heading.style.cssText='font:800 12px/1.2 Arial,sans-serif;letter-spacing:.1em;color:#202a36;white-space:nowrap';
 header.appendChild(heading);
 box.appendChild(header);
-
-const minimize =
-document.createElement("button");
-
-minimize.id="minimizeTotals";
-minimize.type='button';
-minimize.textContent="−";
-minimize.title='Minimize client totals';
-minimize.setAttribute('aria-label','Minimize client totals');
-
-Object.assign(minimize.style,{
-    position:"absolute",
-    top:"7px",
-    right:"8px",
-    width:"28px",
-    height:"28px",
-    border:"1px solid #202a36",
-    borderRadius:"50%",
-    background:"#202a36",
-    color:"#fff",
-    fontSize:"20px",
-    fontWeight:"bold",
-    cursor:"pointer",
-    zIndex:"30"
-});
-
-box.appendChild(minimize);
 
 ///////////////////////////////
 // RESPONSIVE FIXED DOCKING
@@ -2019,13 +1991,8 @@ box.appendChild(minimize);
 // zoom, Bootstrap breakpoints, scrolling and window resizing are supported.
 const DOCK_GAP=10;
 const EDGE_GAP=12;
-// Browser zoom is not exposed reliably; viewport width in CSS pixels is.
-// This preserves the usual 80% desktop view and collapses on tighter zoomed layouts.
-const MIN_EXPANDED_VIEWPORT_WIDTH=1400;
 let queuedDock=false;
 let watchedAnchor=null;
-let autoMinimized=false;
-let expandedFromCompact=false;
 const dockResizeObserver=typeof ResizeObserver==='function'
     ?new ResizeObserver(scheduleDock):null;
 
@@ -2060,14 +2027,12 @@ function dockToApproval(){
     }
     const raw=target&&target.getBoundingClientRect();
     const anchor=raw&&raw.width>0&&raw.height>0?raw:null;
-    const minimized=box.dataset.minimized==='true';
     const usableViewportWidth=Math.max(60,vp.width-EDGE_GAP*2);
     const desiredWidth=Math.min(320,usableViewportWidth,
         Math.max(220,anchor?Math.round(anchor.width*.55):320));
     let dockSide='right';
-    let panelWidth=minimized?60:desiredWidth;
+    let panelWidth=desiredWidth;
     let x=vp.right-panelWidth-EDGE_GAP;
-    let noRoom=false;
 
     if(anchor){
         // Prefer adjacent columns, WITHOUT ever clamping a full-width
@@ -2084,7 +2049,7 @@ function dockToApproval(){
         const best=fitting[0]||sideChoices.sort((a,b)=>b.available-a.available)[0];
         if(best.available>=Math.min(160,usableViewportWidth)){
             dockSide=best.side;
-            if(!minimized)panelWidth=Math.max(60,Math.min(desiredWidth,best.available));
+            panelWidth=Math.max(60,Math.min(desiredWidth,best.available));
             x=dockSide==='right'?anchor.right+DOCK_GAP:
                 anchor.left-DOCK_GAP-panelWidth;
         }else{
@@ -2097,65 +2062,41 @@ function dockToApproval(){
                 x=clampDock(anchor.left,vp.left+EDGE_GAP,
                     vp.right-panelWidth-EDGE_GAP);
             }else{
-                // No safe full-size slot at this zoom. Show only the compact
-                // Totals launcher; a user click may temporarily open a panel
-                // overlay until the viewport becomes wide enough again.
-                noRoom=true;
-                dockSide='compact';
-                panelWidth=60;
-                x=anchor.right+DOCK_GAP+panelWidth<=vp.right-EDGE_GAP
-                    ?anchor.right+DOCK_GAP
-                    :anchor.left-panelWidth-DOCK_GAP;
-                if(x<vp.left+EDGE_GAP||x+panelWidth>vp.right-EDGE_GAP)
-                    x=vp.right-EDGE_GAP-panelWidth;
+                // No fully clear space is available. Retain an expanded
+                // responsive panel; overlay only as a last resort.
+                dockSide='overlay';
+                panelWidth=desiredWidth;
+                x=vp.right-panelWidth-EDGE_GAP;
             }
         }
     }
-    // When zooming in reduces the usable viewport, default to the circle
-    // instead of allowing an expanded panel to crowd Postalocity.
-    // A deliberate click on the circle can still expand temporarily.
-    const compactForZoom=vp.width<MIN_EXPANDED_VIEWPORT_WIDTH;
-    const shouldCompact=noRoom||compactForZoom;
-    if(!minimized&&shouldCompact&&!expandedFromCompact){
-        autoMinimized=true;
-        minimizeBox();
-        return;
-    }
-    if(minimized&&autoMinimized&&!shouldCompact){
-        autoMinimized=false;
-        restoreBox();
-        return;
-    }
-    if(noRoom&&expandedFromCompact){
-        dockSide='overlay';
-        panelWidth=desiredWidth;
-        x=vp.right-panelWidth-EDGE_GAP;
-    }
-    if(!minimized)box.style.width=panelWidth+'px';
+    box.style.width=panelWidth+'px';
     box.dataset.dockSide=dockSide;
     box.dataset.narrow=panelWidth<200?'true':'false';
     // The image is never allowed to extend horizontally beyond the panel.
     // Size and overlap stay proportional to the real panel dimensions.
-    const mascotHeight=minimized?0:Math.min(panelWidth,
+    const mascotHeight=Math.min(panelWidth,
         Math.max(84,Math.round(vp.height*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
-    if(!minimized){
-        mascot.style.width='100%';
-        mascot.style.maxWidth='100%';
-        mascot.style.height=mascotHeight+'px';
-        mascot.style.bottom='calc(100% - '+mascotOverlap+'px)';
-    }
+    mascot.style.width='100%';
+    mascot.style.maxWidth='100%';
+    mascot.style.height=mascotHeight+'px';
+    mascot.style.bottom='calc(100% - '+mascotOverlap+'px)';
     const panelHeight=box.getBoundingClientRect().height;
     const minTop=vp.top+EDGE_GAP;
     const maxTop=Math.max(minTop,vp.bottom-panelHeight-EDGE_GAP);
     const peekAbove=Math.max(0,mascotHeight-mascotOverlap);
-    const safeTop=minimized?minTop:Math.min(maxTop,minTop+peekAbove);
+    const safeTop=Math.min(maxTop,minTop+peekAbove);
     let y=anchor?anchor.top:150;
     if(anchor&&dockSide==='below')y=anchor.bottom+DOCK_GAP;
     else if(anchor&&dockSide==='above')y=anchor.top-panelHeight-DOCK_GAP;
     dockLeft=clampDock(x,vp.left+EDGE_GAP,
         vp.right-panelWidth-EDGE_GAP);
-    dockTop=clampDock(y,dockSide==='above'||dockSide==='below'?minTop:safeTop,maxTop);
+    // Move the whole dock 3px downward, bounded by the viewport.
+    dockTop=clampDock(
+        clampDock(y,dockSide==='above'||dockSide==='below'?minTop:safeTop,maxTop)+3,
+        minTop,maxTop
+    );
     // Always use the anchor-derived dock; the user cannot drag the panel.
     box.style.left=dockLeft+'px';
     box.style.top=dockTop+'px';
@@ -2165,106 +2106,11 @@ function dockToApproval(){
     if(ledger)ledger.style.maxHeight=Math.max(100,
         vp.height-(box.getBoundingClientRect().top-vp.top)-70)+'px';
 }
-///////////////////////////////
-// MINIMIZE / RESTORE
-///////////////////////////////
-function minimizeBox(){
-    if(box.dataset.minimized==='true')return;
-    box.dataset.minimized='true';
-    header.style.display='none';
-    mascot.style.display='none';
-    minimize.textContent='Totals';
-    minimize.title='Restore client totals';
-    minimize.setAttribute('aria-label','Restore client totals');
-    Object.assign(minimize.style,{
-        top:'0px',
-        right:'0px',
-        width:'60px',
-        height:'60px',
-        borderRadius:'50%',
-        fontSize:'12px',
-        lineHeight:'1',
-        letterSpacing:'.02em',
-        background:'#f2b32e',
-        color:'#202a36',
-        border:'0'
-    });
-    Object.assign(box.style,{
-        width:'60px',
-        height:'60px',
-        minHeight:'0px',
-        padding:'0',
-        borderRadius:'50%',
-        background:'#f2b32e',
-        boxShadow:'none',
-        display:'flex',
-        alignItems:'center',
-        justifyContent:'center',
-        cursor:'pointer',
-        overflow:'hidden'
-    });
-    scheduleDock();
-}
-function restoreBox(){
-    if(box.dataset.minimized!=='true')return;
-    box.dataset.minimized='false';
-    header.style.display='flex';
-    if(mascotSourceAttempt<2)mascot.style.display='block';
-    minimize.textContent='−';
-    minimize.title='Minimize client totals';
-    minimize.setAttribute('aria-label','Minimize client totals');
-    Object.assign(minimize.style,{
-        top:'7px',
-        right:'8px',
-        width:'28px',
-        height:'28px',
-        borderRadius:'50%',
-        fontSize:'20px',
-        lineHeight:'normal',
-        letterSpacing:'normal',
-        background:'#202a36',
-        color:'#fff',
-        border:'1px solid #202a36'
-    });
-    Object.assign(box.style,{
-        height:'auto',
-        minHeight:'240px',
-        padding:'48px 12px 12px',
-        borderRadius:'0',
-        border:'2px solid #202a36',
-        background:'#fff',
-        boxShadow:'none',
-        display:'block',
-        cursor:'default',
-        overflow:'visible'
-    });
-    scheduleDock();
-}
-minimize.addEventListener('click',function(e){
-    e.stopPropagation();
-    if(box.dataset.minimized==='true'){
-        if(autoMinimized){
-            autoMinimized=false;
-            expandedFromCompact=true;
-        }
-        restoreBox();
-    }else{
-        if(expandedFromCompact){
-            expandedFromCompact=false;
-            autoMinimized=true;
-        }
-        minimizeBox();
-    }
-});
 document.body.appendChild(box);
-function resetResponsiveDock(){
-    expandedFromCompact=false;
-    scheduleDock();
-}
-window.addEventListener('resize',resetResponsiveDock,{passive:true});
+window.addEventListener('resize',scheduleDock,{passive:true});
 window.addEventListener('scroll',scheduleDock,{passive:true,capture:true});
 if(window.visualViewport){
-    window.visualViewport.addEventListener('resize',resetResponsiveDock,{passive:true});
+    window.visualViewport.addEventListener('resize',scheduleDock,{passive:true});
     window.visualViewport.addEventListener('scroll',scheduleDock,{passive:true});
 }
 // The approval section may be injected after the userscript first runs.
@@ -2897,7 +2743,6 @@ scheduleDock();
         if(!document.querySelector('#spLedgerV2Styles')){
             const style=el('style');style.id='spLedgerV2Styles';
             style.textContent=`
-            #bureauTotals[data-minimized="true"] #spLedgerPanel{display:none}
             #spLedgerPanel,#spLedgerPanel *{box-sizing:border-box}
             #spLedgerPanel .sp-ledger-title{display:none}
             #spLedgerPanel .sp-ledger-client{display:flex;align-items:center;width:100%;min-height:46px;padding:10px 12px;margin:3px 0 13px;border:1px solid #b4dec3;border-radius:8px;background:#eaf7ef;color:#225a39}
@@ -2926,7 +2771,7 @@ scheduleDock();
             #spLedgerPanel .sp-ledger-totalrow button:hover:not(:disabled){background:#35465a}
             #spLedgerPanel .sp-ledger-footer button:hover:not(:disabled){background:#f8edcd}
             #spLedgerPanel button:disabled{opacity:.48;cursor:not-allowed}
-            #spLedgerPanel button:focus-visible,#minimizeTotals:focus-visible{outline:2px solid #b36e04;outline-offset:2px}
+            #spLedgerPanel button:focus-visible{outline:2px solid #b36e04;outline-offset:2px}
             #spLedgerPanel .sp-ledger-footer{display:flex;gap:7px;flex-wrap:wrap;margin-top:13px;padding-top:10px;border-top:1px solid #e5e8ec}
             #spLedgerPanel .sp-ledger-grand{font-size:16px;font-weight:800;margin-top:10px;font-variant-numeric:tabular-nums;color:#17222e}
             #spLedgerPanel .sp-ledger-pending{color:#8794a5;font-size:10px;font-weight:500;margin-top:2px}
