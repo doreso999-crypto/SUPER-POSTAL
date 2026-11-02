@@ -1905,7 +1905,7 @@ const box=document.createElement('div');
 box.id='bureauTotals';
 Object.assign(box.style,{
     position:'relative',
-    top:'3px',
+    top:'103px',
     right:'15px',
     width:'320px',
     minHeight:'240px',
@@ -1939,7 +1939,7 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    transform:'translate(-50%, -10px)',
+    transform:'translate(-50%, -5px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
@@ -1989,7 +1989,7 @@ box.appendChild(header);
 // The approved job row consists of Bootstrap columns 3 + 6 + 3.
 // Insert the totals panel into its actual third column in document flow.
 // This is NOT viewport-fixed or sticky: it scrolls naturally with the page.
-const PANEL_TOP_OFFSET=3;
+const PANEL_TOP_OFFSET=103;
 let queuedDock=false;
 let watchedAnchor=null;
 let thirdColumn=null;
@@ -2078,8 +2078,9 @@ function dockToApproval(){
     box.style.width=panelWidth+'px';
     box.dataset.narrow=panelWidth<200?'true':'false';
 
-    // The mascot follows the panel's dimensions and stays raised by 50px
-    // relative to the previous +40px transform (now -10px).
+    // The mascot is a decorative clip overlapping the top edge, not an
+    // element whose top edge determines the panel's vertical position.
+    // The -5px transform is 5px lower than the prior -10px offset.
     const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(viewportHeight*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
     mascot.style.width='100%';
@@ -2092,7 +2093,7 @@ function dockToApproval(){
     const sideBySide=!!(slotRect&&rect&&
         slotRect.width>=180&&slotRect.left>=rect.right-3&&
         Math.abs(slotRect.top-rect.top)<40);
-    const mascotOverhang=Math.max(0,mascotHeight-mascotOverlap+10);
+    const mascotOverhang=Math.max(0,mascotHeight-mascotOverlap+5);
     box.dataset.dockSide=sideBySide?'third':slot?'stacked':'fallback';
     if(!slot){
         // If the editor is still loading, display near the TOP-RIGHT of
@@ -2102,7 +2103,7 @@ function dockToApproval(){
         }
         Object.assign(box.style,{
             position:'absolute',
-            top:'3px',
+            top:PANEL_TOP_OFFSET+'px',
             left:'auto',
             right:'12px',
             bottom:'auto',
