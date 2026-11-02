@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3.6
+// @version      1.3.7
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -16,6 +16,15 @@
 // This is independent of the CLIENT TOTALS panel, which remains job-only.
 // Fixed positioning keeps it in the bottom-left corner while scrolling.
 (function spShowActiveIndicator(){
+    const stateKey='sp-status-dot-only-v1';
+    function readMinimized(){
+        try{return sessionStorage.getItem(stateKey)==='true';}
+        catch(_e){return false;}
+    }
+    function saveMinimized(value){
+        try{sessionStorage.setItem(stateKey,String(value));}
+        catch(_e){}
+    }
     function mount(){
         if(!document.body||document.getElementById('spSuperPostalActive'))return;
         const note=document.createElement('div');
@@ -29,7 +38,6 @@
             display:'flex',
             alignItems:'center',
             gap:'7px',
-            padding:'7px 10px',
             background:'#f0fdf4',
             border:'1px solid #86d5a0',
             borderRadius:'7px',
@@ -38,22 +46,73 @@
             letterSpacing:'.025em',
             whiteSpace:'nowrap',
             zIndex:'2147482000',
-            pointerEvents:'none',
+            pointerEvents:'auto',
             boxShadow:'none'
         });
-        const dot=document.createElement('span');
-        dot.setAttribute('aria-hidden','true');
+        // The dot stays visible when the text is dismissed. It can then
+        // be clicked to restore the complete status indicator.
+        const dot=document.createElement('button');
+        dot.type='button';
+        dot.setAttribute('aria-label','Show SUPER POSTAL active status');
         Object.assign(dot.style,{
             display:'inline-block',
-            flex:'0 0 8px',
-            width:'8px',
-            height:'8px',
+            flex:'0 0 10px',
+            width:'10px',
+            height:'10px',
+            padding:'0',
+            margin:'0',
+            border:'0',
             borderRadius:'50%',
-            background:'#16a34a'
+            background:'#16a34a',
+            verticalAlign:'middle'
         });
         const label=document.createElement('span');
         label.textContent='SUPER POSTAL IS ACTIVE';
-        note.append(dot,label);
+        const close=document.createElement('button');
+        close.type='button';
+        close.textContent='×';
+        close.setAttribute('aria-label','Collapse SUPER POSTAL status to green dot');
+        Object.assign(close.style,{
+            alignItems:'center',
+            justifyContent:'center',
+            width:'15px',
+            height:'15px',
+            padding:'0',
+            margin:'0 0 0 3px',
+            border:'0',
+            borderRadius:'3px',
+            background:'transparent',
+            color:'#166534',
+            cursor:'pointer',
+            font:'700 15px/1 Arial,sans-serif'
+        });
+        note.append(dot,label,close);
+        let minimized=readMinimized();
+        function applyState(){
+            label.style.display=minimized?'none':'inline';
+            close.style.display=minimized?'none':'flex';
+            note.style.padding=minimized?'0':'7px 10px';
+            note.style.gap=minimized?'0':'7px';
+            note.style.background=minimized?'transparent':'#f0fdf4';
+            note.style.borderColor=minimized?'transparent':'#86d5a0';
+            note.style.borderWidth=minimized?'0':'1px';
+            dot.style.cursor=minimized?'pointer':'default';
+            dot.setAttribute('aria-label',minimized?
+                'Show SUPER POSTAL active status':'SUPER POSTAL is active');
+            dot.title=minimized?'Show SUPER POSTAL status':'SUPER POSTAL is active';
+        }
+        close.addEventListener('click',function(){
+            minimized=true;
+            saveMinimized(true);
+            applyState();
+        });
+        dot.addEventListener('click',function(){
+            if(!minimized)return;
+            minimized=false;
+            saveMinimized(false);
+            applyState();
+        });
+        applyState();
         document.body.appendChild(note);
     }
     if(document.body)mount();
@@ -1994,8 +2053,8 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    // Image is raised 2 CSS pixels; panel position remains independent.
-    transform:'translate(-50%, -2px)',
+    // Image is raised 1.5 CSS pixels; panel position remains independent.
+    transform:'translate(-50%, -1.5px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
