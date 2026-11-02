@@ -1939,8 +1939,8 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    // Directly move the image pixels up; do not move the panel.
-    transform:'translate(-50%, -15px)',
+    // Image is raised 10 CSS pixels; panel position remains independent.
+    transform:'translate(-50%, -10px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
