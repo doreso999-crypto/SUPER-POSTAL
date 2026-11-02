@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3.1
+// @version      1.3.2
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -1939,8 +1939,8 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    // Image is raised 10 CSS pixels; panel position remains independent.
-    transform:'translate(-50%, -10px)',
+    // Image is raised 5 CSS pixels; panel position remains independent.
+    transform:'translate(-50%, -5px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
@@ -2100,8 +2100,8 @@ function dockToApproval(){
     // The -5px transform is 5px lower than the prior -10px offset.
     const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(viewportHeight*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
-    // Keep the original clip overlap; the image's own transform
-    // supplies the clearly visible 15px upward adjustment independently.
+    // Keep the clip overlap fixed. Exact small vertical adjustments are
+    // performed only through mascot.style.transform above.
     const mascotClipDrop=2;
     mascot.style.width='100%';
     mascot.style.maxWidth='100%';
