@@ -1917,7 +1917,7 @@ Object.assign(box.style,{
     borderRadius:'0',
     zIndex:'999999',
     boxShadow:'none',
-    cursor:'move',
+    cursor:'default',
     overflow:'visible',
     boxSizing:'border-box',
     fontFamily:'Arial, sans-serif'
@@ -1940,7 +1940,7 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    transform:'translateX(-50%)',
+    transform:'translate(-50%, -100px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
@@ -1976,7 +1976,7 @@ box.appendChild(mascot);
 
 const header=document.createElement('div');
 header.id='spTotalsHeader';
-header.style.cssText='position:absolute;top:0;left:0;right:0;height:44px;box-sizing:border-box;display:flex;align-items:center;padding:0 48px 0 12px;background:#f2b32e;border-bottom:2px solid #202a36;z-index:10;cursor:move;user-select:none';
+header.style.cssText='position:absolute;top:0;left:0;right:0;height:44px;box-sizing:border-box;display:flex;align-items:center;padding:0 48px 0 12px;background:#f2b32e;border-bottom:2px solid #202a36;z-index:10;cursor:default;user-select:none';
 const heading=document.createElement('span');
 heading.id='spTotalsHeading';
 heading.textContent='CLIENT TOTALS';
@@ -2012,20 +2012,16 @@ Object.assign(minimize.style,{
 box.appendChild(minimize);
 
 ///////////////////////////////
-// RESPONSIVE DOCKING / DRAG
+// RESPONSIVE FIXED DOCKING
 ///////////////////////////////
 // Dock to Postalocity's own approval column rather than a fixed screen
 // coordinate. Coordinates come from the actual rendered element, so browser
 // zoom, Bootstrap breakpoints, scrolling and window resizing are supported.
 const DOCK_GAP=10;
 const EDGE_GAP=12;
-let dragging=false;
-let offsetX=0;
-let offsetY=0;
-let dockLeft=0;
-let dockTop=0;
-let manualX=0; // User drag offset, measured in panel widths.
-let manualY=0;
+// Browser zoom is not exposed reliably; viewport width in CSS pixels is.
+// This preserves the usual 80% desktop view and collapses on tighter zoomed layouts.
+const MIN_EXPANDED_VIEWPORT_WIDTH=1400;
 let queuedDock=false;
 let watchedAnchor=null;
 let autoMinimized=false;
@@ -2115,12 +2111,17 @@ function dockToApproval(){
             }
         }
     }
-    if(!minimized&&noRoom&&!expandedFromCompact){
+    // When zooming in reduces the usable viewport, default to the circle
+    // instead of allowing an expanded panel to crowd Postalocity.
+    // A deliberate click on the circle can still expand temporarily.
+    const compactForZoom=vp.width<MIN_EXPANDED_VIEWPORT_WIDTH;
+    const shouldCompact=noRoom||compactForZoom;
+    if(!minimized&&shouldCompact&&!expandedFromCompact){
         autoMinimized=true;
         minimizeBox();
         return;
     }
-    if(minimized&&autoMinimized&&!noRoom){
+    if(minimized&&autoMinimized&&!shouldCompact){
         autoMinimized=false;
         restoreBox();
         return;
@@ -2155,54 +2156,21 @@ function dockToApproval(){
     dockLeft=clampDock(x,vp.left+EDGE_GAP,
         vp.right-panelWidth-EDGE_GAP);
     dockTop=clampDock(y,dockSide==='above'||dockSide==='below'?minTop:safeTop,maxTop);
-    if(!dragging){
-        const left=clampDock(dockLeft+manualX*panelWidth,
-            vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP);
-        const top=clampDock(dockTop+manualY*panelWidth,minTop,maxTop);
-        box.style.left=left+'px';
-        box.style.top=top+'px';
-        box.style.right='auto';
-    }
+    // Always use the anchor-derived dock; the user cannot drag the panel.
+    box.style.left=dockLeft+'px';
+    box.style.top=dockTop+'px';
+    box.style.right='auto';
     // Reduce content clipping when available space is extremely small.
     const ledger=box.querySelector('#spLedgerPanel');
     if(ledger)ledger.style.maxHeight=Math.max(100,
         vp.height-(box.getBoundingClientRect().top-vp.top)-70)+'px';
 }
-box.addEventListener('mousedown',function(e){
-    if(e.button!==0||box.dataset.minimized==='true'||
-       e.target.closest('button,input,textarea,select,a'))return;
-    dragging=true;
-    const rect=box.getBoundingClientRect();
-    offsetX=e.clientX-rect.left;
-    offsetY=e.clientY-rect.top;
-    e.preventDefault();
-});
-document.addEventListener('mousemove',function(e){
-    if(!dragging)return;
-    const vp=visibleViewport();
-    const rect=box.getBoundingClientRect();
-    const width=rect.width;
-    const maxTop=Math.max(vp.top+EDGE_GAP,vp.bottom-rect.height-EDGE_GAP);
-    const left=clampDock(e.clientX-offsetX,vp.left+EDGE_GAP,vp.right-width-EDGE_GAP);
-    const top=clampDock(e.clientY-offsetY,vp.top+EDGE_GAP,maxTop);
-    box.style.left=left+'px';
-    box.style.top=top+'px';
-    box.style.right='auto';
-    manualX=(left-dockLeft)/width;
-    manualY=(top-dockTop)/width;
-});
-document.addEventListener('mouseup',function(){
-    if(dragging){dragging=false;scheduleDock();}
-});
-window.addEventListener('blur',function(){dragging=false;});
-
 ///////////////////////////////
 // MINIMIZE / RESTORE
 ///////////////////////////////
 function minimizeBox(){
     if(box.dataset.minimized==='true')return;
     box.dataset.minimized='true';
-    dragging=false;
     header.style.display='none';
     mascot.style.display='none';
     minimize.textContent='Totals';
@@ -2267,7 +2235,7 @@ function restoreBox(){
         background:'#fff',
         boxShadow:'none',
         display:'block',
-        cursor:'move',
+        cursor:'default',
         overflow:'visible'
     });
     scheduleDock();
@@ -2290,8 +2258,6 @@ minimize.addEventListener('click',function(e){
 });
 document.body.appendChild(box);
 function resetResponsiveDock(){
-    manualX=0;
-    manualY=0;
     expandedFromCompact=false;
     scheduleDock();
 }
