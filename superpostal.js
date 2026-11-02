@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3.5
+// @version      1.3.6
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -11,6 +11,54 @@
 
 (function () {
 'use strict';
+
+// Small site-wide confirmation that the SUPER POSTAL loader ran.
+// This is independent of the CLIENT TOTALS panel, which remains job-only.
+// Fixed positioning keeps it in the bottom-left corner while scrolling.
+(function spShowActiveIndicator(){
+    function mount(){
+        if(!document.body||document.getElementById('spSuperPostalActive'))return;
+        const note=document.createElement('div');
+        note.id='spSuperPostalActive';
+        note.setAttribute('role','status');
+        note.setAttribute('aria-label','Super Postal is active');
+        Object.assign(note.style,{
+            position:'fixed',
+            bottom:'14px',
+            left:'14px',
+            display:'flex',
+            alignItems:'center',
+            gap:'7px',
+            padding:'7px 10px',
+            background:'#f0fdf4',
+            border:'1px solid #86d5a0',
+            borderRadius:'7px',
+            color:'#166534',
+            font:'700 11px/1.3 Arial,sans-serif',
+            letterSpacing:'.025em',
+            whiteSpace:'nowrap',
+            zIndex:'2147482000',
+            pointerEvents:'none',
+            boxShadow:'none'
+        });
+        const dot=document.createElement('span');
+        dot.setAttribute('aria-hidden','true');
+        Object.assign(dot.style,{
+            display:'inline-block',
+            flex:'0 0 8px',
+            width:'8px',
+            height:'8px',
+            borderRadius:'50%',
+            background:'#16a34a'
+        });
+        const label=document.createElement('span');
+        label.textContent='SUPER POSTAL IS ACTIVE';
+        note.append(dot,label);
+        document.body.appendChild(note);
+    }
+    if(document.body)mount();
+    else document.addEventListener('DOMContentLoaded',mount,{once:true});
+})();
 
 ///////////////////////////////
 // RETURN ADDRESS PARSER
