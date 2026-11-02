@@ -2028,6 +2028,8 @@ let manualX=0; // User drag offset, measured in panel widths.
 let manualY=0;
 let queuedDock=false;
 let watchedAnchor=null;
+let autoMinimized=false;
+let expandedFromCompact=false;
 const dockResizeObserver=typeof ResizeObserver==='function'
     ?new ResizeObserver(scheduleDock):null;
 
@@ -2069,6 +2071,7 @@ function dockToApproval(){
     let dockSide='right';
     let panelWidth=minimized?60:desiredWidth;
     let x=vp.right-panelWidth-EDGE_GAP;
+    let noRoom=false;
 
     if(anchor){
         // Prefer adjacent columns, WITHOUT ever clamping a full-width
@@ -2098,16 +2101,34 @@ function dockToApproval(){
                 x=clampDock(anchor.left,vp.left+EDGE_GAP,
                     vp.right-panelWidth-EDGE_GAP);
             }else{
-                // Impossible to fit an expanded panel without covering the
-                // site's approval controls: shrink to a compact docked tab.
-                // Users can still restore/expand on wider screens.
-                dockSide=leftSpace>=rightSpace?'left':'right';
-                panelWidth=Math.min(usableViewportWidth,
-                    Math.max(60,Math.max(leftSpace,rightSpace)));
-                x=dockSide==='right'?anchor.right+DOCK_GAP:
-                    anchor.left-panelWidth-DOCK_GAP;
+                // No safe full-size slot at this zoom. Show only the compact
+                // Totals launcher; a user click may temporarily open a panel
+                // overlay until the viewport becomes wide enough again.
+                noRoom=true;
+                dockSide='compact';
+                panelWidth=60;
+                x=anchor.right+DOCK_GAP+panelWidth<=vp.right-EDGE_GAP
+                    ?anchor.right+DOCK_GAP
+                    :anchor.left-panelWidth-DOCK_GAP;
+                if(x<vp.left+EDGE_GAP||x+panelWidth>vp.right-EDGE_GAP)
+                    x=vp.right-EDGE_GAP-panelWidth;
             }
         }
+    }
+    if(!minimized&&noRoom&&!expandedFromCompact){
+        autoMinimized=true;
+        minimizeBox();
+        return;
+    }
+    if(minimized&&autoMinimized&&!noRoom){
+        autoMinimized=false;
+        restoreBox();
+        return;
+    }
+    if(noRoom&&expandedFromCompact){
+        dockSide='overlay';
+        panelWidth=desiredWidth;
+        x=vp.right-panelWidth-EDGE_GAP;
     }
     if(!minimized)box.style.width=panelWidth+'px';
     box.dataset.dockSide=dockSide;
@@ -2253,13 +2274,25 @@ function restoreBox(){
 }
 minimize.addEventListener('click',function(e){
     e.stopPropagation();
-    if(box.dataset.minimized==='true')restoreBox();
-    else minimizeBox();
+    if(box.dataset.minimized==='true'){
+        if(autoMinimized){
+            autoMinimized=false;
+            expandedFromCompact=true;
+        }
+        restoreBox();
+    }else{
+        if(expandedFromCompact){
+            expandedFromCompact=false;
+            autoMinimized=true;
+        }
+        minimizeBox();
+    }
 });
 document.body.appendChild(box);
 function resetResponsiveDock(){
     manualX=0;
     manualY=0;
+    expandedFromCompact=false;
     scheduleDock();
 }
 window.addEventListener('resize',resetResponsiveDock,{passive:true});
