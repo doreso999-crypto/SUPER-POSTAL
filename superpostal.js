@@ -2100,10 +2100,10 @@ function dockToApproval(){
     const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(viewportHeight*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
     // The source artwork has transparent margin around the hands.
-    // Move the visible ornament 12px lower than the previous setting
-    // (10px from the bottom anchor and 2px from the prior transform).
+    // Raise the visible ornament 3px by reducing the image-only
+    // overlap adjustment from 10px to 7px.
     // This only changes the image, never the CLIENT TOTALS panel position.
-    const mascotClipDrop=10;
+    const mascotClipDrop=7;
     mascot.style.width='100%';
     mascot.style.maxWidth='100%';
     mascot.style.height=mascotHeight+'px';
