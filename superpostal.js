@@ -1426,9 +1426,11 @@ function spInstallProcessJobGuard(){
         }else if((!clicked||clicked===form||clicked===document.body)&&
             form.querySelector&&form.querySelector(
                 'button[id*="processJob"],button[id*="processBtn"],button[onclick*="processJob"],button[onclick*="submitJob"]'
-            )){
-            // Only an ambiguous keyboard/programmatic submit of a process
-            // form gets the fallback. An unrelated Pay/Approve submit is native.
+            )&&!(form.querySelectorAll&&
+                Array.from(form.querySelectorAll('button,input[type="submit"],input[type="button"],a,[role="button"]'))
+                    .some(spIsNativeMailingApprovalControl))){
+            // Only an ambiguous process-only form submit gets the fallback.
+            // Mixed payment/approval forms never inherit the Process Job gate.
             spProcessScareGuard(event,form);
         }
     },true);
