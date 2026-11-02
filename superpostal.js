@@ -1939,7 +1939,7 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    transform:'translate(-50%, -5px)',
+    transform:'translate(-50%, -2px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
