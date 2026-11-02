@@ -1939,7 +1939,7 @@ mascot.decoding='async';
 Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
-    bottom:'calc(100% - 118px)',
+    bottom:'calc(100% - 117px)',
     transform:'translateX(-50%)',
     width:'auto',
     height:'320px',
