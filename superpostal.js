@@ -1904,8 +1904,8 @@ document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
 const box=document.createElement('div');
 box.id='bureauTotals';
 Object.assign(box.style,{
-    position:'fixed',
-    top:'153px',
+    position:'relative',
+    top:'3px',
     right:'15px',
     width:'320px',
     minHeight:'240px',
@@ -1939,7 +1939,7 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    transform:'translate(-50%, 40px)',
+    transform:'translate(-50%, -10px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
@@ -1984,12 +1984,11 @@ header.appendChild(heading);
 box.appendChild(header);
 
 ///////////////////////////////
-// THIRD-COLUMN RESPONSIVE DOCKING
+// THIRD-COLUMN RESPONSIVE PLACEMENT
 ///////////////////////////////
-// The approved job page has a 3 + 6 Bootstrap row. Give its rightmost
-// 3-column slot a real DOM element, instead of treating viewport whitespace
-// as a column. The panel is never draggable or minimized.
-const EDGE_GAP=12;
+// The approved job row consists of Bootstrap columns 3 + 6 + 3.
+// Insert the totals panel into its actual third column in document flow.
+// This is NOT viewport-fixed or sticky: it scrolls naturally with the page.
 const PANEL_TOP_OFFSET=3;
 let queuedDock=false;
 let watchedAnchor=null;
@@ -1997,17 +1996,6 @@ let thirdColumn=null;
 const dockResizeObserver=typeof ResizeObserver==='function'
     ?new ResizeObserver(scheduleDock):null;
 
-function visibleViewport(){
-    const v=window.visualViewport;
-    const left=v?v.offsetLeft:0;
-    const top=v?v.offsetTop:0;
-    const width=v?v.width:(window.innerWidth||document.documentElement.clientWidth);
-    const height=v?v.height:(window.innerHeight||document.documentElement.clientHeight);
-    return {left,top,width,height,right:left+width,bottom:top+height};
-}
-function clampDock(value,min,max){
-    return Math.max(min,Math.min(value,Math.max(min,max)));
-}
 function scheduleDock(){
     if(queuedDock)return;
     queuedDock=true;
@@ -2018,8 +2006,6 @@ function ensureThirdColumn(anchor){
     if(!row||!row.classList.contains('row'))return null;
     let slot=row.querySelector(':scope > #spTotalsThirdColumn');
     if(!slot){
-        // Reuse the existing third column when it is empty; otherwise
-        // create one after the approved content (3 + 6 + 3 = 12).
         const next=anchor.nextElementSibling;
         if(next&&next.classList.contains('col-md-3')&&!next.children.length){
             slot=next;
@@ -2039,10 +2025,7 @@ function ensureThirdColumn(anchor){
 }
 function dockToApproval(){
     queuedDock=false;
-    const vp=visibleViewport();
     const target=document.querySelector('#approvedJobContent .approveBox');
-    const rect=target&&target.getBoundingClientRect();
-    const anchor=rect&&rect.width>0&&rect.height>0?rect:null;
     if(target!==watchedAnchor){
         watchedAnchor=target;
         if(dockResizeObserver){
@@ -2052,91 +2035,53 @@ function dockToApproval(){
             if(thirdColumn)dockResizeObserver.observe(thirdColumn);
         }
     }
-    const slot=anchor?ensureThirdColumn(target):null;
-    const slotRect=slot&&slot.getBoundingClientRect();
-    const inThirdColumn=!!(anchor&&slotRect&&
-        slotRect.width>=180&&
-        slotRect.left>=anchor.right-3&&
-        Math.abs(slotRect.top-anchor.top)<40&&
-        slotRect.left<vp.right-EDGE_GAP&&
-        slotRect.right>vp.left+EDGE_GAP);
-    if(slot&&box.parentElement!==slot)slot.appendChild(box);
-    if(!slot&&box.parentElement!==document.body)document.body.appendChild(box);
+    const slot=target?ensureThirdColumn(target):null;
+    const home=slot||document.querySelector('#jobPageContent')||document.body;
+    if(box.parentElement!==home)home.appendChild(box);
 
-    const panelWidth=inThirdColumn
-        ?Math.min(320,Math.max(120,slotRect.width-30),vp.width-2*EDGE_GAP)
-        :slot
-            ?Math.min(320,Math.max(120,slotRect.width-30),vp.width-2*EDGE_GAP)
-            :Math.min(320,Math.max(120,vp.width-2*EDGE_GAP));
-    box.style.width=Math.max(60,panelWidth)+'px';
-    box.dataset.dockSide=inThirdColumn?'third':slot?'stacked':'fallback';
+    const viewportWidth=window.innerWidth||document.documentElement.clientWidth;
+    const viewportHeight=window.innerHeight||document.documentElement.clientHeight;
+    const columnWidth=slot?slot.getBoundingClientRect().width:viewportWidth;
+    const panelWidth=Math.max(60,Math.min(320,columnWidth-(slot?30:24),viewportWidth-24));
+    box.style.width=panelWidth+'px';
     box.dataset.narrow=panelWidth<200?'true':'false';
 
-    // Keep the mascot proportional to panel width; its new vertical offset
-    // is set above on the mascot itself (100px -> 40px raises it 60px).
-    const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(vp.height*.42)));
+    // The mascot follows the panel's dimensions and stays raised by 50px
+    // relative to the previous +40px transform (now -10px).
+    const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(viewportHeight*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
     mascot.style.width='100%';
     mascot.style.maxWidth='100%';
     mascot.style.height=mascotHeight+'px';
     mascot.style.bottom='calc(100% - '+mascotOverlap+'px)';
-    const mascotOverhang=Math.max(0,mascotHeight-mascotOverlap-40);
 
-    if(inThirdColumn){
-        // Keep the panel in the actual 3rd grid column, floating with the
-        // viewport on desktop and centered in that column.
-        const innerWidth=slotRect.width-30;
-        const x=slotRect.left+15+Math.max(0,(innerWidth-panelWidth)/2);
-        const minTop=vp.top+EDGE_GAP;
-        const panelHeight=box.getBoundingClientRect().height;
-        const maxTop=Math.max(minTop,vp.bottom-panelHeight-EDGE_GAP);
-        const safeTop=Math.min(maxTop,minTop+mascotOverhang);
-        const y=clampDock(anchor.top+PANEL_TOP_OFFSET,safeTop,maxTop);
-        Object.assign(box.style,{
-            position:'fixed',
-            left:clampDock(x,vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP)+'px',
-            top:y+'px',
-            right:'auto',
-            margin:'0'
-        });
-    }else if(slot){
-        // At narrow widths Bootstrap stacks the 3rd column below the
-        // approval block. Put the panel in normal flow so there is NO
-        // overlap with Postalocity's form/buttons or horizontal scrolling.
-        Object.assign(box.style,{
-            position:'relative',
-            left:'auto',
-            right:'auto',
-            top:PANEL_TOP_OFFSET+'px',
-            margin:mascotOverhang+'px auto 15px'
-        });
-    }else{
-        // On job pages without the approved layout, preserve a usable
-        // standalone panel rather than silently removing the totals.
-        const minTop=vp.top+EDGE_GAP;
-        const panelHeight=box.getBoundingClientRect().height;
-        const maxTop=Math.max(minTop,vp.bottom-panelHeight-EDGE_GAP);
-        Object.assign(box.style,{
-            position:'fixed',
-            left:clampDock(vp.right-panelWidth-EDGE_GAP,
-                vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP)+'px',
-            top:clampDock(153,minTop,maxTop)+'px',
-            right:'auto',
-            margin:'0'
-        });
-    }
+    const rect=target&&target.getBoundingClientRect();
+    const slotRect=slot&&slot.getBoundingClientRect();
+    const sideBySide=!!(slotRect&&rect&&
+        slotRect.width>=180&&slotRect.left>=rect.right-3&&
+        Math.abs(slotRect.top-rect.top)<40);
+    const mascotOverhang=Math.max(0,mascotHeight-mascotOverlap+10);
+    box.dataset.dockSide=sideBySide?'third':slot?'stacked':'fallback';
+    // On desktop the panel starts 3px below the top of the third column.
+    // When columns stack, leave space for the mascot above the panel.
+    // Never use position:fixed or position:sticky, even on scroll.
+    Object.assign(box.style,{
+        position:'relative',
+        top:PANEL_TOP_OFFSET+'px',
+        left:'auto',
+        right:'auto',
+        bottom:'auto',
+        margin:(sideBySide?'0':mascotOverhang+'px')+' auto 15px'
+    });
+    // Restore the ledger's existing CSS max-height (72vh) rather than a
+    // viewport-scroll-dependent inline height.
     const ledger=box.querySelector('#spLedgerPanel');
-    if(ledger){
-        const max=vp.height-(box.getBoundingClientRect().top-vp.top)-76;
-        ledger.style.maxHeight=Math.max(100,max)+'px';
-    }
+    if(ledger)ledger.style.maxHeight='';
 }
 document.body.appendChild(box);
 window.addEventListener('resize',scheduleDock,{passive:true});
-window.addEventListener('scroll',scheduleDock,{passive:true,capture:true});
 if(window.visualViewport){
     window.visualViewport.addEventListener('resize',scheduleDock,{passive:true});
-    window.visualViewport.addEventListener('scroll',scheduleDock,{passive:true});
 }
 const approvalObserver=new MutationObserver(function(){
     const current=document.querySelector('#approvedJobContent .approveBox');
