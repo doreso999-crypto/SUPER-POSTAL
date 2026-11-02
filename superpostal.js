@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.4.1
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -1263,8 +1263,8 @@ const SP_PROCESS_SCARE_MEDIA={
     audio:'',
     fallbackMs:1900
 };
-// Normal setting: 1% chance per eligible Process Job attempt; never block processing.
-const SP_PROCESS_SCARE_CHANCE=0.01;
+// TEMPORARY TEST: 100% chance per eligible Process Job attempt; never block processing.
+const SP_PROCESS_SCARE_CHANCE=1;
 let spScarePending=null;
 // A button click may trigger a form submit in the same browser event cycle.
 // Use the SAME chance for that click/submit pair, never a second 1% roll.
