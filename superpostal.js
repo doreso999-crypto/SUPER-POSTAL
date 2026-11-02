@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.4.1
+// @version      1.4.2
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -893,11 +893,38 @@ function spRecipientNamesFromPage(){
 
 // Build the return-address preview from Postalocity's actual address fields,
 // never from the unparsed paste box. No additional storage or API calls.
+let spReturnPreviewFromCache=false;
 function spReturnAddressLines(){
     const form=document.querySelector('#settingsReturnAddress-Modal #envelopeReturn-address');
-    if(!form)return null; // The native form has not been initialized.
-    if(spReturnIsSampleForm(form))return []; // Show "No return address" for Postalocity's sample.
+    // Show a previously confirmed snapshot while the native settings load.
+    // Never replace an unsaved draft or an open address editor with cached data.
+    const modal=form&&form.closest('#settingsReturnAddress-Modal');
+    const modalOpen=!!(modal&&(modal.classList.contains('show')||
+        modal.classList.contains('in')||modal.style.display==='block'));
+    spReturnPreviewFromCache=false;
+    let cached=null;
+    if((!form||!spReturnAddressComplete(form))&&!modalOpen&&!spReturnSaveState.dirty){
+        const jobId=spPdfCurrentJobId();
+        if(jobId){
+            try{
+                const stored=JSON.parse(localStorage.getItem('sp-ledger-v1:saved-return:'+jobId)||'null');
+                const a=stored&&stored.address;
+                if(a&&Number.isFinite(stored.seen)&&
+                    String(a.name||'').trim()&&String(a.address1||'').trim()&&
+                    String(a.city||'').trim()&&String(a.state||'').trim()&&
+                    String(a.zip||'').trim()&&!spReturnDefaultField('name',a.name)&&
+                    !spReturnDefaultField('address1',a.address1)&&
+                    !spReturnIsSampleText(Object.values(a).join(' '))){
+                    cached=a;
+                    spReturnPreviewFromCache=true;
+                }
+            }catch(_e){}
+        }
+    }
+    if(!form&&!cached)return null;
+    if(!cached&&spReturnIsSampleForm(form))return [];
     const read=function(name){
+        if(cached)return String(cached[name]||'').trim();
         const field=spReturnFormField(form,name);
         return field&&spReturnIsMeaningful(field,form,true)
             ? String(field.value||'').trim():'';
@@ -972,8 +999,12 @@ function spReturnMarkSaved(form){
         const keys=['name','company1','company2','address1','address2','city','state','zip','country'];
         const address={};
         keys.forEach(function(k){const f=spReturnFormField(form,k);address[k]=f?f.value:'';});
-        try{window.localStorage.setItem('sp-ledger-v1:saved-return:'+savedId,
-            JSON.stringify({address:address,seen:Date.now()}));}catch(_e){}
+        try{
+            const storageKey='sp-ledger-v1:saved-return:'+savedId;
+            window.localStorage.setItem(storageKey,JSON.stringify({address:address,seen:Date.now()}));
+            // Notify this tab's existing ledger listener immediately.
+            window.dispatchEvent(new StorageEvent('storage',{key:storageKey}));
+        }catch(_e){}
     }
     spQueueRecipientOverview();
 }
@@ -1590,6 +1621,8 @@ function spRefreshRecipientPdfOverview(){
                     warning.className='sp-return-save-warning';
                     warning.textContent=spReturnSaveState.pending?
                         'Waiting for Save Changes to complete.':
+                        spReturnPreviewFromCache?
+                        'Previously saved address shown; waiting for Postalocity to load its fields.':
                         'Not saved — click Save Changes.';
                     preview.appendChild(warning);
                 }
@@ -1713,18 +1746,26 @@ function addRecipientPdfOverview(){
 // WATCH PAGE CHANGES
 ///////////////////////////////
 
-const observer = new MutationObserver(() => {
-
+const observer = new MutationObserver(mutations => {
+    // Skip script-generated changes that formerly triggered redundant scans.
+    let nativeChange=false;
+    for(const mutation of mutations){
+        const node=mutation.target&&mutation.target.nodeType===1?
+            mutation.target:mutation.target&&mutation.target.parentElement;
+        if(node&&typeof node.closest==='function'&&node.closest(
+            '#spRecipientPdfOverview, #bureauTotals, #spSuperPostalActive, '+
+            '#spProcessJobToast, #spProcessJobBlocked, #spDuplicateNameModal, '+
+            '#returnAddressParser, #spProcessMissingHint'
+        ))continue;
+        nativeChange=true;
+        break;
+    }
+    if(!nativeChange)return;
     addParser();
-
     watchUploadedFiles();
-
     hidePostalocitySettingsButtons();
-
     addQuickReturnAddress();
-
     addRecipientPdfOverview();
-
 });
 
 observer.observe(document.body, {
