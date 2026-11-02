@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3.7
+// @version      1.3.8
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -1263,9 +1263,9 @@ const SP_PROCESS_SCARE_MEDIA={
     audio:'',
     fallbackMs:1900
 };
-// Roll independently per eligible processing attempt: a 1% surprise, not
-// every click. In the other 99%, Postalocity's original action runs normally.
-const SP_PROCESS_SCARE_CHANCE=0.01;
+// TEMPORARY TEST SETTING: 100% of eligible Process Job actions trigger
+// the scare overlay. Revert to 0.01 after testing.
+const SP_PROCESS_SCARE_CHANCE=1;
 let spScarePending=null,spScareBypass=false;
 // A button click may trigger a form submit in the same browser event cycle.
 // Use the SAME chance for that click/submit pair, never a second 1% roll.
