@@ -56,9 +56,9 @@ const window={sessionStorage:{
     setItem:(k,v)=>values.set(k,v)
 }};
 const key=()=>state.id?'sp-pdf-names-for-job-v1-'+state.id:'';
-const funcs=new Function('document','window','spPdfMemoryKey','spQueueRecipientOverview','spRefreshFilledReturnFields','MutationObserver',code+
+const funcs=new Function('document','window','spPdfMemoryKey','spQueueRecipientOverview','spRefreshFilledReturnFields','MutationObserver','spPdfCurrentJobId',code+
     ';return {spReturnSavedReady,spReturnNativePrefillReady,spReturnMarkSaved,spReturnSignature,spReturnSaveKey,state:spReturnSaveState,spWatchFilledReturnFields,spWatchReturnSaveAction};');
-const api=funcs(document,window,key,()=>{},()=>{},FakeMutationObserver);
+const api=funcs(document,window,key,()=>{},()=>{},FakeMutationObserver,()=>state.id);
 assert.equal(api.spReturnSavedReady(),true,'native saved form is recognized with no script session marker');
 assert.equal(values.size,0,'no synthetic save marker is written when reading saved values');
 api.spWatchFilledReturnFields();

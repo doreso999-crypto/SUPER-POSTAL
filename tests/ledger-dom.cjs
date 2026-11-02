@@ -11,6 +11,7 @@ function page(id,html,savedHtml){
  w.fetch=async url=>({ok:true,url,text:async()=>savedHtml||''});
  w.spReturnFormField=(form,key)=>form.querySelector('[name="'+key+'"]');
  w.spPdfCurrentJobId=()=>id;w.spReturnIsSampleText=t=>/MY NAME HERE/.test(t);w.spReturnSavedReady=()=>false;
+ w.spIsNativeProcessJobControl=()=>false;w.spJobDetailsReadiness=()=>({ready:true});
  w.confirm=()=>true;w.alert=()=>{};
  w.spDetectBureauForRecipient=n=>/\bEX\b/.test(n||'')?'EX':'';w.spBureauDisplayName=c=>({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[c]||'Unknown bureau';
  w.SP_RECIPIENT_BUREAUS={EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}};
@@ -31,12 +32,17 @@ end=[...p.document.querySelectorAll('button')].find(e=>e.textContent==='Clear');
 assert.match(a.document.querySelector('#spLedgerPanel').textContent,/Session ended/);
 const start=[...a.document.querySelectorAll('button')].find(e=>e.textContent==='Start new session');start.click();a.testTick();
 assert.equal(a.document.querySelectorAll('#spLedgerPanel .sp-ledger-group').length,0,'empty session hides all bureau sections');
+p.testTick();another.testTick();a.testTick();
+assert.equal(a.document.querySelectorAll('#spLedgerPanel .sp-ledger-group').length,0,'old approved tabs cannot resurrect cleared jobs after restart');
+const afterClear=page('1301774',first);afterClear.testTick();
+assert.equal(afterClear.document.querySelectorAll('#spLedgerPanel .sp-ledger-letter').length,1,'new job ID can join restarted session');
+assert.doesNotMatch(afterClear.document.querySelector('#spLedgerPanel').textContent,/\$1\.39/,'cleared approved cost stays cleared');afterClear.dispatchEvent(new afterClear.Event('pagehide'));afterClear.close();
 a.close();p.close();another.close();console.log('PASS: before/after HTML fixtures, actual address parser, rendered bureau total, duplicate page, confirmed Clear and end/restart controls.');
 
-const orphan=page('200',second,first);
+const orphan=page('200',second,first.replaceAll('Test Client','Recovery Client'));
 setTimeout(()=>{
  try{
-  assert.match(orphan.document.querySelector('#spLedgerPanel').textContent,/Test Client/);
+  assert.match(orphan.document.querySelector('#spLedgerPanel').textContent,/Recovery Client/);
   assert.match(orphan.document.querySelector('#spLedgerPanel').textContent,/Total: \$1.39/);
   orphan.close();console.log('PASS: processed job without local record recovers saved address using same-job read-only request.');
  }catch(e){console.error(e);orphan.close();process.exitCode=1;}
@@ -53,15 +59,15 @@ onClose.close();
 console.log('PASS: panel invokes native Delete Job; pending job warns before leaving.');
 
 const closingA=page('601',first),closingB=page('602',first);
-assert.equal(closingA.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'2');
+assert.equal((closingA.testTick(),closingA.document.querySelectorAll('#spLedgerPanel .sp-ledger-letter').length),2);
 closingA.dispatchEvent(new closingA.Event('pagehide'));
 closingB.testTick();
-assert.equal(closingB.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'1','closed pending job is removed from a sibling tab');
+assert.equal(closingB.document.querySelectorAll('#spLedgerPanel .sp-ledger-letter').length,1,'closed pending job is removed from a sibling tab');
 assert.equal(closingB.document.querySelectorAll('#spLedgerPanel .sp-ledger-letter').length,1);
 closingB.document.querySelector('#jobState').textContent='Approved';closingB.testTick();
 closingB.dispatchEvent(new closingB.Event('pagehide'));
 const viewer=page('603',first);
-assert.equal(viewer.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'1','approved closed-tab job stays in panel');
+assert.equal(viewer.document.querySelectorAll('#spLedgerPanel .sp-ledger-letter').length,2,'approved closed-tab job stays in panel');
 closingA.close();closingB.close();viewer.close();
 console.log('PASS: cross-tab close excludes drafts while keeping approved jobs.');
 
@@ -70,10 +76,10 @@ const processedHtml='<span id="settingsReturnAddressSource-Link">FROM JOB SETTIN
     '<div class="totalPriceRow"><span class="totalPrice">$1.39</span></div>';
 const processedTabs=['7201','7202','7203'].map(jobId=>page(jobId,processedHtml));
 const processedPanel=processedTabs[0].document.querySelector('#spLedgerPanel');
-assert.equal(processedPanel.querySelector('.sp-ledger-count').textContent,'3','three processed job IDs are present');
+assert.equal((processedTabs[0].testTick(),processedPanel.querySelectorAll('.sp-ledger-letter').length),3,'three processed job IDs are present');
 processedTabs.forEach(w=>w.dispatchEvent(new w.Event('pagehide')));
 const processedReopened=page('7201','<span id="jobState">Processed - Ready for Approval</span>');
-assert.equal(processedReopened.document.querySelector('#spLedgerPanel .sp-ledger-count').textContent,'3',
+assert.equal(processedReopened.document.querySelectorAll('#spLedgerPanel .sp-ledger-letter').length,3,
     'processed jobs remain in client totals even after all tabs closed');
 processedTabs.forEach(w=>w.close());processedReopened.close();
 console.log('PASS: processed unapproved jobs survive closing all tabs and remain visible when one is reopened.');

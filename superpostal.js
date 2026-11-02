@@ -1939,7 +1939,7 @@ mascot.decoding='async';
 Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
-    bottom:'calc(100% - 69px)',
+    bottom:'calc(100% - 169px)',
     transform:'translateX(-50%)',
     width:'auto',
     height:'320px',
@@ -2424,19 +2424,20 @@ document.body.appendChild(box);
         return true;
     }
     // Recover jobs from groups that an older script split after an address
-    // edit. Only reconcile an exact sender name in the same ZIP and city/state;
-    // do not combine different senders, cleared sessions or unrelated ZIPs.
+    // edit. Require a shared full-address alias recorded by a saved edit.
+    // A matching sender name and ZIP alone never establishes client identity.
     function healAddressSplit(key){
         key=resolvedSessionKey(key);
         const target=read('session:'+key);
         if(!target||target.ended||target.mergedInto||!complete(target.address))return key;
         const base=target.address,baseName=norm(base.name),baseZip=norm(base.zip);
         const baseCity=norm(base.city),baseState=spStateCode(base.state)||norm(base.state);
+        const knownAliases=new Set(aliasesOf(target));
         const siblings=keys().filter(k=>k.startsWith('session:')).map(k=>k.slice(8))
             .filter(k=>{
                 const item=read('session:'+k);
                 return !!item&&!item.ended&&!item.mergedInto&&complete(item.address)&&
-                    norm(item.address.name)===baseName&&norm(item.address.zip)===baseZip&&
+                    norm(item.address.name)===baseName&&aliasesOf(item).some(a=>knownAliases.has(a))&&norm(item.address.zip)===baseZip&&
                     norm(item.address.city)===baseCity&&
                     (spStateCode(item.address.state)||norm(item.address.state))===baseState;
             });
@@ -2478,11 +2479,11 @@ document.body.appendChild(box);
     const isProcessed=r=>!!r&&processedState(r.status);
     const visibleJob=r=>isApproved(r)||isProcessed(r)||active(r.id);
     function countable(r){
-        if(!r||r.deleted||!/^\d+$/.test(String(r.id||''))||!named(r))return false;
+        if(!r||r.deleted||r.cleared||!/^\d+$/.test(String(r.id||''))||!named(r))return false;
         const session=read('session:'+r.session);
         return !!session&&!session.ended&&!!complete(session.address)&&group(r).key!=='Unassigned'&&visibleJob(r);
     }
-    function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted&&visibleJob(r));}
+    function sessionJobs(key){return keys().filter(k=>k.startsWith('job:')).map(read).filter(r=>r&&r.session===key&&!r.deleted&&!r.cleared&&visibleJob(r));}
     function canClear(key){const s=read('session:'+key);return !!s&&!s.ended;}
     function duplicateNameMatches(r){
         if(!r||!countable(r))return [];
@@ -2496,7 +2497,7 @@ document.body.appendChild(box);
         return 'duplicate-reviewed:'+ids.join(':')+':'+(hash>>>0).toString(36);
     }
     function markLifecycle(jobId,action){
-        const r=read('job:'+jobId);if(!r)return;
+        const r=read('job:'+jobId);if(!r||r.cleared)return;
         const session=read('session:'+r.session);if(!session||session.ended)return;
         if(action==='approve'){
             if(r.deleted)return;
@@ -2515,7 +2516,7 @@ document.body.appendChild(box);
         const clearedIds=new Set();
         keys().filter(k=>k.startsWith('job:')).forEach(k=>{
             const r=read(k);if(r&&r.session===key){
-                clearedIds.add(String(r.id));r.cents=null;r.recipients=[];r.name='';r.priceNeedsReview=false;write(k,r);
+                clearedIds.add(String(r.id));r.cleared=true;r.cents=null;r.recipients=[];r.name='';r.priceNeedsReview=false;write(k,r);
             }
         });
         keys().filter(k=>k.startsWith('duplicate-reviewed:')).forEach(k=>{
@@ -2541,7 +2542,7 @@ document.body.appendChild(box);
                 const target=String(request.jobId||request.id||(request.job&&request.job.id)||id());
                 const success=handler.handleSuccessResponse;
                 handler.handleSuccessResponse=function(){
-                    const response=arguments[0];
+                    const response=arguments[0]||this.response;
                     const outcome=success.apply(this,arguments);
                     // If Postalocity signals failure inside a nominally successful
                     // callback, do not remove the job from totals.
@@ -2583,6 +2584,30 @@ document.body.appendChild(box);
         });
         return [...groups.values()].filter(x=>x.jobs.length);
     }
+    function updatePrice(r,price,prior){
+        const sample=JSON.stringify([price.found,price.valid,price.cents,price.raw]);
+        if(prior&&prior.priceSample===sample)return;
+        const same=price.valid&&r.cents===price.cents;
+        const changedHere=prior&&prior.priceSample!==undefined;
+        if(!price.valid){
+            r.priceNeedsReview=true;
+        }else if(!Number.isInteger(r.cents)||same||changedHere){
+            r.cents=price.cents;r.priceNeedsReview=false;r.priceConflict=false;
+        }else{
+            // A newly opened snapshot conflicts with an already captured total.
+            // Keep the known value and disable Copy until explicitly resolved.
+            r.priceNeedsReview=true;r.priceConflict=true;
+        }
+        observed.set(r.id,Object.assign({},prior,{priceSample:sample}));
+    }
+    function useDisplayedPrice(jobId){
+        if(String(jobId)!==id())return false;
+        const r=read('job:'+jobId),state=document.querySelector('#jobState'),price=priceSnapshot();
+        if(!r||r.deleted||r.cleared||!read('session:'+r.session)||read('session:'+r.session).ended||
+           !state||!/(?:processed|approved|mailed)/i.test(state.textContent||'')||!price.valid)return false;
+        r.cents=price.cents;r.priceNeedsReview=false;r.priceConflict=false;
+        write('job:'+jobId,r);lastView='';return true;
+    }
     function capture(patch){
         const jobId=id();if(!jobId)return null;
         let r=read('job:'+jobId), a=returnAddress();
@@ -2594,6 +2619,7 @@ document.body.appendChild(box);
         }
         if(r&&!read('session:'+r.session)){remove('job:'+jobId);r=null;}
         if(r&&read('session:'+r.session)?.ended)return null;
+        if(r&&r.cleared)return r;
         if(r&&r.deleted){remove('live:'+PAGE_ID);return r;}
         if(r&&a){
             // Editing this client's saved return address must not reassign
@@ -2611,11 +2637,9 @@ document.body.appendChild(box);
             const state=document.querySelector('#jobState');
             if(state&&/^(?:approved|mailed)\b/i.test(state.textContent||'')){
                 const price=priceSnapshot();
-                if(price.valid&&(r.cents!==price.cents||r.priceNeedsReview)){
-                    r.cents=price.cents;r.priceNeedsReview=false;write('job:'+jobId,r);
-                }else if(price.found&&!price.valid&&!r.priceNeedsReview){
-                    r.priceNeedsReview=true;write('job:'+jobId,r);
-                }
+                const before=JSON.stringify(r);
+                updatePrice(r,price,observed.get(jobId));
+                if(before!==JSON.stringify(r))write('job:'+jobId,r);
             }
             if(savedSession&&Date.now()-lastHeartbeat>15000){savedSession.seen=Date.now();write('session:'+r.session,savedSession);lastHeartbeat=Date.now();}
             return r;
@@ -2631,7 +2655,10 @@ document.body.appendChild(box);
         if(!session){if(!complete(a))return null;session={address:a,seen:Date.now()};write('session:'+key,session);}
         const before=JSON.stringify(r);
         r=Object.assign({id:jobId,recipients:[],cents:null},r||{},patch||{},{session:key});
-        const name=document.querySelector('#overview-jobName');if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
+        const name=document.querySelector('#overview-jobName');
+        const nativeName=currentName();
+        if(name&&name.value.trim()!==prior.name)r.name=name.value.trim();
+        else if(!name&&nativeName&&nativeName!==prior.name)r.name=nativeName;
         if(!name&&!r.name&&recovered.has(jobId))r.name=recovered.get(jobId).name;
         const recipients=recipientsOnPage();if(recipients&&JSON.stringify(recipients)!==prior.recipients)r.recipients=recipients;
         // Keep uploaded letter filenames per Postalocity Job ID. Avoid
@@ -2645,10 +2672,9 @@ document.body.appendChild(box);
         const price=priceSnapshot();
         const onProcessedPage=state&&/processed|approved|mailed/i.test(state.textContent||'');
         if(onProcessedPage){
-            if(price.valid){r.cents=price.cents;r.priceNeedsReview=false;}
-            else r.priceNeedsReview=true; // An unknown price is NOT part of the displayed total.
+            updatePrice(r,price,prior); // Unchanged old tabs never overwrite the shared price.
         }
-        observed.set(jobId,{cost:price.valid?price.cents:undefined,address:currentAddress,name:name?name.value.trim():undefined,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined});
+        observed.set(jobId,Object.assign({},observed.get(jobId),{cost:price.valid?price.cents:undefined,address:currentAddress,name:nativeName,recipients:JSON.stringify(recipients),status:state?state.textContent.trim():undefined}));
         if(before!==JSON.stringify(r))write('job:'+jobId,r);
         // Restore pre-existing jobs from a split address group after a save;
         // these job records were always local, never deleted.
@@ -2812,13 +2838,16 @@ document.body.appendChild(box);
             return card;
         }
         if(!r||!session||session.ended){
-            const ended=!!(session&&session.ended);
-            const existing=read('job:'+id()),old=existing&&read('session:'+existing.session);
+            const existing=read('job:'+id());
+            const address=returnAddress();
+            const oldKey=existing?existing.session:address?sessionForAddress(address):'';
+            const old=oldKey&&read('session:'+oldKey);
+            const ended=!!(session&&session.ended||old&&old.ended);
             if(ended){
                 const card=emptyCard('↺','Session ended','Start a new session to track more jobs.');
                 if(old&&old.ended){
                     const start=el('button','Start new session');
-                    start.onclick=()=>{remove('session:'+existing.session);observed.clear();keys().filter(k=>k.startsWith('job:')).forEach(k=>{const j=read(k);if(j&&j.session===existing.session)remove(k);});lastView='';tick();};
+                    start.onclick=()=>{const latest=read('session:'+oldKey);if(!latest||!latest.ended)return;latest.ended=false;latest.seen=Date.now();write('session:'+oldKey,latest);observed.clear();lastView='';tick();};
                     card.append(start);
                 }
             }else{
@@ -2843,7 +2872,8 @@ document.body.appendChild(box);
             clientName.title='Client name from saved return address';
         }
         client.append(clientName);panel.append(client);
-        if(!groups.length){
+        if(r.cleared){emptyCard(null,'Totals cleared','Create a new job to track more letters. Previously cleared jobs stay excluded.');}
+        else if(!groups.length){
             emptyCard(null,'No letters yet','Add a named job and its recipient to see bureau totals here.');
         }
         // No repeated address/status paragraphs: the client name is enough.
@@ -2926,6 +2956,7 @@ document.body.appendChild(box);
         const footer=el('div');footer.className='sp-ledger-footer';
         const clear=el('button','Clear');clear.title='Clear this client’s tracked totals in all tabs. Postalocity jobs are not deleted.';
         clear.onclick=()=>{if(window.confirm('Clear all local totals for this client, including pending and approved jobs? Postalocity jobs will NOT be deleted.')){if(clearSession(r.session))tick();}};
+        if(r.priceConflict){const resolve=el('button','Use displayed price');resolve.title='Resolve conflicting prices for this job using the total currently shown by Postalocity.';resolve.onclick=()=>{if(window.confirm('Use Postalocity’s currently displayed total for job #'+r.id+'?')&&useDisplayedPrice(r.id))tick();};footer.append(resolve);}
         const del=el('button','Delete job');del.title='Delete job in Postalocity';del.disabled=!!r.deleted||isApproved(r);del.onclick=requestNativeDeletion;
         footer.append(clear,del);panel.append(footer);
     }
@@ -2992,7 +3023,7 @@ document.body.appendChild(box);
         // must not show SUPER POSTAL's close-tab prompt.
         if(recentKnownNavigation())return;
         const current=read('job:'+id());
-        if(!current||current.deleted||isApproved(current))return;
+        if(!current||current.deleted||current.cleared||isApproved(current))return;
         const session=read('session:'+current.session);
         if(!session||session.ended)return;
         // Native browser X/close has no dedicated cancelable event. This is a

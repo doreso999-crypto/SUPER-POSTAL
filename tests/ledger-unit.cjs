@@ -6,13 +6,13 @@ const shared=storage();
 function tab(id,client='John Doe',store=shared){
  const state={client,id,name:'John EX',status:'New',cost:null,address:'123 Main St',priceSelector:'.totalPriceRow .totalPrice'};
  const ctx={console,Map,Set,JSON,Date,Number,String,Object,Array,URL,URLSearchParams,localStorage:store,location:{pathname:'/jobui'},window:{confirm:()=>true},tick:()=>{},
- spPdfCurrentJobId:()=>state.id,spStateCode:x=>x,spReturnSavedReady:()=>!!state.client,
+ sessionStorage:storage(),spReturnIsSampleText:()=>false,spPdfCurrentJobId:()=>state.id,spStateCode:x=>x,spReturnSavedReady:()=>!!state.client,
  spReturnFormField:(_,k)=>({value:({name:state.client,address1:state.address,city:'Denver',state:'CO',zip:'80201'})[k]||''}),
  spDetectBureauForRecipient:n=>/\bEX\b/.test(n||'')?'EX':/\bTU\b/.test(n||'')?'TU':'',
  spBureauDisplayName:c=>({EX:'Experian',EQU:'Equifax',TU:'TransUnion'})[c]||'Unknown bureau',
  SP_RECIPIENT_BUREAUS:{EX:{address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'}},
  document:{querySelector:s=>s==='#envelopeReturn-address'?{}:s==='#overview-jobName'?(state.name===null?null:{value:state.name}):s==='#jobState'?{textContent:state.status}:s===state.priceSelector?(state.cost?{textContent:state.cost}:null):null,querySelectorAll:()=>[]}};
- vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage,duplicateNameMatches,duplicateReviewKey,bureauSummary,priceSnapshot,sessionJobs,linkableSessions,linkJobToClient,isProcessed};})();',ctx);return {api:ctx.api,state,ctx};
+ vm.createContext(ctx);vm.runInContext('(function(){'+body+';globalThis.api={capture,group,countable,clean,read,write,addressKey,hookRecipientSave,markLifecycle,canClear,clearSession,hookLifecycle,leavePage,duplicateNameMatches,duplicateReviewKey,bureauSummary,priceSnapshot,sessionJobs,rememberSavedReturn,rememberClientAddress,useDisplayedPrice,isProcessed};})();',ctx);return {api:ctx.api,state,ctx};
 }
 const a=tab('101'),b=tab('102'),j=tab('103','Jane Doe');const ar=a.api.capture(),br=b.api.capture(),jr=j.api.capture();
 assert.equal(ar.session,br.session);assert.notEqual(ar.session,jr.session);
@@ -226,6 +226,7 @@ earlyJobs[2].api.write('session:'+newer,{address:newAddr,seen:Date.now()});
 const splitJob=earlyJobs[2].api.read('job:7103');splitJob.session=newer;
 earlyJobs[2].api.write('job:7103',splitJob);
 earlyJobs[2].state.address='765 Changed St';
+earlyJobs[0].api.rememberClientAddress(earlier,newAddr); // Proven alias from a saved edit, not a same-name guess.
 const restored=earlyJobs[2].api.capture();
 assert.equal(restored.session,earlier,'split job is restored to the group containing other client jobs');
 assert.equal(earlyJobs[2].api.sessionJobs(earlier).length,3,'previously hidden jobs return to the same totals group');
@@ -261,11 +262,10 @@ const thirdMissing=tab('9303',null,recoveredStore);
 thirdMissing.state.status='Processed - Ready for Approval';thirdMissing.state.name='Third EX';thirdMissing.state.cost='$1.39';
 assert.equal(secondMissing.api.capture(),null,'native HTML without address cannot be guessed automatically');
 assert.equal(thirdMissing.api.capture(),null,'third job cannot be guessed automatically');
-const links=secondMissing.api.linkableSessions();
-assert.equal(links.length,1,'one existing tracked sender can be selected');
-assert.equal(links[0].key,firstTracked.session);
-assert.equal(secondMissing.api.linkJobToClient(links[0].key),true);
-assert.equal(thirdMissing.api.linkJobToClient(links[0].key),true);
+const confirmedAddress=known.api.read('session:'+firstTracked.session).address;
+secondMissing.api.rememberSavedReturn('9302',confirmedAddress);
+thirdMissing.api.rememberSavedReturn('9303',confirmedAddress);
+secondMissing.api.capture();thirdMissing.api.capture();
 const totalJobs=()=>known.api.sessionJobs(firstTracked.session);
 assert.equal(totalJobs().length,3,'all three processed jobs become visible under the same explicitly selected sender');
 assert.equal(totalJobs().reduce((sum,j)=>sum+j.cents,0),417,'three processed prices are preserved');
@@ -279,14 +279,19 @@ assert.equal(totalJobs().length,2,'native deletion removes the processed job');
 assert.equal(totalJobs().reduce((sum,j)=>sum+j.cents,0),278,'native deletion deducts only deleted job');
 console.log('PASS: one existing tracked sender plus two previously unlinked processed jobs yields three durable totals; native deletion deducts one.');
 
-const declined=tab('9304',null,recoveredStore);
-declined.state.name='Unlinked EX';declined.state.status='Processed - Ready for Approval';
-declined.ctx.window.confirm=()=>false;
-assert.equal(declined.api.linkJobToClient(firstTracked.session),false,'canceling recovery cannot link job');
-assert.equal(declined.api.read('job:9304'),null,'canceling does not write to the ledger');
-declined.ctx.window.confirm=()=>true;
-declined.state.name='';
-assert.equal(declined.api.linkJobToClient(firstTracked.session),false,'blank job name cannot be linked');
-assert.equal(declined.api.read('job:9304'),null);
-assert.equal(declined.api.linkJobToClient('no-such-client'),false,'unknown local client cannot be linked');
-console.log('PASS: recovery link is explicit, rejects cancellation, missing job names and unknown clients.');
+const missing=tab('9304',null,recoveredStore);missing.state.name='Unlinked EX';
+assert.equal(missing.api.capture(),null,'a different job never inherits another job’s saved sender');
+console.log('PASS: missing saved address remains unlinked without reviving removed manual recovery UI.');
+
+const isolated=storage(),one=tab('9801','Same Name',isolated),two=tab('9802','Same Name',isolated);
+one.state.address='100 First St';two.state.address='999 Second St';one.api.capture();two.api.capture();
+assert.notEqual(one.api.read('job:9801').session,two.api.read('job:9802').session,'same name and ZIP with different streets must not merge');
+const staleStore=storage(),oldTab=tab('9811','Price Race',staleStore),newTab=tab('9811','Price Race',staleStore);
+oldTab.state.status=newTab.state.status='Processed - Ready for Approval';oldTab.state.cost='$1.39';oldTab.api.capture();newTab.state.cost='$1.39';newTab.api.capture();
+newTab.state.cost='$5.00';newTab.api.capture();oldTab.api.capture();newTab.api.capture();oldTab.api.capture();
+assert.equal(oldTab.api.read('job:9811').cents,500,'unchanged stale tab never rewrites the new amount');
+const conflicting=tab('9811','Price Race',staleStore);conflicting.state.status='Processed - Ready for Approval';conflicting.state.cost='$1.39';
+const conflict=conflicting.api.capture();assert.equal(conflict.cents,500);assert.equal(conflict.priceNeedsReview,true);
+assert.equal(newTab.api.useDisplayedPrice('9811'),true);assert.equal(newTab.api.read('job:9811').priceNeedsReview,false);conflicting.api.capture();assert.equal(newTab.api.read('job:9811').cents,500);
+const label=tab('9821','Label Client',storage());label.state.name=null;const q=label.ctx.document.querySelector;label.ctx.document.querySelector=s=>s==='#jobName'?{textContent:'Label EX'}:q(s);assert.equal(label.api.capture().name,'Label EX');
+console.log('PASS: same-name clients isolated by address; unchanged stale prices cannot overwrite; conflicts require resolution; processed-page label is captured.');
