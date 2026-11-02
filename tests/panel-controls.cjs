@@ -43,10 +43,10 @@ assert.ok(mascot&&mascot.tagName==='IMG','peeking image is part of the floating 
 assert.equal(created.filter(node=>node.tagName==='IMG').length,1,'only one peeking image is created');
 assert.ok(mascot.src.includes('drive.google.com/thumbnail?id=1mJHuNQH6H2JhBFHb75EF9VRiu7jGXUb2'),'uses the supplied Drive image');
 assert.equal(mascot.style.position,'absolute');
-assert.equal(mascot.style.bottom,'calc(100% - 9px)','mascot peeks over the top edge');
+assert.equal(mascot.style.bottom,'calc(100% - 69px)','mascot is lowered by exactly 60px');
 assert.equal(mascot.style.pointerEvents,'none','mascot cannot block native controls or dragging');
-assert.equal(mascot.style.height,'128px');
-assert.equal(mascot.style.maxWidth,'300px');
+assert.equal(mascot.style.height,'320px','mascot is 2.5 times its former 128px height');
+assert.equal(mascot.style.maxWidth,'750px','mascot has 2.5 times the previous width cap');
 assert.equal(mascot.attributes['aria-hidden'],'true');
 assert.equal(mascot.alt,'');
 assert.equal(mascot.style.zIndex,'9','mascot sits behind the yellow header');
