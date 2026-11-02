@@ -2012,55 +2012,142 @@ Object.assign(minimize.style,{
 box.appendChild(minimize);
 
 ///////////////////////////////
-// DRAG
+// RESPONSIVE DOCKING / DRAG
 ///////////////////////////////
-
+// Dock to Postalocity's own approval column rather than a fixed screen
+// coordinate. Coordinates come from the actual rendered element, so browser
+// zoom, Bootstrap breakpoints, scrolling and window resizing are supported.
+const DOCK_GAP=10;
+const EDGE_GAP=12;
 let dragging=false;
 let offsetX=0;
 let offsetY=0;
+let dockLeft=0;
+let dockTop=0;
+let manualX=0; // User drag offset, measured in panel widths.
+let manualY=0;
+let queuedDock=false;
+let watchedAnchor=null;
+const dockResizeObserver=typeof ResizeObserver==='function'
+    ?new ResizeObserver(scheduleDock):null;
 
-box.addEventListener("mousedown",function(e){
+function visibleViewport(){
+    const v=window.visualViewport;
+    const left=v?v.offsetLeft:0;
+    const top=v?v.offsetTop:0;
+    const width=v?v.width:(window.innerWidth||document.documentElement.clientWidth);
+    const height=v?v.height:(window.innerHeight||document.documentElement.clientHeight);
+    return {left,top,width,height,right:left+width,bottom:top+height};
+}
+function clampDock(value,min,max){
+    return Math.max(min,Math.min(value,Math.max(min,max)));
+}
+function scheduleDock(){
+    if(queuedDock)return;
+    queuedDock=true;
+    requestAnimationFrame(dockToApproval);
+}
+function dockToApproval(){
+    queuedDock=false;
+    if(!box.isConnected)return;
+    const vp=visibleViewport();
+    const target=document.querySelector('.approveBox');
+    if(target!==watchedAnchor){
+        watchedAnchor=target;
+        if(dockResizeObserver){
+            dockResizeObserver.disconnect();
+            dockResizeObserver.observe(box);
+            if(target)dockResizeObserver.observe(target);
+        }
+    }
+    const raw=target&&target.getBoundingClientRect();
+    const anchor=raw&&raw.width>0&&raw.height>0?raw:null;
+    const minimized=box.dataset.minimized==='true';
+    // Use the approval column's measured width, constrained by viewport.
+    // On narrow/zoomed layouts the panel overlays its right edge instead of
+    // getting stranded off-screen.
+    const ideal=anchor?Math.round(anchor.width*.55):320;
+    const panelWidth=minimized?60:Math.min(
+        Math.max(100,vp.width-2*EDGE_GAP),
+        Math.max(236,Math.min(320,ideal))
+    );
+    if(!minimized)box.style.width=panelWidth+'px';
+    const mascotHeight=minimized?0:Math.min(panelWidth,Math.max(108,Math.round(vp.height*.42)));
+    const mascotOverlap=Math.round(mascotHeight*117/320);
+    if(!minimized){
+        // Mascot stays a child of the panel, and all of its dimensions and
+        // overlap are proportional to the panel instead of fixed pixels.
+        mascot.style.height=mascotHeight+'px';
+        mascot.style.bottom='calc(100% - '+mascotOverlap+'px)';
+    }
+    const panelHeight=box.getBoundingClientRect().height;
+    if(anchor){
+        const freeRight=vp.right-anchor.right-DOCK_GAP-EDGE_GAP;
+        const freeLeft=anchor.left-vp.left-DOCK_GAP-EDGE_GAP;
+        if(freeRight>=panelWidth){
+            dockLeft=anchor.right+DOCK_GAP;
+        }else if(freeLeft>=panelWidth){
+            dockLeft=anchor.left-panelWidth-DOCK_GAP;
+        }else{
+            // Bootstrap stacks the approval column at high zoom: remain
+            // adjacent to its right edge even if side-by-side no longer fits.
+            dockLeft=anchor.right-panelWidth;
+        }
+    }else{
+        dockLeft=vp.right-panelWidth-EDGE_GAP;
+    }
+    dockLeft=clampDock(dockLeft,vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP);
+    const minTop=vp.top+EDGE_GAP;
+    const maxTop=Math.max(minTop,vp.bottom-panelHeight-EDGE_GAP);
+    const peekAbove=Math.max(0,mascotHeight-mascotOverlap);
+    const visiblePeekTop=minimized?minTop:Math.min(maxTop,minTop+peekAbove);
+    dockTop=clampDock(anchor?anchor.top:150,visiblePeekTop,maxTop);
+    if(!dragging){
+        const left=clampDock(dockLeft+manualX*panelWidth,vp.left+EDGE_GAP,vp.right-panelWidth-EDGE_GAP);
+        const top=clampDock(dockTop+manualY*panelWidth,minTop,maxTop);
+        box.style.left=left+'px';
+        box.style.top=top+'px';
+        box.style.right='auto';
+    }
+    if(!minimized){
+        // Limit overhang of the peeking image near viewport edges.
+        const center=box.getBoundingClientRect().left+panelWidth/2;
+        const room=Math.max(80,2*Math.min(center-vp.left-EDGE_GAP,vp.right-EDGE_GAP-center));
+        mascot.style.maxWidth=Math.min(panelWidth*750/320,room)+'px';
+    }
+}
 
-    if(box.dataset.minimized==="true" ||
-       e.target.tagName==="BUTTON" ||
-       e.target.tagName==="INPUT")
-        return;
-
+box.addEventListener('mousedown',function(e){
+    if(e.button!==0||box.dataset.minimized==='true'||
+       e.target.closest('button,input,textarea,select,a'))return;
     dragging=true;
-
-    offsetX =
-        e.clientX-box.offsetLeft;
-
-    offsetY =
-        e.clientY-box.offsetTop;
-
+    const rect=box.getBoundingClientRect();
+    offsetX=e.clientX-rect.left;
+    offsetY=e.clientY-rect.top;
+    e.preventDefault();
 });
-
-document.addEventListener("mousemove",function(e){
-
-    if(!dragging)
-        return;
-
-    box.style.left =
-        (e.clientX-offsetX)+"px";
-
-    box.style.top =
-        (e.clientY-offsetY)+"px";
-
-    box.style.right="auto";
-
+document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    const vp=visibleViewport();
+    const rect=box.getBoundingClientRect();
+    const width=rect.width;
+    const maxTop=Math.max(vp.top+EDGE_GAP,vp.bottom-rect.height-EDGE_GAP);
+    const left=clampDock(e.clientX-offsetX,vp.left+EDGE_GAP,vp.right-width-EDGE_GAP);
+    const top=clampDock(e.clientY-offsetY,vp.top+EDGE_GAP,maxTop);
+    box.style.left=left+'px';
+    box.style.top=top+'px';
+    box.style.right='auto';
+    manualX=(left-dockLeft)/width;
+    manualY=(top-dockTop)/width;
 });
-
-document.addEventListener("mouseup",function(){
-    dragging=false;
+document.addEventListener('mouseup',function(){
+    if(dragging){dragging=false;scheduleDock();}
 });
+window.addEventListener('blur',function(){dragging=false;});
 
 ///////////////////////////////
 // MINIMIZE / RESTORE
 ///////////////////////////////
-
-// Use the same accessible control for both minimize and restore.
-// Hide the peeking artwork while minimized; no observers are needed.
 function minimizeBox(){
     if(box.dataset.minimized==='true')return;
     box.dataset.minimized='true';
@@ -2091,17 +2178,14 @@ function minimizeBox(){
         borderRadius:'50%',
         background:'#f2b32e',
         boxShadow:'none',
-        right:'15px',
-        top:'150px',
-        left:'auto',
         display:'flex',
         alignItems:'center',
         justifyContent:'center',
         cursor:'pointer',
         overflow:'hidden'
     });
+    scheduleDock();
 }
-
 function restoreBox(){
     if(box.dataset.minimized!=='true')return;
     box.dataset.minimized='false';
@@ -2124,7 +2208,6 @@ function restoreBox(){
         border:'1px solid #202a36'
     });
     Object.assign(box.style,{
-        width:'320px',
         height:'auto',
         minHeight:'240px',
         padding:'48px 12px 12px',
@@ -2132,22 +2215,30 @@ function restoreBox(){
         border:'2px solid #202a36',
         background:'#fff',
         boxShadow:'none',
-        top:'150px',
-        right:'15px',
-        left:'auto',
         display:'block',
         cursor:'move',
         overflow:'visible'
     });
+    scheduleDock();
 }
-
 minimize.addEventListener('click',function(e){
     e.stopPropagation();
     if(box.dataset.minimized==='true')restoreBox();
     else minimizeBox();
 });
-
 document.body.appendChild(box);
+window.addEventListener('resize',scheduleDock,{passive:true});
+window.addEventListener('scroll',scheduleDock,{passive:true,capture:true});
+if(window.visualViewport){
+    window.visualViewport.addEventListener('resize',scheduleDock,{passive:true});
+    window.visualViewport.addEventListener('scroll',scheduleDock,{passive:true});
+}
+// The approval section may be injected after the userscript first runs.
+const approvalObserver=new MutationObserver(function(){
+    if(document.querySelector('.approveBox')!==watchedAnchor)scheduleDock();
+});
+approvalObserver.observe(document.body,{childList:true,subtree:true});
+scheduleDock();
 
 })();
 
