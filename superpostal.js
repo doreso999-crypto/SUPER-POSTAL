@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.3.1
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -1939,7 +1939,8 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    transform:'translateX(-50%)',
+    // Directly move the image pixels up; do not move the panel.
+    transform:'translate(-50%, -15px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
@@ -2099,10 +2100,8 @@ function dockToApproval(){
     // The -5px transform is 5px lower than the prior -10px offset.
     const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(viewportHeight*.42)));
     const mascotOverlap=Math.round(mascotHeight*117/320);
-    // The source artwork has transparent margin around the hands.
-    // Raise the visible ornament 3px by reducing the image-only
-    // overlap adjustment from 7px to 2px.
-    // This only changes the image, never the CLIENT TOTALS panel position.
+    // Keep the original clip overlap; the image's own transform
+    // supplies the clearly visible 15px upward adjustment independently.
     const mascotClipDrop=2;
     mascot.style.width='100%';
     mascot.style.maxWidth='100%';
