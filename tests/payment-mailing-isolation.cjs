@@ -10,7 +10,7 @@ const install=src.slice(installStart,installEnd);
 const events={};
 const doc={
     documentElement:{dataset:{}},
-    body:{},
+    body:{tagName:'BODY',id:'',textContent:'',getAttribute:()=>null},
     activeElement:null,
     addEventListener(name,fn,options){(events[name]??=[]).push(fn);}
 };
