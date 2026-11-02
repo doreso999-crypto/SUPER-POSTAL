@@ -37,9 +37,11 @@ const payAnd=button('approveMailing','Pay and Approve Mailing','payAndApproveMai
 const approve=button('approveJob','Approve Mailing','approveJob()');
 const approvalOther=button('approveJob','Approve Job','approveJob()');
 const payOnly=button('payNow','Pay Now','makePayment()');
+let formContainsPayment=false;
 const form={
     closest:q=>q==='#step4'?step:null,
-    querySelector:q=>q.includes('processJob')?process:null
+    querySelector:q=>q.includes('processJob')?process:null,
+    querySelectorAll:()=>formContainsPayment?[process,pay]:[process]
 };
 for(const b of [pay,payAnd,approve,approvalOther,payOnly,process])b.form=form;
 assert.equal(api.spIsNativeProcessJobControl(process),true);
@@ -75,3 +77,8 @@ doc.activeElement=pay;
 submit(null);
 assert.equal(guardCalls,3,'active Pay control prevents the broad process-form fallback');
 console.log('PASS: only an ambiguous process form submission gets fallback guard; active payment control never does.');
+formContainsPayment=true;
+doc.activeElement=doc.body;
+submit(null);
+assert.equal(guardCalls,3,'no-submitter form with both payment and process buttons must bypass guard');
+console.log('PASS: mixed payment/process forms are never blocked by the ambiguous-submit fallback.');
