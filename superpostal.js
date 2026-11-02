@@ -1905,7 +1905,7 @@ const box=document.createElement('div');
 box.id='bureauTotals';
 Object.assign(box.style,{
     position:'relative',
-    top:'103px',
+    top:'0px',
     right:'15px',
     width:'320px',
     minHeight:'240px',
@@ -1989,7 +1989,7 @@ box.appendChild(header);
 // The approved job row consists of Bootstrap columns 3 + 6 + 3.
 // Insert the totals panel into its actual third column in document flow.
 // This is NOT viewport-fixed or sticky: it scrolls naturally with the page.
-const PANEL_TOP_OFFSET=103;
+// No numeric vertical offset: align the panel to the Job State header itself.
 let queuedDock=false;
 let watchedAnchor=null;
 let thirdColumn=null;
@@ -2054,6 +2054,22 @@ function findDockAnchor(){
     return group.sort((a,b)=>
         a.getBoundingClientRect().top-b.getBoundingClientRect().top)[0]||null;
 }
+function visibleTopReference(target){
+    // The approved-job content is in a different row from the Job State
+    // header. Choose the actual visible header, not the mascot or the
+    // second row's starting position.
+    const root=document.querySelector('#jobPageContent')||
+        document.querySelector('.jobPageContent');
+    const heading=root&&(
+        root.querySelector('.job-overview .panel-heading')||
+        root.querySelector('#jobState')?.closest('.panel-heading')
+    );
+    if(heading){
+        const rect=heading.getBoundingClientRect();
+        if(rect.width>0&&rect.height>0)return heading;
+    }
+    return target;
+}
 function dockToApproval(){
     queuedDock=false;
     const target=findDockAnchor();
@@ -2093,33 +2109,46 @@ function dockToApproval(){
     const sideBySide=!!(slotRect&&rect&&
         slotRect.width>=180&&slotRect.left>=rect.right-3&&
         Math.abs(slotRect.top-rect.top)<40);
-    const mascotOverhang=Math.max(0,mascotHeight-mascotOverlap+5);
     box.dataset.dockSide=sideBySide?'third':slot?'stacked':'fallback';
+
+    // The CLIENT TOTALS header must align with the top of Job State.
+    // Mascot position/height does not enter this measurement at all.
+    const reference=visibleTopReference(target);
+    const referenceRect=reference&&reference.getBoundingClientRect();
     if(!slot){
-        // If the editor is still loading, display near the TOP-RIGHT of
-        // the job area rather than adding an in-flow box at the bottom.
-        if(home!==document.body&&window.getComputedStyle(home).position==='static'){
+        // While a job editor is loading, keep the panel at the top-right.
+        if(home!==document.body&&
+           window.getComputedStyle(home).position==='static'){
             home.style.position='relative';
         }
         Object.assign(box.style,{
             position:'absolute',
-            top:PANEL_TOP_OFFSET+'px',
+            top:'0px',
             left:'auto',
             right:'12px',
             bottom:'auto',
             margin:'0'
         });
+        const homeRect=home.getBoundingClientRect();
+        if(referenceRect){
+            box.style.top=Math.round(referenceRect.top-homeRect.top)+'px';
+        }
     }else{
-        // Real third-column placement: scrolls with the page, never sticky.
-        // On stacked mobile layout reserve room for the mascot.
+        // In the third column (desktop or stacked), reset to normal-flow
+        // geometry before measuring. A relative top offset changes only the
+        // panel's visual placement; it does not pull adjacent content down.
         Object.assign(box.style,{
             position:'relative',
-            top:PANEL_TOP_OFFSET+'px',
+            top:'0px',
             left:'auto',
             right:'auto',
             bottom:'auto',
-            margin:(sideBySide?'0':mascotOverhang+'px')+' auto 15px'
+            margin:'0 auto 15px'
         });
+        if(referenceRect){
+            const normalTop=box.getBoundingClientRect().top;
+            box.style.top=Math.round(referenceRect.top-normalTop)+'px';
+        }
     }
     // Restore the ledger's existing CSS max-height (72vh) rather than a
     // viewport-scroll-dependent inline height.
