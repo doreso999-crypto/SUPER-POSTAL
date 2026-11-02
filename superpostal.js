@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.4.3
+// @version      1.4.4
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -2052,12 +2052,11 @@ Object.assign(box.style,{
 });
 
 ///////////////////////////////
-// PEEKING MASCOT: A NON-INTERACTIVE GOOGLE DRIVE IMAGE
+// PEEKING MASCOT: USER-PROVIDED DISCORD IMAGE
 ///////////////////////////////
 
-// The user-provided Drive file is only displayed; it is never stored,
-// downloaded to localStorage, or used to modify job data. For public/shared
-// images Drive's thumbnail endpoint can serve as a direct image source.
+// Display the supplied mascot image without modifying any job data.
+// Discord CDN links may expire, so retain the previous Drive image as fallback.
 const mascot=document.createElement('img');
 mascot.id='spTotalsPeekMascot';
 mascot.alt='';
@@ -2082,21 +2081,23 @@ Object.assign(mascot.style,{
     border:'0',
     boxShadow:'none'
 });
-// The original shared link is a preview page, not a valid <img> URL.
-// Try the Drive thumbnail first; fall back to the direct-view endpoint.
+// The requested Discord URL is the primary image. Preserve the
+// previous Drive image as fallback when the signed Discord URL expires.
 const mascotFileId='1mJHuNQH6H2JhBFHb75EF9VRiu7jGXUb2';
 let mascotSourceAttempt=0;
 mascot.onerror=function(){
     if(mascotSourceAttempt===0){
         mascotSourceAttempt=1;
+        mascot.src='https://drive.google.com/thumbnail?id='+mascotFileId+'&sz=w1000';
+    }else if(mascotSourceAttempt===1){
+        mascotSourceAttempt=2;
         mascot.src='https://drive.google.com/uc?export=view&id='+mascotFileId;
     }else{
-        // A non-public Drive file may not render in a different domain.
-        mascotSourceAttempt=2;
+        mascotSourceAttempt=3;
         mascot.style.display='none';
     }
 };
-mascot.src='https://drive.google.com/thumbnail?id='+mascotFileId+'&sz=w1000';
+mascot.src='https://media.discordapp.net/attachments/1532495342258356326/1566843301561114674/bespren.png?ex=6aea0409&is=6ae8b289&hm=97830193b1641a7f89f474c1dc67e67efba2c71afa38ca1026965e34d48deeac&=&format=webp&quality=lossless&width=281&height=395';
 box.appendChild(mascot);
 
 ///////////////////////////////
