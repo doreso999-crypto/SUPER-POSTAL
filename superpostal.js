@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.3.3
+// @version      1.3.4
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -1939,8 +1939,8 @@ Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
     bottom:'calc(100% - 117px)',
-    // Image is raised 1 CSS pixel; panel position remains independent.
-    transform:'translate(-50%, -1px)',
+    // Image is raised 2 CSS pixels; panel position remains independent.
+    transform:'translate(-50%, -2px)',
     width:'auto',
     height:'320px',
     maxWidth:'750px',
