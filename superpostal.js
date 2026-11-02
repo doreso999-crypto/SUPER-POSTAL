@@ -972,19 +972,35 @@ function spJobDetailsReadiness(){
     return {ready:checks.every(function(item){return item.ready;}),
         missing:checks.filter(function(item){return !item.ready;}).map(function(item){return item.label;})};
 }
-function spIsNativeProcessJobControl(el){
-    if(!el||!el.closest||!el.closest('#step4'))return false;
-    if(el.id==='spQuickReturnButton'||el.closest('#spRecipientPdfOverview'))return false;
+// Payment and mailing approval must remain owned entirely by Postalocity.
+// Never use this script's job-readiness gate or scare preview for them, even
+// when their native action or ID contains "approveJob".
+function spIsNativeMailingApprovalControl(el){
+    if(!el)return false;
     const label=String(el.tagName==='INPUT'?el.value:
         (el.textContent||el.getAttribute('aria-label')||el.getAttribute('title')||''))
         .replace(/\s+/g,' ').trim();
     const action=[el.id,el.getAttribute('name'),el.getAttribute('onclick')]
         .filter(Boolean).join(' ');
-    // Restrict this rule to actual job-processing controls, not navigation,
-    // the Return Address shortcut, or general "Process" text elsewhere.
+    return /\b(?:pay|payment|checkout|billing)\b/i.test(label) ||
+        /\bapprove\s+(?:the\s+)?mailing\b|\bmailing\s+approval\b/i.test(label) ||
+        /(?:pay|payment|checkout|mailing)[-_\s]*(?:and|approve|approval)/i.test(action) ||
+        /(?:approve|approval)[-_\s]*(?:mailing|payment)/i.test(action);
+}
+function spIsNativeProcessJobControl(el){
+    if(!el||!el.closest||!el.closest('#step4'))return false;
+    if(el.id==='spQuickReturnButton'||el.closest('#spRecipientPdfOverview')||
+       spIsNativeMailingApprovalControl(el))return false;
+    const label=String(el.tagName==='INPUT'?el.value:
+        (el.textContent||el.getAttribute('aria-label')||el.getAttribute('title')||''))
+        .replace(/\s+/g,' ').trim();
+    const action=[el.id,el.getAttribute('name'),el.getAttribute('onclick')]
+        .filter(Boolean).join(' ');
+    // Only Process/Submit Job actions get a readiness gate. In particular,
+    // generic approveJob actions must not block Pay and Approve Mailing.
     return /\bprocess\s+(?:this\s+)?job\b/i.test(label)||
-        /(?:^|[^a-z])(?:process|submit|approve)(?:This)?Job(?:Btn|Button)?(?:$|[^a-z])/i.test(action) ||
-        /(?:process|submit|approve)Job\s*\(/i.test(action);
+        /(?:^|[^a-z])(?:process|submit)(?:This)?Job(?:Btn|Button)?(?:$|[^a-z])/i.test(action) ||
+        /(?:process|submit)Job\s*\(/i.test(action);
 }
 // Non-blocking visual toast for incomplete jobs. Reuse the same toast on
 // repeated attempts; it never triggers or retries job processing.
@@ -1404,11 +1420,15 @@ function spInstallProcessJobGuard(){
         const form=event.target;
         if(!form||!form.closest||!form.closest('#step4'))return;
         const clicked=event.submitter||document.activeElement;
+        if(clicked&&spIsNativeMailingApprovalControl(clicked))return;
         if(clicked&&spIsNativeProcessJobControl(clicked)){
             spProcessScareGuard(event,clicked);
-        }else if(form.querySelector&&form.querySelector(
-            'button[id*="processJob"],button[id*="processBtn"],button[onclick*="processJob"],button[onclick*="submitJob"]'
-        )){
+        }else if((!clicked||clicked===form||clicked===document.body)&&
+            form.querySelector&&form.querySelector(
+                'button[id*="processJob"],button[id*="processBtn"],button[onclick*="processJob"],button[onclick*="submitJob"]'
+            )){
+            // Only an ambiguous keyboard/programmatic submit of a process
+            // form gets the fallback. An unrelated Pay/Approve submit is native.
             spProcessScareGuard(event,form);
         }
     },true);
@@ -1917,11 +1937,11 @@ mascot.decoding='async';
 Object.assign(mascot.style,{
     position:'absolute',
     left:'50%',
-    bottom:'calc(100% - 9px)',
+    bottom:'calc(100% - 69px)',
     transform:'translateX(-50%)',
     width:'auto',
-    height:'128px',
-    maxWidth:'300px',
+    height:'320px',
+    maxWidth:'750px',
     objectFit:'contain',
     objectPosition:'center bottom',
     zIndex:'9',
