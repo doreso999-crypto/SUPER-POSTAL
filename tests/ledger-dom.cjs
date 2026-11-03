@@ -83,3 +83,29 @@ assert.equal(processedReopened.document.querySelectorAll('#spLedgerPanel .sp-led
     'processed jobs remain in client totals even after all tabs closed');
 processedTabs.forEach(w=>w.close());processedReopened.close();
 console.log('PASS: processed unapproved jobs survive closing all tabs and remain visible when one is reopened.');
+
+// Each real storage write notifies every sibling tab. Deliver a burst while
+// the fixture's normal polling clock is paused to isolate event-driven work.
+const burstTabs=Array.from({length:8},(_,i)=>page(String(8100+i),processedHtml));
+let captures=0;
+for(const w of burstTabs){
+    const query=w.document.querySelector.bind(w.document);
+    w.document.querySelector=selector=>{
+        if(selector==='#settingsReturnAddressSource-Link')captures++;
+        return query(selector);
+    };
+}
+for(let i=0;i<8;i++){
+    for(const [j,w] of burstTabs.entries()){
+        if(i!==j)w.dispatchEvent(new w.StorageEvent('storage',{key:'sp-ledger-v1:saved-return:'+(8100+i)}));
+    }
+}
+assert.equal(captures,0,'sibling storage notifications must not trigger another capture');
+const cachedKey='sp-ledger-v1:saved-return:8100';
+const snapshot=JSON.parse(backing[cachedKey]);
+snapshot.seen=100;
+backing[cachedKey]=JSON.stringify(snapshot);
+burstTabs[0].testTick();
+assert.equal(JSON.parse(backing[cachedKey]).seen,100,'unchanged address does not write a new timestamp');
+for(const w of burstTabs)w.close();
+console.log('PASS: eight job tabs consume a burst without starting another capture or rewriting unchanged addresses.');
