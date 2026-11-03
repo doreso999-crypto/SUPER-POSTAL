@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.4.4
+// @version      1.4.5
 // @description  Return Address parser + Job name from uploaded PDF
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
@@ -11,6 +11,10 @@
 
 (function () {
 'use strict';
+
+// Separate userscript installations can inject into the same document.
+if(document.documentElement.hasAttribute('data-sp-runtime-active'))return;
+document.documentElement.setAttribute('data-sp-runtime-active','');
 
 // Small site-wide confirmation that the SUPER POSTAL loader ran.
 // This is independent of the CLIENT TOTALS panel, which remains job-only.
@@ -1003,7 +1007,7 @@ function spReturnMarkSaved(form){
             const storageKey='sp-ledger-v1:saved-return:'+savedId;
             window.localStorage.setItem(storageKey,JSON.stringify({address:address,seen:Date.now()}));
             // Notify this tab's existing ledger listener immediately.
-            window.dispatchEvent(new StorageEvent('storage',{key:storageKey}));
+            window.dispatchEvent(new Event('sp-return-address-saved'));
         }catch(_e){}
     }
     spQueueRecipientOverview();
@@ -2386,6 +2390,8 @@ scheduleDock();
     function rememberSavedReturn(jobId,a){
         if(!/^\d+$/.test(String(jobId||''))||!complete(a)||
            spReturnIsSampleText(Object.values(a).join(' ')))return;
+        const previous=savedReturnFor(jobId);
+        if(previous&&fields.every(field=>previous[field]===a[field]))return;
         try{localStorage.setItem(SAVED_RETURN_PREFIX+jobId,JSON.stringify({address:a,seen:Date.now()}));}
         catch(_e){/* Keep tracking from the live page if storage is unavailable. */}
     }
@@ -3188,7 +3194,10 @@ scheduleDock();
         event.returnValue='';
     }
     function tick(){try{if(leaving)return;clean();hookRecipientSave();const r=capture();render(r);reviewDuplicateNames(r);}catch(e){console.warn('SUPER POSTAL totals:',e);}}
-    window.addEventListener('storage',e=>{if(e.key&&e.key.startsWith(PREFIX))tick();});
+    // The regular tick reads sibling changes. Recapturing on storage events
+    // lets one tab's write trigger another write in every other tab.
+    window.addEventListener('sp-return-address-saved',tick);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick();});
     document.addEventListener('click',e=>{
         const control=e.target&&e.target.closest&&
             e.target.closest('button,input[type="submit"],input[type="button"],a,[role="button"]');
