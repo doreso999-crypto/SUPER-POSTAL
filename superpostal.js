@@ -1285,21 +1285,31 @@ function spScheduleProcessControlUpdate(){
     if(spProcessVisualTimer!==null)return;
     spProcessVisualTimer=setTimeout(()=>{spProcessVisualTimer=null;spUpdateProcessControlState();},100);
 }
-// Vlipsy "Jump Scare – Creepy Face", chosen by the operator:
-// https://vlipsy.com/clips/3hEsFXt9
-// Vlipsy's documented MP4 URL convention is used for direct audio+video.
-// If this specific media URL is unavailable, use Vlipsy's embedded player.
-// GIF files are silent; optional GIF+audio remains supported for other clips.
+// Scare schedule uses the browser's local day (Wednesday = getDay() 3).
+// A single 10% chance applies to each eligible Process Job attempt.
+// Wednesday: 6H9KSXHl only; other days: wFNnuAf8 only.
 const SP_PROCESS_SCARE_MEDIA={
-    video:'https://media.vlipsy.com/vlips/3hEsFXt9/480p.mp4',
-    page:'https://vlipsy.com/clips/3hEsFXt9',
-    embed:'https://vlipsy.com/embed/3hEsFXt9',
-    gif:'',
-    audio:'',
-    fallbackMs:1900
+    wednesday:{
+        video:'https://media.vlipsy.com/vlips/6H9KSXHl/480p.mp4',
+        page:'https://vlipsy.com/clips/6H9KSXHl',
+        embed:'https://vlipsy.com/embed/6H9KSXHl',
+        gif:'',
+        audio:'',
+        fallbackMs:1900
+    },
+    otherDays:{
+        video:'https://media.vlipsy.com/vlips/wFNnuAf8/480p.mp4',
+        page:'https://vlipsy.com/clips/wFNnuAf8',
+        embed:'https://vlipsy.com/embed/wFNnuAf8',
+        gif:'',
+        audio:'',
+        fallbackMs:1900
+    }
 };
-// Normal setting: 1% chance per eligible Process Job attempt; never block processing.
-const SP_PROCESS_SCARE_CHANCE=0.1;
+function spScareMediaForToday(date=new Date()){
+    return date.getDay()===3?SP_PROCESS_SCARE_MEDIA.wednesday:SP_PROCESS_SCARE_MEDIA.otherDays;
+}
+const SP_PROCESS_SCARE_CHANCE=0.10;
 let spScarePending=null;
 // A button click may trigger a form submit in the same browser event cycle.
 // Use the SAME chance for that click/submit pair, never a second 1% roll.
@@ -1380,6 +1390,7 @@ function spScareProceed(pending){
 function spScarePreview(control,form){
     if(spScarePending)return;
     if(!document.body)return;
+    const scareMedia=spScareMediaForToday();
     if(!document.querySelector('#spProcessScareStyles')){
         const style=document.createElement('style');
         style.id='spProcessScareStyles';
@@ -1433,9 +1444,9 @@ function spScarePreview(control,form){
             }catch(_e){}
         }
     }
-    const videoURL=SP_PROCESS_SCARE_MEDIA.video.trim();
-    const gifURL=SP_PROCESS_SCARE_MEDIA.gif.trim();
-    const audioURL=SP_PROCESS_SCARE_MEDIA.audio.trim();
+    const videoURL=scareMedia.video.trim();
+    const gifURL=scareMedia.gif.trim();
+    const audioURL=scareMedia.audio.trim();
     function original(){
         if(pending.done||pending.fallback)return;
         pending.fallback=true;
@@ -1449,7 +1460,7 @@ function spScarePreview(control,form){
         art.append(face,headline);
         stage.appendChild(art);
         pending.stopSound=spScareFallbackSound();
-        pending.timer=setTimeout(function(){spScareProceed(pending);},SP_PROCESS_SCARE_MEDIA.fallbackMs);
+        pending.timer=setTimeout(function(){spScareProceed(pending);},scareMedia.fallbackMs);
     }
     function sourceEmbed(){
         if(pending.done||pending.fallback)return;
@@ -1459,7 +1470,7 @@ function spScarePreview(control,form){
         if(pending.visual)pending.visual.remove();
         const iframe=document.createElement('iframe');
         iframe.title='Vlipsy horror clip';
-        iframe.src=SP_PROCESS_SCARE_MEDIA.embed+'?autoplay=1';
+        iframe.src=scareMedia.embed+'?autoplay=1';
         iframe.allow='autoplay; fullscreen';
         iframe.setAttribute('referrerpolicy','strict-origin-when-cross-origin');
         stage.appendChild(iframe);
@@ -1474,7 +1485,7 @@ function spScarePreview(control,form){
         pending.media=video;pending.visual=video;
         stage.appendChild(video);
         video.addEventListener('ended',function(){spScareProceed(pending);},{once:true});
-        const mediaFallback=SP_PROCESS_SCARE_MEDIA.embed&&SP_PROCESS_SCARE_MEDIA.page?sourceEmbed:original;
+        const mediaFallback=scareMedia.embed&&scareMedia.page?sourceEmbed:original;
         video.addEventListener('error',mediaFallback,{once:true});
         pending.timer=setTimeout(function(){spScareProceed(pending);},10000);
         try{
@@ -1486,7 +1497,7 @@ function spScarePreview(control,form){
         const audio=document.createElement('audio');audio.src=audioURL;audio.volume=0.6;
         pending.media=audio;pending.visual=picture;
         stage.appendChild(picture);
-        pending.timer=setTimeout(function(){spScareProceed(pending);},SP_PROCESS_SCARE_MEDIA.fallbackMs+1200);
+        pending.timer=setTimeout(function(){spScareProceed(pending);},scareMedia.fallbackMs+1200);
         audio.addEventListener('error',original,{once:true});
         try{
             const play=audio.play();
