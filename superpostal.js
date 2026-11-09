@@ -1312,7 +1312,7 @@ function spScareMediaForToday(date=new Date()){
 const SP_PROCESS_SCARE_CHANCE=0.10;
 let spScarePending=null;
 // A button click may trigger a form submit in the same browser event cycle.
-// Use the SAME chance for that click/submit pair, never a second 1% roll.
+// Use the SAME chance for that click/submit pair, never a second 10% roll.
 let spScareRegularSubmitForm=null,spScareRegularSubmitTimer=null;
 function spScareMarkRegularSubmit(form){
     if(spScareRegularSubmitTimer!==null){
