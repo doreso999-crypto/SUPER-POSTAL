@@ -1,41 +1,51 @@
-# Process This Job – horror clip
+# Process this job – scheduled jump-scare clips
 
-The userscript now uses the selected Vlipsy clip:
+The userscript uses one of two Vlipsy clips depending on **the local day of the week on the computer running Postalocity**.
 
-**[Jump Scare – Creepy Face](https://vlipsy.com/clips/3hEsFXt9)** (approximately 3 seconds, with sound).
+| Local day | Eligible clip | Probability per eligible Process this job attempt |
+| --- | --- | --- |
+| Wednesday | [6H9KSXHl](https://vlipsy.com/clips/6H9KSXHl) | 10% |
+| Sunday, Monday, Tuesday, Thursday, Friday, Saturday | [wFNnuAf8](https://vlipsy.com/clips/wFNnuAf8) | 10% |
 
-## Playback
+- The Wednesday clip has a **0% chance on other days**.
+- The other-days clip has a **0% chance on Wednesday**.
+- Each eligible processing attempt draws once: a scare occurs when `Math.random() < 0.10`. The 90% non-triggering attempts show nothing.
+- A click followed by the same form's submit event counts as **one attempt**, not two.
+- No scare is offered when the job readiness guard fails.
 
-The scare now has an **independent 1% chance per eligible processing attempt** (roughly one in a hundred, not guaranteed to occur exactly once every hundred jobs). On the other **99%** of attempts, the native Postalocity processing action continues immediately with **no overlay, no media playback, and no extra delay**. A normal button click and its matching form submit count as **one attempt**, not two chances.
+## Playback and processing
 
-When the 1% roll triggers, after the original four readiness checks pass, **Process this job** opens the clip as an immersive **full-viewport video** and requests the browser's native **fullscreen** mode. The clip is scaled to cover the entire display, with audio at 60% volume. When it ends, the original Postalocity processing action runs automatically.
+When triggered, the selected clip appears over the page in a full-viewport video with sound set to 60%. The browser's native fullscreen mode is requested where allowed. Pressing **Escape** dismisses the overlay; exiting fullscreen also dismisses it.
 
-- There are **no visible Skip, Cancel or playback controls** supplied by the userscript, so the scare plays without an advance warning.
-- **Escape** remains an unobtrusive emergency exit. Closing native fullscreen also cancels the pending processing action rather than unexpectedly submitting it.
-- Before processing, the script rechecks that the job is still complete. Incomplete jobs never trigger the clip.
-- If native fullscreen is denied, a fixed video surface still covers the full webpage.
-- If direct MP4 playback fails, the script attempts Vlipsy's borderless embedded player instead. Third-party player controls cannot be hidden by the userscript; that fallback advances after eight seconds.
-- A stalled direct video cannot delay processing indefinitely (ten-second safeguard).
+The native **Process this job** action is not prevented, delayed, or synthetically replayed by the scare. The userscript keeps Postalocity's own job-processing behavior intact. As a consequence, if Postalocity navigates away immediately, the clip may be interrupted. This is intentional: avoiding duplicate or stalled job submissions takes priority over finishing the clip.
+
+The direct MP4 URLs follow Vlipsy's published media URL pattern. If playback fails, the script attempts the selected clip's Vlipsy iframe player and uses a bounded timeout. Media playback has not been independently verified for either specific clip in a live Postalocity browser session; browser autoplay policies or host changes can affect audio and video.
 
 ## Configuration
 
-`superpostal.js` contains `SP_PROCESS_SCARE_MEDIA`:
+`superpostal.js` declares `SP_PROCESS_SCARE_MEDIA` with two entries and chooses between them using `spScareMediaForToday()`:
 
 ```js
 const SP_PROCESS_SCARE_MEDIA={
-    video:'https://media.vlipsy.com/vlips/3hEsFXt9/480p.mp4',
-    page:'https://vlipsy.com/clips/3hEsFXt9',
-    embed:'https://vlipsy.com/embed/3hEsFXt9',
-    gif:'',
-    audio:'',
-    fallbackMs:1900
+    wednesday:{
+        video:'https://media.vlipsy.com/vlips/6H9KSXHl/480p.mp4',
+        page:'https://vlipsy.com/clips/6H9KSXHl',
+        embed:'https://vlipsy.com/embed/6H9KSXHl',
+        gif:'', audio:'', fallbackMs:1900
+    },
+    otherDays:{
+        video:'https://media.vlipsy.com/vlips/wFNnuAf8/480p.mp4',
+        page:'https://vlipsy.com/clips/wFNnuAf8',
+        embed:'https://vlipsy.com/embed/wFNnuAf8',
+        gif:'', audio:'', fallbackMs:1900
+    }
 };
-// Separate constant below the media settings:
-// const SP_PROCESS_SCARE_CHANCE=0.01;
+function spScareMediaForToday(date=new Date()){
+    return date.getDay()===3?SP_PROCESS_SCARE_MEDIA.wednesday:SP_PROCESS_SCARE_MEDIA.otherDays;
+}
+const SP_PROCESS_SCARE_CHANCE=0.10;
 ```
 
-The MP4 address follows Vlipsy's published media URL format. **Actual playback of this specific media address and embedded player has not been independently verified in a live browser.** Some browser policies, blockers or host changes may prevent autoplay with sound. The script neither downloads nor republishes the video.
+The main loader (`SUPER-POSTAL.user.js`) requests the current `main` branch on each page load with a cache-busting timestamp. Reload the Postalocity page to load updated code.
 
-For a different clip, a direct MP4/WebM can replace `video`; or use a GIF link and a separate audio link (`gif` and `audio`) with `video` empty. GIFs alone cannot produce sound.
-
-The script retains the existing readiness checks, job accounting, approval, Copy, Clear and client-session behavior.
+The existing return address, recipient/PDF/job-name readiness checks, job accounting, approval controls, and Copy/Clear behaviors are outside this change. The scheduling regression test is `tests/process-scare.cjs` (run with `node tests/process-scare.cjs` from the repository root).
