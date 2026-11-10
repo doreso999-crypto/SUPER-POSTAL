@@ -2041,7 +2041,7 @@ if(spJobPath!=='/jobui'||!/^\d+$/.test(spJobId)){
     return;
 }
 
-// White totals panel with a yellow header and a decorative peeking image.
+// White totals panel with a yellow header.
 // No accounting, price tracking, filenames, or client-session logic.
 document.querySelectorAll('#bureauTotals').forEach(el=>el.remove());
 
@@ -2065,55 +2065,6 @@ Object.assign(box.style,{
     boxSizing:'border-box',
     fontFamily:'Arial, sans-serif'
 });
-
-///////////////////////////////
-// PEEKING MASCOT: USER-PROVIDED DISCORD IMAGE
-///////////////////////////////
-
-// Display the supplied mascot image without modifying any job data.
-// Discord CDN links may expire, so retain the previous Drive image as fallback.
-const mascot=document.createElement('img');
-mascot.id='spTotalsPeekMascot';
-mascot.alt='';
-mascot.setAttribute('aria-hidden','true');
-mascot.draggable=false;
-mascot.decoding='async';
-Object.assign(mascot.style,{
-    position:'absolute',
-    left:'50%',
-    bottom:'calc(100% - 117px)',
-    // Image is raised 1.5 CSS pixels; panel position remains independent.
-    transform:'translate(-50%, -1.5px)',
-    width:'auto',
-    height:'320px',
-    maxWidth:'750px',
-    objectFit:'contain',
-    objectPosition:'center bottom',
-    zIndex:'1000000',
-    pointerEvents:'none',
-    userSelect:'none',
-    background:'transparent',
-    border:'0',
-    boxShadow:'none'
-});
-// The requested Discord URL is the primary image. Preserve the
-// previous Drive image as fallback when the signed Discord URL expires.
-const mascotFileId='1mJHuNQH6H2JhBFHb75EF9VRiu7jGXUb2';
-let mascotSourceAttempt=0;
-mascot.onerror=function(){
-    if(mascotSourceAttempt===0){
-        mascotSourceAttempt=1;
-        mascot.src='https://drive.google.com/thumbnail?id='+mascotFileId+'&sz=w1000';
-    }else if(mascotSourceAttempt===1){
-        mascotSourceAttempt=2;
-        mascot.src='https://drive.google.com/uc?export=view&id='+mascotFileId;
-    }else{
-        mascotSourceAttempt=3;
-        mascot.style.display='none';
-    }
-};
-mascot.src='https://media.discordapp.net/attachments/1532495342258356326/1566843301561114674/bespren.png?ex=6aea0409&is=6ae8b289&hm=97830193b1641a7f89f474c1dc67e67efba2c71afa38ca1026965e34d48deeac&=&format=webp&quality=lossless&width=281&height=395';
-box.appendChild(mascot);
 
 ///////////////////////////////
 // YELLOW HEADER
@@ -2202,8 +2153,7 @@ function findDockAnchor(){
 }
 function visibleTopReference(target){
     // The approved-job content is in a different row from the Job State
-    // header. Choose the actual visible header, not the mascot or the
-    // second row's starting position.
+    // header. Use that header rather than the second row's starting position.
     const root=document.querySelector('#jobPageContent')||
         document.querySelector('.jobPageContent');
     const heading=root&&(
@@ -2234,24 +2184,10 @@ function dockToApproval(){
     if(box.parentElement!==home)home.appendChild(box);
 
     const viewportWidth=window.innerWidth||document.documentElement.clientWidth;
-    const viewportHeight=window.innerHeight||document.documentElement.clientHeight;
     const columnWidth=slot?slot.getBoundingClientRect().width:viewportWidth;
     const panelWidth=Math.max(60,Math.min(320,columnWidth-(slot?30:24),viewportWidth-24));
     box.style.width=panelWidth+'px';
     box.dataset.narrow=panelWidth<200?'true':'false';
-
-    // The mascot is a decorative clip overlapping the top edge, not an
-    // element whose top edge determines the panel's vertical position.
-    // The -5px transform is 5px lower than the prior -10px offset.
-    const mascotHeight=Math.min(panelWidth,Math.max(84,Math.round(viewportHeight*.42)));
-    const mascotOverlap=Math.round(mascotHeight*117/320);
-    // Keep the clip overlap fixed. Exact small vertical adjustments are
-    // performed only through mascot.style.transform above.
-    const mascotClipDrop=2;
-    mascot.style.width='100%';
-    mascot.style.maxWidth='100%';
-    mascot.style.height=mascotHeight+'px';
-    mascot.style.bottom='calc(100% - '+(mascotOverlap+mascotClipDrop)+'px)';
 
     const rect=target&&target.getBoundingClientRect();
     const slotRect=slot&&slot.getBoundingClientRect();
@@ -2261,7 +2197,6 @@ function dockToApproval(){
     box.dataset.dockSide=sideBySide?'third':slot?'stacked':'fallback';
 
     // The CLIENT TOTALS header must align with the top of Job State.
-    // Mascot position/height does not enter this measurement at all.
     const reference=visibleTopReference(target);
     const referenceRect=reference&&reference.getBoundingClientRect();
     if(!slot){
