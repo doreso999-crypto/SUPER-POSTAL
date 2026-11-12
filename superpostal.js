@@ -591,40 +591,47 @@ function updateJobName(filename) {
 
 }
 
-// Decorative upload-side animation. Keep Postalocity's native upload node and
-// its event handlers intact; only place it beside a separate, non-interactive video.
+// Decorative animation in the first column of the main job layout.
+// The native job form and upload/dropzone remain untouched.
 function spMountUploadAnimation(){
     const root=document.querySelector('#jobPageContent')||
         document.querySelector('.jobPageContent');
     if(!root)return;
-    const input=Array.from(root.querySelectorAll('input[type="file"]'))
-        .find(el=>!el.disabled);
-    if(!input)return;
-    const zone=input.closest(
-        '.dropzone, [class*="drop-zone"], [id*="drop-zone"], '+
-        '[class*="upload-area"], [id*="upload-area"], '+
-        '[class*="file-upload"], [id*="file-upload"]'
-    );
-    if(!zone||!root.contains(zone)||zone.closest('#spUploadAnimationRow'))return;
-    if(zone.dataset.spUploadAnimationMounted==='true')return;
-    const rect=zone.getBoundingClientRect();
-    if(rect.width<180||rect.height<35)return;
 
-    const row=document.createElement('div');
-    row.id='spUploadAnimationRow';
-    Object.assign(row.style,{
-        display:'flex',alignItems:'stretch',gap:'14px',
-        width:'100%',maxWidth:'100%',margin:'0 0 12px',
-        boxSizing:'border-box'
+    // Identify the center job-form column, then use the first sibling column
+    // in that same Bootstrap row (the page's left/first column).
+    const candidates=Array.from(root.querySelectorAll(
+        '.row > .col-md-6, .row > .col-lg-6'
+    )).filter(node=>{
+        const row=node.parentElement;
+        if(!row||!row.classList.contains('row'))return false;
+        const rect=node.getBoundingClientRect();
+        return rect.width>=120&&rect.height>=35;
     });
+    const center=candidates.find(node=>node.querySelector('#sourceUploadedList'))||
+        candidates.find(node=>node.querySelector(
+            '[id*="uploadPdf"], [id*="uploadPDF"], [id*="sourceUpload"]'
+        ));
+    if(!center)return;
+
+    const row=center.parentElement;
+    const firstColumn=row&&row.querySelector(
+        ':scope > .col-md-3, :scope > .col-lg-3, :scope > .col-sm-3'
+    );
+    if(!firstColumn||firstColumn===center||
+       firstColumn.dataset.spUploadAnimationMounted==='true')return;
+
     const media=document.createElement('div');
+    media.id='spUploadAnimation';
     media.setAttribute('aria-hidden','true');
     Object.assign(media.style,{
-        flex:'0 0 128px',width:'128px',minWidth:'0',
         display:'flex',alignItems:'center',justifyContent:'center',
-        overflow:'hidden',borderRadius:'4px',background:'#fff',
+        width:'100%',maxWidth:'100%',minWidth:'0',
+        margin:'0 0 14px',padding:'0',
+        overflow:'hidden',boxSizing:'border-box',
         pointerEvents:'none'
     });
+
     const video=document.createElement('video');
     video.src='https://external-preview.redd.it/alcEjdzcEltsh-WeX8GoBuntr2_stBHq5a1Rrb4rHtg.gif?width=320&format=mp4&s=c0729b3649ae9bb6f1b67948158c1a76845f5c02';
     video.autoplay=true;
@@ -634,32 +641,23 @@ function spMountUploadAnimation(){
     video.playsInline=true;
     video.setAttribute('playsinline','');
     video.setAttribute('muted','');
-    video.preload='metadata';
+    video.preload='auto';
     Object.assign(video.style,{
         display:'block',width:'100%',height:'auto',
-        maxHeight:'180px',objectFit:'contain',
+        maxHeight:'240px',objectFit:'contain',
         pointerEvents:'none'
     });
     media.appendChild(video);
-    const parent=zone.parentNode;
-    if(!parent)return;
-    parent.insertBefore(row,zone);
-    row.append(media,zone);
-    Object.assign(zone.style,{
-        flex:'1 1 0',minWidth:'0',width:'auto',
-        boxSizing:'border-box'
-    });
-    zone.dataset.spUploadAnimationMounted='true';
+    firstColumn.insertBefore(media,firstColumn.firstChild);
+    firstColumn.dataset.spUploadAnimationMounted='true';
 
-    const style=document.createElement('style');
-    style.id='spUploadAnimationResponsiveStyle';
-    style.textContent=
-        '@media(max-width:640px){#spUploadAnimationRow{flex-direction:column!important;gap:8px!important}'+
-        '#spUploadAnimationRow>div:first-child{flex:0 0 auto!important;width:100%!important;max-width:180px!important;align-self:center!important}'+
-        '#spUploadAnimationRow video{max-height:120px!important}}';
-    if(!document.getElementById(style.id))document.head.appendChild(style);
     const play=video.play();
-    if(play&&typeof play.catch==='function')play.catch(function(){});
+    if(play&&typeof play.catch==='function')play.catch(function(){
+        // Retry after the browser's next user interaction if autoplay is blocked.
+        const retry=()=>{video.play().catch(function(){});};
+        document.addEventListener('click',retry,{once:true,passive:true});
+        document.addEventListener('keydown',retry,{once:true,passive:true});
+    });
 }
 
 function watchUploadedFiles() {
