@@ -591,6 +591,77 @@ function updateJobName(filename) {
 
 }
 
+// Decorative upload-side animation. Keep Postalocity's native upload node and
+// its event handlers intact; only place it beside a separate, non-interactive video.
+function spMountUploadAnimation(){
+    const root=document.querySelector('#jobPageContent')||
+        document.querySelector('.jobPageContent');
+    if(!root)return;
+    const input=Array.from(root.querySelectorAll('input[type="file"]'))
+        .find(el=>!el.disabled);
+    if(!input)return;
+    const zone=input.closest(
+        '.dropzone, [class*="drop-zone"], [id*="drop-zone"], '+
+        '[class*="upload-area"], [id*="upload-area"], '+
+        '[class*="file-upload"], [id*="file-upload"]'
+    );
+    if(!zone||!root.contains(zone)||zone.closest('#spUploadAnimationRow'))return;
+    if(zone.dataset.spUploadAnimationMounted==='true')return;
+    const rect=zone.getBoundingClientRect();
+    if(rect.width<180||rect.height<35)return;
+
+    const row=document.createElement('div');
+    row.id='spUploadAnimationRow';
+    Object.assign(row.style,{
+        display:'flex',alignItems:'stretch',gap:'14px',
+        width:'100%',maxWidth:'100%',margin:'0 0 12px',
+        boxSizing:'border-box'
+    });
+    const media=document.createElement('div');
+    media.setAttribute('aria-hidden','true');
+    Object.assign(media.style,{
+        flex:'0 0 128px',width:'128px',minWidth:'0',
+        display:'flex',alignItems:'center',justifyContent:'center',
+        overflow:'hidden',borderRadius:'4px',background:'#fff',
+        pointerEvents:'none'
+    });
+    const video=document.createElement('video');
+    video.src='https://external-preview.redd.it/alcEjdzcEltsh-WeX8GoBuntr2_stBHq5a1Rrb4rHtg.gif?width=320&format=mp4&s=c0729b3649ae9bb6f1b67948158c1a76845f5c02';
+    video.autoplay=true;
+    video.loop=true;
+    video.muted=true;
+    video.defaultMuted=true;
+    video.playsInline=true;
+    video.setAttribute('playsinline','');
+    video.setAttribute('muted','');
+    video.preload='metadata';
+    Object.assign(video.style,{
+        display:'block',width:'100%',height:'auto',
+        maxHeight:'180px',objectFit:'contain',
+        pointerEvents:'none'
+    });
+    media.appendChild(video);
+    const parent=zone.parentNode;
+    if(!parent)return;
+    parent.insertBefore(row,zone);
+    row.append(media,zone);
+    Object.assign(zone.style,{
+        flex:'1 1 0',minWidth:'0',width:'auto',
+        boxSizing:'border-box'
+    });
+    zone.dataset.spUploadAnimationMounted='true';
+
+    const style=document.createElement('style');
+    style.id='spUploadAnimationResponsiveStyle';
+    style.textContent=
+        '@media(max-width:640px){#spUploadAnimationRow{flex-direction:column!important;gap:8px!important}'+
+        '#spUploadAnimationRow>div:first-child{flex:0 0 auto!important;width:100%!important;max-width:180px!important;align-self:center!important}'+
+        '#spUploadAnimationRow video{max-height:120px!important}}';
+    if(!document.getElementById(style.id))document.head.appendChild(style);
+    const play=video.play();
+    if(play&&typeof play.catch==='function')play.catch(function(){});
+}
+
 function watchUploadedFiles() {
 
     const uploadList = document.querySelector('#sourceUploadedList');
@@ -1778,6 +1849,7 @@ const observer = new MutationObserver(mutations => {
     if(!nativeChange)return;
     addParser();
     watchUploadedFiles();
+    spMountUploadAnimation();
     hidePostalocitySettingsButtons();
     addQuickReturnAddress();
     addRecipientPdfOverview();
@@ -1790,6 +1862,7 @@ observer.observe(document.body, {
 
 addParser();
 watchUploadedFiles();
+spMountUploadAnimation();
 hidePostalocitySettingsButtons();
 addQuickReturnAddress();
 addRecipientPdfOverview();
