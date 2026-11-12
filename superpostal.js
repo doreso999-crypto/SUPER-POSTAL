@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         POSTAL TESTING GROUND
 // @namespace    http://tampermonkey.net/
-// @version      1.4.5
+// @version      1.4.6
 // @description  Return Address parser + Job name from uploaded PDF
+// ALWAYS UPDATE THE VERSION NUMBER ABOVE (@version) WITH EVERY RELEASE.
 // @match        https://prod.postalocity.com/jobui*
 // @grant        none
 // postalocity
@@ -70,8 +71,20 @@ document.documentElement.setAttribute('data-sp-runtime-active','');
             background:'#16a34a',
             verticalAlign:'middle'
         });
+        const labelWrap=document.createElement('div');
+        Object.assign(labelWrap.style,{
+            display:'flex',flexDirection:'column',alignItems:'flex-start',
+            gap:'2px',lineHeight:'1.2'
+        });
         const label=document.createElement('span');
         label.textContent='SUPER POSTAL IS ACTIVE';
+        const version=document.createElement('span');
+        version.textContent='Version 1.4.6';
+        Object.assign(version.style,{
+            font:'500 9px/1.2 Arial,sans-serif',
+            letterSpacing:'0',color:'#39734c'
+        });
+        labelWrap.append(label,version);
         const close=document.createElement('button');
         close.type='button';
         close.textContent='×';
@@ -90,10 +103,10 @@ document.documentElement.setAttribute('data-sp-runtime-active','');
             cursor:'pointer',
             font:'700 15px/1 Arial,sans-serif'
         });
-        note.append(dot,label,close);
+        note.append(dot,labelWrap,close);
         let minimized=readMinimized();
         function applyState(){
-            label.style.display=minimized?'none':'inline';
+            labelWrap.style.display=minimized?'none':'flex';
             close.style.display=minimized?'none':'flex';
             note.style.padding=minimized?'0':'7px 10px';
             note.style.gap=minimized?'0':'7px';
