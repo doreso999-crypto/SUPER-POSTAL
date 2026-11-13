@@ -1610,7 +1610,7 @@ addRecipientPdfOverview();
 ///////////////////////////////
 // These are the same addresses from the previous recipient autofill logic.
 const SP_RECIPIENT_BUREAUS={
-    EX:{name:'Experian',address1:'P.O. Box 2002',city:'Allen',state:'TX',zip:'75013'},
+    EX:{name:'Experian',address1:'P.O. Box 4500',city:'Allen',state:'TX',zip:'75013'},
     EQU:{name:'Equifax Information Services LLC',address1:'P.O. Box 740256',city:'Atlanta',state:'GA',zip:'30374-0256'},
     TU:{name:'TransUnion LLC Consumer Dispute Center',address1:'PO Box 2000',city:'Chester',state:'PA',zip:'19016'}
 };
